@@ -1,5 +1,5 @@
 export type Emotion = "neutral" | "happy" | "sad" | "angry" | "surprised";
-export type AvatarAnimation = "idle" | "jump" | "nod";
+export type AvatarAnimation = "idle" | "jump" | "nod" | "shake";
 
 /** /api/chat 응답 스키마 */
 export interface ChatResponse {

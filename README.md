@@ -1,7 +1,7 @@
 # AI Text RPG
 
 Next.js 14 (App Router) + Tailwind CSS + React Three Fiber 로 만든 AI 텍스트 RPG 프로토타입.
-좌측에 3D 아바타(Box 플레이스홀더), 우측에 채팅 UI가 있으며, `/api/chat` 은 현재 **하드코딩된 Mock 응답**을 반환합니다.
+좌측에 3D 아바타(Box 플레이스홀더), 우측에 채팅 UI가 있으며, `/api/chat` 은 LLM(OpenAI/Anthropic)이 TRPG 게임 마스터로 응답합니다.
 
 ## 실행
 
@@ -14,7 +14,7 @@ npm run dev   # http://localhost:3000
 
 ```
 app/
-  api/chat/route.ts   # Mock 채팅 API (POST)
+  api/chat/route.ts   # LLM 게임 마스터 API (Vercel AI SDK)
   layout.tsx
   page.tsx            # 화면 분할, input/HP/emotion/animation 상태 관리
   globals.css
@@ -25,18 +25,35 @@ components/
 types/game.ts         # ChatResponse 등 공용 타입
 ```
 
+## 환경 변수
+
+`.env.example` 을 `.env.local` 로 복사해서 키를 채우세요. (Vercel에서는 Project Settings → Environment Variables)
+
+| 변수 | 설명 |
+| --- | --- |
+| `AI_PROVIDER` | `openai`(기본) 또는 `anthropic` |
+| `AI_MODEL` | 모델 ID (선택). 기본값: openai `gpt-4o-mini`, anthropic `claude-haiku-4-5` |
+| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | 사용하는 프로바이더의 API 키 |
+
 ## API
 
-`POST /api/chat` — body: `{ "message": string }`
+`POST /api/chat`
 
 ```json
-{ "text": "앗, 몬스터가 나타났어요!", "emotion": "surprised", "animation": "jump", "hp_change": -10 }
+{
+  "messages": [{ "role": "user" | "assistant", "content": "..." }],
+  "hp": 80,
+  "maxHp": 100
+}
 ```
 
-- `animation`: `idle | jump | nod`
-- `emotion`: `neutral | happy | sad | angry | surprised` (아바타 색상에 반영)
+응답 (Vercel AI SDK `generateText` + `Output.object` 로 스키마 강제):
 
-## 실제 LLM 연결하기
+```json
+{ "text": "...", "emotion": "surprised", "animation": "jump", "hp_change": -10 }
+```
 
-`app/api/chat/route.ts` 의 `TODO` 위치에서 `message` 를 모델에 전달하고, 응답을 `ChatResponse` 스키마로 검증해 반환하세요.
-API 키는 `.env.local` 에 두면 됩니다 (`.gitignore` 처리됨).
+- `animation`: `idle | jump | nod | shake`
+- `emotion`: `neutral | happy | sad | angry | surprised` (LLM은 기쁨/슬픔/놀람/분노/평온으로 출력, 서버에서 변환)
+- `hp_change`: 정수, -30 ~ +20 으로 서버에서 보정
+- 최근 20개 메시지만 컨텍스트로 사용하고, 메시지당 1000자로 제한합니다.

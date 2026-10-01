@@ -26,6 +26,8 @@ const JUMP_DURATION = 0.9; // seconds
 const JUMP_HEIGHT = 1.2;
 const NOD_DURATION = 1.0; // seconds
 const NOD_ANGLE = 0.45; // radians
+const SHAKE_DURATION = 0.8; // seconds
+const SHAKE_DISTANCE = 0.25;
 
 export default function Avatar({ animation, animationKey, emotion }: AvatarProps) {
   const meshRef = useRef<Mesh>(null);
@@ -49,6 +51,7 @@ export default function Avatar({ animation, animationKey, emotion }: AvatarProps
     const t = state.clock.elapsedTime;
     let y = BASE_Y + Math.sin(t * 2) * 0.03;
     let rotX = 0;
+    let x = 0;
 
     if (animation !== "idle") {
       if (startRef.current.time === null) startRef.current.time = t;
@@ -61,9 +64,14 @@ export default function Avatar({ animation, animationKey, emotion }: AvatarProps
         const p = elapsed / NOD_DURATION;
         // 2회 까딱, 점점 감쇠
         rotX = Math.sin(p * Math.PI * 4) * NOD_ANGLE * (1 - p);
+      } else if (animation === "shake" && elapsed < SHAKE_DURATION) {
+        const p = elapsed / SHAKE_DURATION;
+        // 좌우로 빠르게 흔들림 (부정/실패), 점점 감쇠
+        x = Math.sin(p * Math.PI * 8) * SHAKE_DISTANCE * (1 - p);
       }
     }
 
+    mesh.position.x = x;
     mesh.position.y = y;
     mesh.rotation.x = rotX;
     mesh.rotation.y += 0.003; // 완만한 회전으로 3D 느낌 부여

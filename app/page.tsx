@@ -36,6 +36,15 @@ export default function Home() {
     const message = input.trim();
     if (!message || loading || isDead) return;
 
+    // 서버에는 지금까지의 전체 대화(+이번 입력)를 보내 문맥을 유지한다.
+    const history = [
+      ...messages.map((m) => ({
+        role: m.role === "user" ? ("user" as const) : ("assistant" as const),
+        content: m.text,
+      })),
+      { role: "user" as const, content: message },
+    ];
+
     pushMessage("user", message);
     setInput("");
     setLoading(true);
@@ -44,9 +53,16 @@ export default function Home() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message }),
+        body: JSON.stringify({
+          messages: history,
+          hp: character.hp,
+          maxHp: character.maxHp,
+        }),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        const err = (await res.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(err?.error ?? `HTTP ${res.status}`);
+      }
       const data = (await res.json()) as ChatResponse;
 
       pushMessage("ai", data.text);
@@ -59,11 +75,14 @@ export default function Home() {
       }));
     } catch (err) {
       console.error(err);
-      pushMessage("ai", "⚠️ 응답을 받지 못했어요. 다시 시도해 주세요.");
+      pushMessage(
+        "ai",
+        `⚠️ ${err instanceof Error ? err.message : "응답을 받지 못했어요. 다시 시도해 주세요."}`
+      );
     } finally {
       setLoading(false);
     }
-  }, [input, loading, isDead, pushMessage]);
+  }, [input, loading, isDead, messages, character.hp, character.maxHp, pushMessage]);
 
   const handleReset = () => {
     setCharacter(INITIAL_CHARACTER);
