@@ -41,9 +41,9 @@ types/game.ts         # ChatResponse 등 공용 타입
 
 | 변수 | 설명 |
 | --- | --- |
-| `AI_PROVIDER` | `openai`(기본) 또는 `anthropic` |
-| `AI_MODEL` | 모델 ID (선택). 기본값: openai `gpt-4o-mini`, anthropic `claude-haiku-4-5` |
-| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | 사용하는 프로바이더의 API 키 |
+| `AI_PROVIDER` | `google`(기본), `openai`, `anthropic` |
+| `AI_MODEL` | 모델 ID (선택). 기본값: google `gemini-flash-latest`, openai `gpt-4o-mini`, anthropic `claude-haiku-4-5` |
+| `GOOGLE_GENERATIVE_AI_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | 사용하는 프로바이더의 API 키 |
 
 ## API
 

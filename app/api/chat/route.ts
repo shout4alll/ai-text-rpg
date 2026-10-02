@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { generateText, Output, type LanguageModel } from "ai";
 import { openai } from "@ai-sdk/openai";
 import { anthropic } from "@ai-sdk/anthropic";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { z } from "zod";
 import type { ChatResponse, Emotion } from "@/types/game";
 
@@ -11,15 +12,24 @@ export const maxDuration = 30; // Vercel 함수 최대 실행 시간(초)
 
 /* -------------------------------------------------------------------------- */
 /*  모델 선택 (.env 로 전환)                                                    */
-/*    AI_PROVIDER = openai(기본) | anthropic                                   */
+/*    AI_PROVIDER = google(기본) | openai | anthropic                          */
 /*    AI_MODEL    = 모델 ID (선택, 미지정 시 아래 기본값)                         */
+/*  API 키: GOOGLE_GENERATIVE_AI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY  */
 /* -------------------------------------------------------------------------- */
+// GOOGLE_GENERATIVE_AI_BASE_URL 은 프록시/게이트웨이용 선택 옵션 (미설정 시 Google 기본 엔드포인트)
+const google = createGoogleGenerativeAI({
+  baseURL: process.env.GOOGLE_GENERATIVE_AI_BASE_URL || undefined,
+});
+
 function getModel(): LanguageModel {
-  const provider = process.env.AI_PROVIDER ?? "openai";
+  const provider = process.env.AI_PROVIDER ?? "google";
   if (provider === "anthropic") {
     return anthropic(process.env.AI_MODEL ?? "claude-haiku-4-5");
   }
-  return openai(process.env.AI_MODEL ?? "gpt-4o-mini");
+  if (provider === "openai") {
+    return openai(process.env.AI_MODEL ?? "gpt-4o-mini");
+  }
+  return google(process.env.AI_MODEL ?? "gemini-flash-latest");
 }
 
 /* -------------------------------------------------------------------------- */
