@@ -19,14 +19,18 @@ app/
   page.tsx            # 화면 분할, input/HP/emotion/animation 상태 관리
   globals.css
 components/
-  Avatar.tsx          # GLB 캐릭터 로드, idle 루프, jump/nod/shake, 감정 블렌드셰이프
+  AvatarStage.tsx     # NEXT_PUBLIC_AVATAR_MODE 에 따라 video / 3d 선택
+  VideoAvatar.tsx     # 실사 영상 클립 아바타 (idle 루프 + 이벤트 클립)
+  Avatar.tsx          # (3d 모드) GLB 캐릭터 로드, idle 루프, jump/nod/shake, 감정 블렌드셰이프
   AvatarBoundary.tsx  # 모델 로드 실패 시 폴백 처리
   CubeAvatar.tsx      # 폴백용 큐브 아바타
   AvatarScene.tsx     # <Canvas>, 조명, 바닥
 lib/avatarConfig.ts   # 모델 URL / 키 / 바닥 높이 설정
 lib/avatarMotion.ts   # jump/nod/shake 모션 샘플링
 scripts/              # 플레이스홀더 GLB 생성기 (npm run gen:placeholder)
-docs/AVATAR_SETUP.md  # 실사형 모델 교체 가이드
+docs/VIDEO_AVATAR.md  # 실사 영상 아바타 / Flow(Veo) 클립 제작 가이드
+docs/AVATAR_SETUP.md  # (3d 모드) GLB 모델 교체 가이드
+public/avatar/        # 캐릭터 이미지 + 클립 (현재 클립은 개발용 임시본)
   ChatPanel.tsx       # 채팅 로그 + 입력 폼
 types/game.ts         # ChatResponse 등 공용 타입
 ```

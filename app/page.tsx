@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import AvatarScene from "@/components/AvatarScene";
+import AvatarStage from "@/components/AvatarStage";
 import ChatPanel from "@/components/ChatPanel";
 import type {
   AvatarAnimation,
@@ -98,7 +98,7 @@ export default function Home() {
     <main className="flex h-screen w-full">
       {/* 좌측: 3D 아바타 */}
       <section className="relative w-1/2 border-r border-slate-800">
-        <AvatarScene
+        <AvatarStage
           animation={animation}
           animationKey={animationKey}
           emotion={emotion}

@@ -6,3 +6,17 @@ html,
 body {
   height: 100%;
 }
+
+/* 영상 클립이 준비되기 전, 정지 이미지에 주는 미세한 호흡 모션 */
+@keyframes avatar-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.015);
+  }
+}
+.avatar-breathe {
+  animation: avatar-breathe 4s ease-in-out infinite;
+}

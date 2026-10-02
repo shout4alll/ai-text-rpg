@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "gen:placeholder": "node scripts/generate-placeholder-avatar.mjs"
+    "gen:placeholder": "node scripts/generate-placeholder-avatar.mjs",
+    "gen:clips": "node scripts/make-placeholder-clips.mjs"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.71",
