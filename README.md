@@ -28,7 +28,7 @@ components/
 lib/avatarConfig.ts   # 모델 URL / 키 / 바닥 높이 설정
 lib/avatarMotion.ts   # jump/nod/shake 모션 샘플링
 scripts/              # 플레이스홀더 GLB 생성기 (npm run gen:placeholder)
-docs/VIDEO_AVATAR.md  # 실사 영상 아바타 / Flow(Veo) 클립 제작 가이드
+docs/VIDEO_AVATAR.md  # 실사 영상 아바타 / AI 영상 도구로 클립 제작하는 가이드
 docs/AVATAR_SETUP.md  # (3d 모드) GLB 모델 교체 가이드
 public/avatar/        # 캐릭터 이미지 + 클립 (현재 클립은 개발용 임시본)
   ChatPanel.tsx       # 채팅 로그 + 입력 폼
