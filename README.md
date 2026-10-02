@@ -30,10 +30,12 @@ components/
 config/ai.ts          # AI 프로바이더/모델 설정 (서버 전용)
 personas/             # ★ 캐릭터 파일 (1명 = JSON 1개) + _shared.json 공통 규칙 + README
 lib/personas/         # 페르소나 파일 검증·로더 (서버 전용)
+config/reactions.ts   # ★ 리액션·마음 리액션·호감도 단계 목록
 lib/avatarConfig.ts   # 모델 URL / 키 / 바닥 높이 설정
 lib/avatarMotion.ts   # jump/nod/shake 모션 샘플링
 scripts/              # 플레이스홀더 GLB 생성기 (npm run gen:placeholder)
 docs/AI_PROVIDERS.md  # 프로바이더·모델 전환 방법, Bedrock 주의사항
+docs/REACTIONS.md     # 화면 리액션 15종, 마음 리액션 10종, 호감도, 영상 추가 방법
 docs/PERSONAS.md      # 멀티 페르소나 구조 / 캐릭터 추가 / 폴백 규칙
 docs/VIDEO_AVATAR.md  # 실사 영상 아바타 / AI 영상 도구로 클립 제작하는 가이드
 docs/AVATAR_SETUP.md  # (3d 모드) GLB 모델 교체 가이드
@@ -57,15 +59,16 @@ AI 프로바이더와 모델은 `config/ai.ts`에서 관리합니다. 현재 **A
 ```json
 {
   "personaId": "character_a",
-  "messages": [{ "role": "user" | "assistant", "content": "..." }],
-  "timeZone": "Asia/Seoul"
+  "messages": [{ "role": "user" | "assistant", "kind": "text" | "reaction" | "return", "content": "...", "at": 1730000000000 }],
+  "timeZone": "Asia/Seoul",
+  "affection": 24
 }
 ```
 
 응답 (Vercel AI SDK `generateText` + `Output.object` 로 스키마 강제):
 
 ```json
-{ "messages": ["말풍선1", "말풍선2"], "emotion": "happy", "animation": "nod" }
+{ "messages": ["말풍선1", "말풍선2"], "reaction": "laugh", "tapback": "love", "affectionDelta": 2, "emotion": "happy", "animation": "jump" }
 ```
 
 - `animation`: `idle | jump | nod | shake`

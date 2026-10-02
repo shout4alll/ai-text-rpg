@@ -8,12 +8,13 @@ export type PersonaId = string;
 export interface PersonaAssets {
   /** 정지 이미지 URL */
   poster: string;
-  /** 영상 클립 폴더 URL (idle / nod / shake / surprised / happy / sad / angry + 확장자) */
-  clipsDir: string;
+  /**
+   * 실제로 존재하는 영상 클립 (이름 → URL). 빌드 시 clips 폴더를 스캔해 자동으로 채운다.
+   * 이름은 config/reactions.ts 의 리액션 id 또는 clips 대체 이름 (idle, nod, shy, love ...)
+   */
+  clips: Record<string, string>;
   /** object-fit: cover 기준점 (CSS object-position) */
   objectPosition: string;
-  /** (선택) 같은 인물의 대체 클립 폴더 */
-  fallbackClipsDir?: string;
   /** (선택) 같은 인물의 대체 이미지 */
   fallbackPoster?: string;
 }
@@ -26,6 +27,7 @@ export interface Persona {
   profile: { age: number; occupation: string; gender: "female" | "male" };
   description: string;
   tags: string[];
+  relationshipType: "romance" | "friendship";
   /** 첫 메시지 (LLM 호출 없이 바로 표시) */
   greeting: string;
   accent: string;

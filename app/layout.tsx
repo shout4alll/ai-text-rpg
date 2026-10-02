@@ -1,9 +1,16 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "우연한 대화",
-  description: "지나가다 우연히 만난 사람들과 나누는 AI 대화",
+  title: "메신저형 AI 페르소나 채팅",
+  description: "정해진 인물과 메신저로 교감하는 AI 채팅",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover", // 노치 영역까지 배경 사용 (safe-area 로 여백 처리)
+  themeColor: "#020617",
 };
 
 export default function RootLayout({

@@ -12,6 +12,7 @@
 | --- | --- |
 | 캐릭터 내용 수정 | 해당 `<id>.json`만 수정 |
 | 캐릭터 추가 | ① `_template` 참고해 `<새id>.json` 생성 ② `public/avatar/personas/<새id>/portrait.jpg` 넣기 ③ `index.ts`에 import 한 줄 + 목록 한 줄 추가 |
+| 리액션 영상 추가 | `public/avatar/personas/<id>/clips/<리액션id>.mp4` 넣고 재배포 (자동 인식, `docs/REACTIONS.md`) |
 | 캐릭터 숨기기 | `index.ts` 목록에서 그 줄을 주석 처리 |
 | 순서 바꾸기 | `index.ts` 목록 순서 변경 (첫 번째가 기본 캐릭터) |
 | 모든 캐릭터 공통 규칙 수정 | `_shared.json`의 `rules` 수정 |
@@ -28,11 +29,12 @@
 | `timezone` | | (선택) 이 인물이 사는 곳의 시간대. 기본 `Asia/Seoul`, 뉴욕이면 `America/New_York`. AI가 현지 시각에 맞게 말함 |
 | `description` | ✔ | 선택 카드 설명 |
 | `tags` | ✔ | 선택 카드 태그 (최대 6개) |
+| `relationshipType` | | (선택) `"romance"`(기본, 연인까지 발전 가능) 또는 `"friendship"`(친구로만, 호감도 단계 이름도 친구용) |
 | `accent` | ✔ | 강조색 `#RRGGBB` |
 | `greeting` | ✔ | 대화방을 처음 열면 상대가 먼저 보내는 첫 메시지. 시간대와 상관없이 어울리는 문장 권장 |
 | `image.portrait` | ✔ | `public/avatar/personas/<id>/` 안의 이미지 파일명 (기본 `portrait.jpg`) |
 | `image.objectPosition` | ✔ | 얼굴이 화면 중앙에 오도록 하는 기준점 (예: `"55% 30%"`, 앞 숫자가 가로 위치) |
-| `image.fallbackClipsDir` / `fallbackPoster` | | (선택) **같은 인물의** 대체 클립 폴더·이미지 |
+| `image.fallbackClipsDir` / `fallbackPoster` | | (선택) **같은 인물의** 대체 영상 폴더·이미지 (인물 폴더에 없는 이름만 여기서 찾음) |
 | `prompt.identity` | | 배경: 어떤 사람인지 |
 | `prompt.personality` | | 성격 |
 | `prompt.speech` | | 말투 규칙 (처음 말투와 친해진 뒤 말투를 함께 적으면 좋음) |
@@ -55,6 +57,7 @@
   "timezone": "Asia/Seoul",
   "description": "선택 카드에 보일 2문장 소개",
   "tags": ["직업", "말투", "분위기"],
+  "relationshipType": "romance",
   "accent": "#38bdf8",
   "greeting": "대화방을 열면 먼저 보내는 첫 메시지",
   "image": { "portrait": "portrait.jpg", "objectPosition": "50% 30%" },

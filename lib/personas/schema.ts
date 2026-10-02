@@ -28,6 +28,8 @@ export const personaFileSchema = z.object({
     }, "timezone 은 IANA 시간대 이름이어야 함 (예: Asia/Seoul)"),
   description: z.string().min(1),
   tags: z.array(z.string()).max(6),
+  /** romance: 연인까지 발전 가능 / friendship: 친구로만 (호감도 단계 이름도 친구용) */
+  relationshipType: z.enum(["romance", "friendship"]).default("romance"),
   accent: z.string().regex(/^#[0-9a-fA-F]{6}$/, "accent 는 #RRGGBB 형식"),
   greeting: z.string().min(1),
   image: z.object({

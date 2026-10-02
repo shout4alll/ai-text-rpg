@@ -1,4 +1,6 @@
 import "server-only";
+import fs from "node:fs";
+import path from "node:path";
 import { z } from "zod";
 import { PERSONA_FILES, SHARED_FILE } from "@/personas";
 import { personaFileSchema, sharedFileSchema, type PersonaFile } from "@/lib/personas/schema";
@@ -53,9 +55,31 @@ export function getPersonaFile(id: string): PersonaFile {
   return p;
 }
 
+const CLIP_EXT = process.env.NEXT_PUBLIC_AVATAR_CLIP_EXT || "mp4";
+
+/** public/<urlDir> 안의 영상 파일을 찾아 { 이름: URL } 로 반환 (없으면 빈 객체) */
+function scanClips(urlDir: string): Record<string, string> {
+  const out: Record<string, string> = {};
+  try {
+    const abs = path.join(process.cwd(), "public", urlDir);
+    for (const f of fs.readdirSync(abs)) {
+      const m = f.match(/^(.+)\.([a-z0-9]+)$/i);
+      if (m && m[2].toLowerCase() === CLIP_EXT) out[m[1]] = `${urlDir}/${f}`;
+    }
+  } catch {
+    /* 폴더 없음 */
+  }
+  return out;
+}
+
 /** 화면용 공개 데이터 (프롬프트 제외) */
 export function toPublic(p: PersonaFile): Persona {
   const base = `/avatar/personas/${p.id}`;
+  // 인물 폴더의 클립이 우선, 없는 이름만 (같은 인물의) 대체 폴더에서 채운다
+  const clips = {
+    ...(p.image.fallbackClipsDir ? scanClips(p.image.fallbackClipsDir) : {}),
+    ...scanClips(`${base}/clips`),
+  };
   return {
     id: p.id,
     name: p.name,
@@ -63,13 +87,13 @@ export function toPublic(p: PersonaFile): Persona {
     profile: { age: p.age, occupation: p.occupation, gender: p.gender },
     description: p.description,
     tags: p.tags,
+    relationshipType: p.relationshipType,
     greeting: p.greeting,
     accent: p.accent,
     assets: {
       poster: `${base}/${p.image.portrait}`,
-      clipsDir: `${base}/clips`,
+      clips,
       objectPosition: p.image.objectPosition,
-      ...(p.image.fallbackClipsDir ? { fallbackClipsDir: p.image.fallbackClipsDir } : {}),
       ...(p.image.fallbackPoster ? { fallbackPoster: p.image.fallbackPoster } : {}),
     },
   };

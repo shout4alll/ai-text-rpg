@@ -5,24 +5,16 @@
 
 ## 동작 방식
 
-- `idle.mp4`가 항상 루프 재생됩니다.
-- 채팅 응답이 오면 `animation` / `emotion`에 맞는 클립이 **한 번** 위에 겹쳐 재생되고, 끝나면 idle로 돌아옵니다.
-- 없는 클립은 자동으로 건너뜁니다. `idle`도 없으면 정지 이미지(`portrait.png`)에 미세한 호흡 모션만 줍니다.
-
-| API 응답 | 재생 클립 |
-| --- | --- |
-| `animation: nod` | `nod` |
-| `animation: shake` | `shake` |
-| `animation: jump` | `surprised` (emotion이 `happy`면 `happy`) |
-| `animation: idle` + emotion | `happy` / `sad` / `angry` / `surprised` (neutral이면 없음) |
+- `idle` 영상이 항상 반복 재생됩니다. 없으면 정지 이미지에 미세한 호흡 모션만 줍니다.
+- 답장이 오면 AI가 고른 **화면 리액션**(15종)에 맞는 영상을 한 번 재생하고 `idle`로 돌아옵니다.
+- 영상이 없는 리액션은 화면 움직임과 효과(하트, 💢 등)로 대신합니다.
+- **영상은 자동 인식됩니다.** 빌드할 때 `public/avatar/personas/<id>/clips/`를 스캔해서 실제로 있는 파일만 씁니다. 그래서 없는 파일을 요청하는 404가 생기지 않습니다.
+- 리액션 목록과 영상 이름 규칙은 **`docs/REACTIONS.md`** 를 보세요.
 
 ## 필요한 클립 (`public/avatar/personas/<캐릭터id>/clips/`)
 
-캐릭터별 폴더 구조와 폴백 규칙은 `docs/PERSONAS.md` 참고.
-
-`idle`, `nod`, `shake`, `surprised`, `happy`, `sad`, `angry` — 각각 `.mp4` (H.264, 무음).
-**`public/avatar/clips/`의 `idle/nod/shake/surprised`(character_a 폴백용)는 이미지를 확대·이동시킨 개발용 임시 클립입니다.** 표정이 바뀌지 않으니 실제 클립으로 같은 파일명으로 덮어쓰세요.
-(임시 클립 재생성: `npm run gen:clips`, ffmpeg 필요)
+파일 이름은 리액션 id입니다: `idle`, `smile`, `laugh`, `nod`, `shake`, `shy`, `love`, `pout`, `surprised`, `sad`, `touched`, `thinking`, `excited`, `comfort`, `sleepy` (+ 확장자).
+예전 이름인 `happy`, `angry`도 대체 순서에 포함되어 있어 그대로 쓸 수 있습니다.
 
 ## 영상 생성 도구는 아무거나 괜찮습니다
 
@@ -65,7 +57,16 @@ ffmpeg -i idle_raw.mp4 -filter_complex "[0:v]split[a][b];[b]reverse[r];[a][r]con
 | surprised | Her eyes widen and eyebrows rise in sudden surprise, mouth slightly open, leaning back a little, then she relaxes back to the exact starting pose. |
 | happy | She bursts into a warm laugh, eyes crinkling with joy, then settles back to the exact starting pose. |
 | sad | Her smile fades into a sad, downcast expression with lowered eyes, then she slowly returns to the exact starting pose. |
-| angry | Her smile turns into an annoyed frown with furrowed brows and a short irritated glance, then she returns to the exact starting pose. |
+| angry / pout | Her smile turns into a cute, pouty sulk with a slight frown, then she returns to the exact starting pose. |
+| smile | She smiles softly and warmly at the camera, then returns to the exact starting pose. |
+| laugh | She laughs out loud naturally, shoulders shaking a little, then settles back to the exact starting pose. |
+| shy | She looks down shyly with a bashful smile, tucking her hair behind her ear, then returns to the exact starting pose. |
+| love | Her eyes soften and she smiles tenderly, a little flustered with affection, then returns to the exact starting pose. |
+| touched | Her eyes glisten as she is moved, hand on her chest, then she returns to the exact starting pose. |
+| thinking | She tilts her head and looks up thoughtfully, then returns to the exact starting pose. |
+| excited | She lights up and does a small excited cheer, then returns to the exact starting pose. |
+| comfort | She gives a gentle, reassuring nod with a warm look, then returns to the exact starting pose. |
+| sleepy | She yawns softly and rubs her eyes, then returns to the exact starting pose. |
 
 ## 후처리 (무음 + 용량 축소)
 
