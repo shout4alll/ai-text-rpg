@@ -1,13 +1,22 @@
 # 멀티 페르소나 시스템
 
-## 캐릭터 (모두 가상 인물, 판타지 방탈출 TRPG의 GM 역할)
+## 캐릭터 (모두 현실 세계의 평범한 가상 인물, 판타지 방탈출 TRPG의 GM 역할)
 
-| id | 이름 | 나이·직업 | 말투 | 난이도 |
-| --- | --- | --- | --- | --- |
-| `character_a` | 서하린 | 29 · 배우(연예인) | 존댓말 | 쉬움 |
-| `character_b` | 윤지아 | 33 · 주부(전직 사서) | 반말 | 어려움 |
-| `character_c` | 한소율 | 27 · 직장인(게임 기획자) | 친근한 반말 | 보통 |
-| `character_d` | 정다온 | 22 · 대학생(방탈출 동아리 회장) | 해요체 | 보통 |
+| id | 이름 | 성별 | 나이·직업 | 말투 | 난이도 |
+| --- | --- | --- | --- | --- | --- |
+| `character_a` | 서하린 | 여 | 29 · 배우(연예인) | 존댓말 | 쉬움 |
+| `character_b` | 윤지아 | 여 | 33 · 주부(전직 사서) | 반말 | 어려움 |
+| `character_c` | 한소율 | 여 | 27 · 직장인(게임 기획자) | 친근한 반말 | 보통 |
+| `character_d` | 정다온 | 여 | 22 · 대학생(방탈출 동아리 회장) | 해요체 | 보통 |
+| `character_e` | 박준호 | 남 | 34 · 자영업자(치킨집 사장) | 친근한 해요체 | 쉬움 |
+| `character_f` | 이수정 | 여 | 45 · 독립서점 주인 | 차분한 존댓말 | 보통 |
+| `character_g` | 최윤서 | 여 | 47 · IT 기업 임원 | 비즈니스 존댓말 | 어려움 |
+| `character_h` | 김도현 | 남 | 29 · 프리랜서 인테리어 디자이너 | 다정한 해요체 | 쉬움 |
+| `character_i` | 다니엘 브룩스 | 남 | 37 · 뉴욕 호텔 컨시어지 | 유쾌한 해요체 | 보통 |
+| `character_j` | 루카스 마르탱 | 남 | 31 · 프랑스 출신 여행 사진작가 | 급한 반말 | 보통 (시간 압박 연출) |
+| `character_k` | 강민재 | 남 | 26 · 인디밴드 기타리스트 | 과묵한 반말 | 보통 |
+
+선택 화면에서 전체 / 여성 / 남성으로 필터할 수 있습니다. 해외 출신 캐릭터도 한국어에 능숙한 설정이라 응답은 한국어로 나오고, 외국인 말투를 흉내 내지 않도록 지시해 두었습니다.
 
 모든 캐릭터에 공통 규칙(`PERSONA_COMMON_RULES`)이 붙습니다.
 - 직업은 말투와 비유에 자연스럽게 묻어나는 정도로만 씁니다.
@@ -38,6 +47,7 @@ public/avatar/personas/
   character_b/  portrait.webp   clips/...
   character_c/  portrait.jpg    clips/...
   character_d/  portrait.jpg    clips/...
+  character_e ~ character_k/  portrait.jpg    clips/...
 ```
 
 ## 폴백 순서 (파일이 없거나 로딩 중일 때)
@@ -52,7 +62,7 @@ public/avatar/personas/
 
 ## 캐릭터 추가하기
 
-1. `config/personas.ts`의 `PERSONA_IDS`에 id 추가 → `PERSONAS`에 메타데이터 추가
+1. `config/personas.ts`의 `PERSONA_IDS`에 id 추가 → `PERSONAS`에 메타데이터 추가 (`profile.gender`는 필터에 쓰임)
 2. `config/personaPrompts.ts`에 같은 id로 프롬프트 추가 (빠뜨리면 타입 에러로 알려줌)
 3. `public/avatar/personas/<id>/`에 portrait 이미지와 `clips/` 배치
 4. `objectPosition`으로 얼굴이 왼쪽 패널 중앙에 오도록 조정 (예: `"55% 30%"`)

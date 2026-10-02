@@ -1,7 +1,15 @@
 "use client";
 
+import { useState } from "react";
 import PersonaPortrait from "@/components/PersonaPortrait";
 import type { Persona, PersonaId } from "@/config/personas";
+
+type Filter = "all" | "female" | "male";
+const FILTERS: { id: Filter; label: string }[] = [
+  { id: "all", label: "전체" },
+  { id: "female", label: "여성" },
+  { id: "male", label: "남성" },
+];
 
 interface PersonaSelectorProps {
   personas: Persona[];
@@ -20,6 +28,11 @@ export default function PersonaSelector({
   onClose,
   hasProgress,
 }: PersonaSelectorProps) {
+  const [filter, setFilter] = useState<Filter>("all");
+  const visible = personas.filter((p) => filter === "all" || p.profile.gender === filter);
+  const count = (f: Filter) =>
+    f === "all" ? personas.length : personas.filter((p) => p.profile.gender === f).length;
+
   return (
     <div
       className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/95 backdrop-blur-sm"
@@ -48,8 +61,28 @@ export default function PersonaSelector({
           )}
         </div>
 
+        <div className="mb-5 flex gap-2" role="tablist" aria-label="캐릭터 필터">
+          {FILTERS.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              role="tab"
+              aria-selected={filter === f.id}
+              data-filter={f.id}
+              onClick={() => setFilter(f.id)}
+              className={`rounded-full px-3 py-1 text-sm transition ${
+                filter === f.id
+                  ? "bg-slate-100 font-medium text-slate-900"
+                  : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+              }`}
+            >
+              {f.label} <span className="opacity-60">{count(f.id)}</span>
+            </button>
+          ))}
+        </div>
+
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {personas.map((p) => {
+          {visible.map((p) => {
             const selected = p.id === currentId;
             return (
               <button
