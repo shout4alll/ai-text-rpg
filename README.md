@@ -1,7 +1,7 @@
-# 우연한 대화 (AI 페르소나 채팅)
+# 메신저형 AI 페르소나 채팅
 
-지나가다 우연히 마주친 사람들과 나누는 영화 같은 AI 채팅 앱입니다. Next.js 14 (App Router) + Tailwind + Vercel AI SDK로 만들었습니다.
-좌측에는 인물(실사 영상 아바타), 우측에는 채팅창이 있고, 캐릭터는 `personas/*.json` 파일로 관리합니다.
+정해진 인물들과 메신저로 대화하며 교감하고 관계를 키워 가는 AI 채팅 앱입니다. Next.js 14 (App Router) + Tailwind + Vercel AI SDK로 만들었습니다.
+좌측에는 답장에 맞춰 반응하는 인물 사진·영상, 우측에는 메신저가 있고, 캐릭터는 `personas/*.json` 파일로 관리합니다.
 
 ## 실행
 
@@ -57,16 +57,17 @@ AI 프로바이더와 모델은 `config/ai.ts`에서 관리합니다. 현재 **A
 ```json
 {
   "personaId": "character_a",
-  "messages": [{ "role": "user" | "assistant", "content": "..." }]
+  "messages": [{ "role": "user" | "assistant", "content": "..." }],
+  "timeZone": "Asia/Seoul"
 }
 ```
 
 응답 (Vercel AI SDK `generateText` + `Output.object` 로 스키마 강제):
 
 ```json
-{ "text": "...", "emotion": "happy", "animation": "nod" }
+{ "messages": ["말풍선1", "말풍선2"], "emotion": "happy", "animation": "nod" }
 ```
 
 - `animation`: `idle | jump | nod | shake`
 - `emotion`: `neutral | happy | sad | angry | surprised` (LLM은 기쁨/슬픔/놀람/분노/평온으로 출력, 서버에서 변환)
-- 최근 30개 메시지만 컨텍스트로 사용하고, 메시지당 1000자로 제한합니다.
+- 최근 40개 메시지만 컨텍스트로 사용하고, 메시지당 1000자로 제한합니다.

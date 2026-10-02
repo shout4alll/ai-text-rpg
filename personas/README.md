@@ -1,6 +1,6 @@
 # 페르소나 파일 가이드
 
-**캐릭터 1명 = JSON 파일 1개**입니다. 캐릭터의 이름, 소개, 첫 메시지, 성격, 말투, 만남 상황, 이미지 설정이 모두 `personas/<id>.json` 한 파일에 들어 있습니다.
+**캐릭터 1명 = JSON 파일 1개**입니다. 캐릭터의 이름, 상태메시지, 첫 메시지, 성격, 말투, 일상, 관계 발전 방식, 이미지 설정이 모두 `personas/<id>.json` 한 파일에 들어 있습니다.
 코드를 몰라도 이 파일만 고치면 캐릭터가 바뀝니다.
 
 - 이 폴더는 `public/`이 아니라서 브라우저에서 열 수 없습니다. 프롬프트(성격·말투 지시)는 서버에서만 읽힙니다.
@@ -24,19 +24,21 @@
 | `name` | ✔ | 이름 |
 | `gender` | 필터 | `"female"` 또는 `"male"` |
 | `age`, `occupation` | ✔ | 나이(숫자), 직업 |
-| `title` | ✔ | 만남을 한 줄로 표현한 부제 (예: "비 오는 골목에서 우산을 씌워 준 사람") |
+| `status` | ✔ | 메신저 상태메시지 (예: "오늘도 바삭하게, 마음은 따뜻하게") |
+| `timezone` | | (선택) 이 인물이 사는 곳의 시간대. 기본 `Asia/Seoul`, 뉴욕이면 `America/New_York`. AI가 현지 시각에 맞게 말함 |
 | `description` | ✔ | 선택 카드 설명 |
 | `tags` | ✔ | 선택 카드 태그 (최대 6개) |
 | `accent` | ✔ | 강조색 `#RRGGBB` |
-| `greeting` | ✔ | 첫 메시지. AI 호출 없이 바로 표시되고, 서버 프롬프트에도 들어가 대화가 이어짐 |
+| `greeting` | ✔ | 대화방을 처음 열면 상대가 먼저 보내는 첫 메시지. 시간대와 상관없이 어울리는 문장 권장 |
 | `image.portrait` | ✔ | `public/avatar/personas/<id>/` 안의 이미지 파일명 (기본 `portrait.jpg`) |
 | `image.objectPosition` | ✔ | 얼굴이 화면 중앙에 오도록 하는 기준점 (예: `"55% 30%"`, 앞 숫자가 가로 위치) |
 | `image.fallbackClipsDir` / `fallbackPoster` | | (선택) **같은 인물의** 대체 클립 폴더·이미지 |
 | `prompt.identity` | | 배경: 어떤 사람인지 |
 | `prompt.personality` | | 성격 |
-| `prompt.speech` | | 말투 규칙 (처음 만난 사이이므로 첫 말투와 친해진 뒤 말투를 함께 적으면 좋음) |
+| `prompt.speech` | | 말투 규칙 (처음 말투와 친해진 뒤 말투를 함께 적으면 좋음) |
 | `prompt.chatStyle` | | 대화할 때의 태도·습관 |
-| `prompt.scene` | | **지금 상황 + 유저와 우연히 만난 상황** (장소, 시간, 날씨, 하던 일) |
+| `prompt.lifestyle` | | 평소 일상 (시간대별로 무엇을 하는지, 바쁜 시간 등) |
+| `prompt.relationship` | | **관계가 어떻게 발전하는지와 애정 표현 방식.** 연애로 발전하지 않게 하려면 여기에 적기 (예: "기혼이므로 연애 감정으로 발전하지 않는다") |
 | `prompt.examples` | | 말투 예시 1개 이상 (`유저: "…" → 답장` 형식 권장. AI가 그대로 베끼지 않도록 지시됨) |
 | `prompt.temperature` | | (선택) 응답 다양성 0~2. 기본 1.0, 차분한 캐릭터는 0.75~0.85 |
 
@@ -49,18 +51,20 @@
   "gender": "female",
   "age": 30,
   "occupation": "직업",
-  "title": "어디서 어떻게 우연히 만난 사람인지 한 줄",
+  "status": "상태메시지",
+  "timezone": "Asia/Seoul",
   "description": "선택 카드에 보일 2문장 소개",
   "tags": ["직업", "말투", "분위기"],
   "accent": "#38bdf8",
-  "greeting": "처음 마주친 순간 건네는 첫 마디",
+  "greeting": "대화방을 열면 먼저 보내는 첫 메시지",
   "image": { "portrait": "portrait.jpg", "objectPosition": "50% 30%" },
   "prompt": {
     "identity": "어떤 사람인지 (가상 인물)",
     "personality": "성격",
     "speech": "말투",
     "chatStyle": "대화 습관",
-    "scene": "지금 장소·시간·상황, 그리고 유저와 우연히 만난 계기",
+    "lifestyle": "평소 일상 (출근, 바쁜 시간, 쉬는 날)",
+    "relationship": "관계가 깊어지는 방식, 애정 표현 방식 (연애 가능 여부 포함)",
     "examples": ["유저: \"…\" → 답장 예시"],
     "temperature": 0.9
   }

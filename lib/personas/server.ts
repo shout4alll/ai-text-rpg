@@ -59,7 +59,7 @@ export function toPublic(p: PersonaFile): Persona {
   return {
     id: p.id,
     name: p.name,
-    title: p.title,
+    status: p.status,
     profile: { age: p.age, occupation: p.occupation, gender: p.gender },
     description: p.description,
     tags: p.tags,

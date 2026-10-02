@@ -12,7 +12,20 @@ export const personaFileSchema = z.object({
   gender: z.enum(["female", "male"]),
   age: z.number().int().min(1).max(120),
   occupation: z.string().min(1),
-  title: z.string().min(1),
+  /** 메신저 상태메시지 */
+  status: z.string().min(1),
+  /** 이 인물이 사는 곳의 시간대 (IANA, 예: Asia/Seoul, America/New_York) */
+  timezone: z
+    .string()
+    .default("Asia/Seoul")
+    .refine((tz) => {
+      try {
+        new Intl.DateTimeFormat("ko-KR", { timeZone: tz });
+        return true;
+      } catch {
+        return false;
+      }
+    }, "timezone 은 IANA 시간대 이름이어야 함 (예: Asia/Seoul)"),
   description: z.string().min(1),
   tags: z.array(z.string()).max(6),
   accent: z.string().regex(/^#[0-9a-fA-F]{6}$/, "accent 는 #RRGGBB 형식"),
@@ -31,7 +44,10 @@ export const personaFileSchema = z.object({
     personality: z.string().min(1),
     speech: z.string().min(1),
     chatStyle: z.string().min(1),
-    scene: z.string().min(1),
+    /** 평소 일상 (시간대별로 무엇을 하는지) */
+    lifestyle: z.string().min(1),
+    /** 관계가 어떻게 발전하는지, 애정·친밀감 표현 방식 */
+    relationship: z.string().min(1),
     examples: z.array(z.string()).min(1),
     temperature: z.number().min(0).max(2).optional(),
   }),

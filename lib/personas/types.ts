@@ -21,8 +21,8 @@ export interface PersonaAssets {
 export interface Persona {
   id: PersonaId;
   name: string;
-  /** 만남을 한 줄로 표현한 부제 */
-  title: string;
+  /** 메신저 상태메시지 */
+  status: string;
   profile: { age: number; occupation: string; gender: "female" | "male" };
   description: string;
   tags: string[];

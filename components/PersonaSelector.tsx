@@ -17,8 +17,8 @@ interface PersonaSelectorProps {
   onSelect: (id: PersonaId) => void;
   /** 지정하면 닫기 버튼 표시 (게임 진행 중 교체할 때) */
   onClose?: () => void;
-  /** 진행 중인 대화가 있으면 교체 시 초기화된다는 안내 표시 */
-  hasProgress?: boolean;
+  /** 대화방별 마지막 메시지 (대화한 적 있는 사람만) */
+  previews?: Record<string, string>;
 }
 
 export default function PersonaSelector({
@@ -26,7 +26,7 @@ export default function PersonaSelector({
   currentId,
   onSelect,
   onClose,
-  hasProgress,
+  previews = {},
 }: PersonaSelectorProps) {
   const [filter, setFilter] = useState<Filter>("all");
   const visible = personas.filter((p) => filter === "all" || p.profile.gender === filter);
@@ -44,11 +44,10 @@ export default function PersonaSelector({
         <div className="mb-6 flex items-start justify-between gap-4">
           <div>
             <h1 id="persona-selector-title" className="text-2xl font-bold">
-              오늘, 누구와 마주칠까요?
+              누구와 이야기해 볼까요?
             </h1>
             <p className="mt-1 text-sm text-slate-400">
-              지나가다 우연히 마주친 사람들이에요. 마음이 가는 인연에게 말을 걸어 보세요.
-              {hasProgress && " 다른 사람을 고르면 지금 대화는 처음부터 다시 시작돼요."}
+              메시지로 천천히 알아 가는 사람들이에요. 대화는 사람마다 따로 저장돼서 언제든 이어서 할 수 있어요.
             </p>
           </div>
           {onClose && (
@@ -105,10 +104,15 @@ export default function PersonaSelector({
                     <p className="truncate text-xs text-slate-300">
                       {p.profile.age}세 · {p.profile.occupation}
                     </p>
-                    <p className="mt-0.5 text-xs" style={{ color: p.accent }}>
-                      {p.title}
+                    <p className="mt-0.5 truncate text-xs" style={{ color: p.accent }}>
+                      {p.status}
                     </p>
                   </div>
+                  {previews[p.id] && !selected && (
+                    <span className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-xs text-white">
+                      대화 중
+                    </span>
+                  )}
                   {selected && (
                     <span
                       className="absolute right-2 top-2 rounded-full px-2 py-0.5 text-xs font-medium text-slate-950"
@@ -119,7 +123,13 @@ export default function PersonaSelector({
                   )}
                 </div>
                 <div className="flex flex-1 flex-col gap-3 p-3">
-                  <p className="text-sm text-slate-300">{p.description}</p>
+                  {previews[p.id] ? (
+                    <p className="line-clamp-2 rounded-lg bg-slate-800/70 px-2.5 py-1.5 text-sm text-slate-200" data-preview>
+                      {previews[p.id]}
+                    </p>
+                  ) : (
+                    <p className="text-sm text-slate-300">{p.description}</p>
+                  )}
                   <div className="mt-auto flex flex-wrap gap-1.5">
                     {p.tags.map((t) => (
                       <span key={t} className="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-300">
