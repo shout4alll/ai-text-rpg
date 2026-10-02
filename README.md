@@ -19,18 +19,24 @@ app/
   page.tsx            # 화면 분할, input/HP/emotion/animation 상태 관리
   globals.css
 components/
+  PersonaSelector.tsx # 캐릭터 선택 화면 / 교체 모달
+  PersonaPortrait.tsx # 캐릭터 이미지 + 폴백
   AvatarStage.tsx     # NEXT_PUBLIC_AVATAR_MODE 에 따라 video / 3d 선택
   VideoAvatar.tsx     # 실사 영상 클립 아바타 (idle 루프 + 이벤트 클립)
   Avatar.tsx          # (3d 모드) GLB 캐릭터 로드, idle 루프, jump/nod/shake, 감정 블렌드셰이프
   AvatarBoundary.tsx  # 모델 로드 실패 시 폴백 처리
   CubeAvatar.tsx      # 폴백용 큐브 아바타
   AvatarScene.tsx     # <Canvas>, 조명, 바닥
+config/personas.ts    # 캐릭터 공개 메타데이터 (이름, 인사말, 자원 경로)
+config/personaPrompts.ts # 캐릭터별 시스템 프롬프트 (서버 전용)
 lib/avatarConfig.ts   # 모델 URL / 키 / 바닥 높이 설정
 lib/avatarMotion.ts   # jump/nod/shake 모션 샘플링
 scripts/              # 플레이스홀더 GLB 생성기 (npm run gen:placeholder)
+docs/PERSONAS.md      # 멀티 페르소나 구조 / 캐릭터 추가 / 폴백 규칙
 docs/VIDEO_AVATAR.md  # 실사 영상 아바타 / AI 영상 도구로 클립 제작하는 가이드
 docs/AVATAR_SETUP.md  # (3d 모드) GLB 모델 교체 가이드
-public/avatar/        # 캐릭터 이미지 + 클립 (현재 클립은 개발용 임시본)
+public/avatar/personas/  # 캐릭터별 이미지 + clips/
+public/avatar/clips/     # character_a 폴백용 임시 클립
   ChatPanel.tsx       # 채팅 로그 + 입력 폼
 types/game.ts         # ChatResponse 등 공용 타입
 ```
@@ -51,6 +57,7 @@ types/game.ts         # ChatResponse 등 공용 타입
 
 ```json
 {
+  "personaId": "character_a",
   "messages": [{ "role": "user" | "assistant", "content": "..." }],
   "hp": 80,
   "maxHp": 100

@@ -26,15 +26,5 @@ export const FLOOR_Y = -0.7;
 export const AVATAR_MODE: "video" | "3d" =
   process.env.NEXT_PUBLIC_AVATAR_MODE === "3d" ? "3d" : "video";
 
-/** 클립 폴더 (idle / nod / shake / surprised / happy / sad / angry + 확장자) */
-export const AVATAR_CLIPS_BASE =
-  process.env.NEXT_PUBLIC_AVATAR_CLIPS_BASE || "/avatar/clips";
+/** 클립 확장자 (클립 폴더·이미지 경로는 페르소나별로 config/personas.ts 에서 지정) */
 export const AVATAR_CLIP_EXT = process.env.NEXT_PUBLIC_AVATAR_CLIP_EXT || "mp4";
-
-/** 클립이 없거나 로딩 중일 때 보여줄 정지 이미지 */
-export const AVATAR_POSTER_URL =
-  process.env.NEXT_PUBLIC_AVATAR_POSTER_URL || "/avatar/portrait.png";
-
-/** object-fit: cover 시 얼굴이 잘리지 않도록 하는 기준점 */
-export const AVATAR_OBJECT_POSITION =
-  process.env.NEXT_PUBLIC_AVATAR_OBJECT_POSITION || "64% 30%";

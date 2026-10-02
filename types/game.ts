@@ -13,6 +13,8 @@ export interface ChatMessage {
   id: number;
   role: "user" | "ai";
   text: string;
+  /** true 면 화면에만 표시하고 API 히스토리에는 보내지 않음 (예: 캐릭터 인사말) */
+  local?: boolean;
 }
 
 export interface CharacterState {

@@ -16,10 +16,12 @@
 | `animation: jump` | `surprised` (emotion이 `happy`면 `happy`) |
 | `animation: idle` + emotion | `happy` / `sad` / `angry` / `surprised` (neutral이면 없음) |
 
-## 필요한 클립 (`public/avatar/clips/`)
+## 필요한 클립 (`public/avatar/personas/<캐릭터id>/clips/`)
+
+캐릭터별 폴더 구조와 폴백 규칙은 `docs/PERSONAS.md` 참고.
 
 `idle`, `nod`, `shake`, `surprised`, `happy`, `sad`, `angry` — 각각 `.mp4` (H.264, 무음).
-**현재 들어 있는 `idle/nod/shake/surprised`는 이미지를 확대·이동시킨 개발용 임시 클립입니다.** 표정이 바뀌지 않으니 실제 클립으로 같은 파일명으로 덮어쓰세요.
+**`public/avatar/clips/`의 `idle/nod/shake/surprised`(character_a 폴백용)는 이미지를 확대·이동시킨 개발용 임시 클립입니다.** 표정이 바뀌지 않으니 실제 클립으로 같은 파일명으로 덮어쓰세요.
 (임시 클립 재생성: `npm run gen:clips`, ffmpeg 필요)
 
 ## 영상 생성 도구는 아무거나 괜찮습니다
@@ -82,10 +84,7 @@ ffmpeg -i idle_raw.mp4 -an -vf scale=720:-2 -c:v libx264 -crf 23 -pix_fmt yuv420
 | 변수 | 기본값 | 설명 |
 | --- | --- | --- |
 | `NEXT_PUBLIC_AVATAR_MODE` | `video` | `video` 또는 `3d` |
-| `NEXT_PUBLIC_AVATAR_CLIPS_BASE` | `/avatar/clips` | 클립 폴더 (외부 스토리지 URL 가능, CORS 필요) |
 | `NEXT_PUBLIC_AVATAR_CLIP_EXT` | `mp4` | 클립 확장자 |
-| `NEXT_PUBLIC_AVATAR_POSTER_URL` | `/avatar/portrait.png` | 정지 이미지 폴백 |
-| `NEXT_PUBLIC_AVATAR_OBJECT_POSITION` | `64% 30%` | 얼굴이 잘리지 않게 하는 기준점 |
 
 값은 빌드 시점에 반영되므로 변경 후 재배포하세요.
 

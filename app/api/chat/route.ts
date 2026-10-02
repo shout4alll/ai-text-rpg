@@ -5,6 +5,13 @@ import { anthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { z } from "zod";
 import type { ChatResponse, Emotion } from "@/types/game";
+import {
+  DEFAULT_PERSONA_ID,
+  getPersona,
+  isPersonaId,
+  type Persona,
+} from "@/config/personas";
+import { PERSONA_PROMPTS, type PersonaPrompt } from "@/config/personaPrompts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,6 +57,8 @@ const requestSchema = z.object({
   // 현재 HP를 GM에게 알려 판정/피해량 계산에 쓰도록 함 (선택)
   hp: z.number().int().min(0).max(1000).optional(),
   maxHp: z.number().int().min(1).max(1000).optional(),
+  // 선택한 캐릭터. 미지정 시 기본 캐릭터, 알 수 없는 값이면 400
+  personaId: z.string().max(64).optional(),
 });
 
 /** LLM이 반환해야 하는 JSON 스키마 (한국어 감정 라벨) */
@@ -99,11 +108,21 @@ function extractRecentOpenings(
     .filter(Boolean);
 }
 
-function buildInstructions(
-  hp?: number,
-  maxHp?: number,
-  recentOpenings: string[] = []
-): string {
+interface InstructionContext {
+  persona: Persona;
+  prompt: PersonaPrompt;
+  hp?: number;
+  maxHp?: number;
+  recentOpenings?: string[];
+}
+
+function buildInstructions({
+  persona,
+  prompt,
+  hp,
+  maxHp,
+  recentOpenings = [],
+}: InstructionContext): string {
   const hpLine =
     hp !== undefined
       ? `현재 유저 HP: ${hp}/${maxHp ?? 100}.`
@@ -116,8 +135,18 @@ function buildInstructions(
           .join(", ")}. 이와 같거나 비슷한 문구·구조로 시작하지 마라.`
       : "";
 
-  return `너는 "판타지 방탈출 TRPG"의 게임 마스터(GM)이자, 화면에 보이는 3D 가이드 아바타다.
+  const examples = prompt.examples.map((e) => `- ${e}`).join("\n");
+
+  return `너는 "판타지 방탈출 TRPG"의 게임 마스터(GM)이자, 화면에 보이는 가이드 캐릭터 "${persona.name}"(${persona.title})이다.
 너는 대본을 읽는 NPC가 아니라 즉흥 연기에 능한 노련한 GM이다. 유저가 방금 한 말·행동 하나하나에 반응하며 이야기를 매번 새로 만들어낸다.
+
+[캐릭터: ${persona.name}]
+- 정체: ${prompt.identity}
+- 성격: ${prompt.personality}
+- 말투: ${prompt.speech}
+- 진행 스타일: ${prompt.gmStyle}
+- 이 게임은 네가 다음 첫 대사로 시작했다: "${persona.greeting}" 이 장면과 설정에서 자연스럽게 이어가라.
+- 성격과 말투는 모든 턴에서 일관되게 유지해라. 아래 공통 규칙과 겹칠 때, 말투·성격·진행 성향은 캐릭터 설정이 우선이고 출력 형식·hp_change 범위·보안 규칙은 공통 규칙이 우선이다.
 
 [최우선 원칙: 유저의 마지막 입력에 반응하라]
 - 응답의 첫 문장은 반드시 유저가 방금 한 말이나 행동을 직접 받아쳐야 한다. 유저 입력과 무관한 고정 대사, 상투적인 오프닝, 매 턴 반복되는 문장 틀을 쓰지 마라.
@@ -128,7 +157,7 @@ function buildInstructions(
 [유저 입력 유형별 대응]
 - 일반적인 탐색·행동: 합리적이면 결과를 구체적으로 묘사하고 진전시켜라. 단서와 어긋나거나 무모하면 재치 있게 실패시켜라.
 - 엉뚱하거나 황당한 말·행동(예: 벽에게 인사하기, 춤추기, 노래 부르기): 거절하거나 훈계하지 마라. "좋아, 그렇다면"의 태도로 세계관 안에서 받아주고, 예상 밖의 재미있는 결과로 되돌려줘라. 때로는 그 행동이 뜻밖의 단서나 해법이 되기도 한다.
-- 반말·욕설 섞인 투정·장난·농담: 유저의 말투에 맞춰 GM의 어조를 조절해라. 반말에는 너무 딱딱하지 않게, 친근하고 능청스러운 톤으로 받아쳐라. 장난에는 장난으로 맞장구쳐라. 수위가 지나친 욕설이나 불쾌한 내용은 탑의 마법이 "소리를 삼켜버린다" 같은 식으로 은근히 넘기고 이야기로 돌아와라.
+- 반말·욕설 섞인 투정·장난·농담: 유저의 말투에 반응하되, 네 캐릭터 고유의 말투(존댓말/반말 등)는 바꾸지 마라. 장난에는 캐릭터답게 맞받아쳐라. 수위가 지나친 욕설이나 불쾌한 내용은 탑의 마법이 "소리를 삼켜버린다" 같은 식으로 은근히 넘기고 이야기로 돌아와라.
 - 질문(예: "여기가 어디야?", "뭘 해야 해?"): 정보와 힌트를 주되, 정답을 다 알려주지는 마라. 아바타로서 직접 대답해도 좋다.
 - 짧은 입력("응", "ㅇㅇ", "몰라", "…"): 유저의 망설임을 읽고, 분위기를 환기하거나 두세 가지 선택지를 가볍게 제시해라.
 - 입력이 이전 상황과 모순되면(없는 아이템을 쓰려 하거나 이미 한 일을 또 하는 경우), 세계관 안에서 자연스럽게 짚어주되 재치 있게 처리해라.
@@ -137,7 +166,7 @@ function buildInstructions(
 [문체와 다양성]
 - 매번 다른 리듬과 구조로 써라. 어떤 턴은 짧고 경쾌하게(1~2문장), 어떤 턴은 분위기 있게(3~4문장). 항상 같은 길이·문형을 쓰지 마라.
 - 감탄사나 의성어로 시작하는 패턴을 연속해서 쓰지 마라. 대사, 묘사, 질문, 효과음, 아바타의 혼잣말 등 다양하게 시작해라.
-- 아바타 GM은 호기심 많고 약간 짓궂으며 유저 편인 가이드다. 유저를 놀리되 애정이 느껴져야 하고, 위기 때는 같이 긴장해라.
+- 너(${persona.name})의 성격이 매 턴 드러나게 해라. 유저를 대하는 태도와 힌트의 양은 캐릭터의 진행 스타일을 따른다.
 - 스포일러성 정답 공개는 피하고, 매 턴 끝에는 다음 행동을 부르는 열린 여지(단서, 소리, 선택지, 질문)를 남겨라. 단, 매번 "어떻게 할래?" 같은 같은 질문 문구로 끝내지 마라.
 
 [세계관/진행]
@@ -158,10 +187,8 @@ function buildInstructions(
 - animation: jump(놀람·기쁨·위험 발생), nod(성공·긍정·동의), shake(실패·거절·부정), idle(차분한 설명).
 - text의 어조와 emotion/animation/hp_change는 서로 모순되지 않아야 한다. (예: 함정에 걸렸는데 기쁨 + 회복은 안 된다.)
 
-[분위기 참고 예시 — 말투와 반응의 결을 보여주기 위한 것이며, 문장을 그대로 따라 쓰지 마라]
-- 유저: "야 문 열어" → 문이 퉁명스럽게 삐걱대며 "예의 좀 갖추지?" 하는 듯 자물쇠가 철컥 소리를 낸다. 열쇠 구멍 속에서 작은 불빛이 깜빡인다…
-- 유저: "벽한테 노래 불러줌" → 벽 틈에서 박자에 맞춰 먼지가 춤추기 시작한다. 세 번째 음에서 돌 하나가 '딩' 하고 울린다. 음이 열쇠일지도?
-- 유저: "ㅇㅇ" → (아바타가 고개를 갸웃) 말수가 줄었네? 좋아, 그럼 내가 귀띔해 줄게. 오른쪽엔 낡은 책장, 왼쪽엔 이상하게 따뜻한 항아리가 있어.
+[${persona.name}의 말투 예시 — 말투와 반응의 결을 보여주기 위한 것이며, 문장을 그대로 따라 쓰지 마라]
+${examples}
 
 [출력 규칙]
 - 응답은 반드시 지정된 JSON 스키마(text, emotion, animation, hp_change)로만 출력해라. 그 외의 설명이나 마크다운은 쓰지 마라.
@@ -191,7 +218,13 @@ export async function POST(request: Request) {
     );
   }
 
-  const { messages, hp, maxHp } = parsed.data;
+  const { messages, hp, maxHp, personaId } = parsed.data;
+
+  if (personaId !== undefined && !isPersonaId(personaId)) {
+    return NextResponse.json({ error: `Unknown personaId: ${personaId}` }, { status: 400 });
+  }
+  const persona = getPersona(personaId ?? DEFAULT_PERSONA_ID);
+  const personaPrompt = PERSONA_PROMPTS[persona.id];
 
   // 대화는 user 메시지로 끝나야 한다.
   if (messages[messages.length - 1].role !== "user") {
@@ -204,14 +237,20 @@ export async function POST(request: Request) {
   try {
     const { output } = await generateText({
       model: getModel(),
-      instructions: buildInstructions(hp, maxHp, extractRecentOpenings(messages)),
+      instructions: buildInstructions({
+        persona,
+        prompt: personaPrompt,
+        hp,
+        maxHp,
+        recentOpenings: extractRecentOpenings(messages),
+      }),
       messages: messages.slice(-MAX_HISTORY),
       output: Output.object({
         schema: gmOutputSchema,
         name: "gm_response",
         description: "게임 마스터의 응답과 아바타의 감정/동작/체력 변화",
       }),
-      temperature: 1.0, // 다양한 전개를 위해 다소 높게 (너무 산만하면 0.8~0.9로 낮추세요)
+      temperature: personaPrompt.temperature ?? 1.0,
       maxRetries: 1,
     });
 
