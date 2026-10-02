@@ -1,8 +1,5 @@
 import { NextResponse } from "next/server";
-import { generateText, Output, type LanguageModel } from "ai";
-import { openai } from "@ai-sdk/openai";
-import { anthropic } from "@ai-sdk/anthropic";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { generateText, Output } from "ai";
 import { z } from "zod";
 import type { ChatResponse, Emotion } from "@/types/game";
 import {
@@ -11,33 +8,14 @@ import {
   isPersonaId,
   type Persona,
 } from "@/config/personas";
-import { PERSONA_PROMPTS, type PersonaPrompt } from "@/config/personaPrompts";
+import { PERSONA_COMMON_RULES, PERSONA_PROMPTS, type PersonaPrompt } from "@/config/personaPrompts";
+import { resolveModel } from "@/config/ai";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 30; // Vercel 함수 최대 실행 시간(초)
 
-/* -------------------------------------------------------------------------- */
-/*  모델 선택 (.env 로 전환)                                                    */
-/*    AI_PROVIDER = google(기본) | openai | anthropic                          */
-/*    AI_MODEL    = 모델 ID (선택, 미지정 시 아래 기본값)                         */
-/*  API 키: GOOGLE_GENERATIVE_AI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY  */
-/* -------------------------------------------------------------------------- */
-// GOOGLE_GENERATIVE_AI_BASE_URL 은 프록시/게이트웨이용 선택 옵션 (미설정 시 Google 기본 엔드포인트)
-const google = createGoogleGenerativeAI({
-  baseURL: process.env.GOOGLE_GENERATIVE_AI_BASE_URL || undefined,
-});
-
-function getModel(): LanguageModel {
-  const provider = process.env.AI_PROVIDER ?? "google";
-  if (provider === "anthropic") {
-    return anthropic(process.env.AI_MODEL ?? "claude-haiku-4-5");
-  }
-  if (provider === "openai") {
-    return openai(process.env.AI_MODEL ?? "gpt-4o-mini");
-  }
-  return google(process.env.AI_MODEL ?? "gemini-flash-latest");
-}
+/* 모델 선택: config/ai.ts 에서 프로바이더/모델을 관리한다. (AI_PROVIDER / AI_MODEL 로 덮어쓰기 가능) */
 
 /* -------------------------------------------------------------------------- */
 /*  입력/출력 스키마                                                            */
@@ -146,6 +124,7 @@ function buildInstructions({
 - 말투: ${prompt.speech}
 - 진행 스타일: ${prompt.gmStyle}
 - 이 게임은 네가 다음 첫 대사로 시작했다: "${persona.greeting}" 이 장면과 설정에서 자연스럽게 이어가라.
+${PERSONA_COMMON_RULES}
 - 성격과 말투는 모든 턴에서 일관되게 유지해라. 아래 공통 규칙과 겹칠 때, 말투·성격·진행 성향은 캐릭터 설정이 우선이고 출력 형식·hp_change 범위·보안 규칙은 공통 규칙이 우선이다.
 
 [최우선 원칙: 유저의 마지막 입력에 반응하라]
@@ -234,9 +213,11 @@ export async function POST(request: Request) {
     );
   }
 
+  let resolved: ReturnType<typeof resolveModel> | null = null;
   try {
+    resolved = resolveModel();
     const { output } = await generateText({
-      model: getModel(),
+      model: resolved.model,
       instructions: buildInstructions({
         persona,
         prompt: personaPrompt,
@@ -266,7 +247,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json(response);
   } catch (error) {
-    console.error("[/api/chat] LLM error:", error);
+    const where = resolved ? `${resolved.label} / ${resolved.modelId}` : "model init";
+    console.error(`[/api/chat] LLM error (${where}):`, error);
     return NextResponse.json(
       { error: "GM이 잠시 응답하지 못했어요. 잠시 후 다시 시도해 주세요." },
       { status: 500 }

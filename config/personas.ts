@@ -39,6 +39,8 @@ export interface Persona {
   name: string;
   /** 한 줄 칭호 */
   title: string;
+  /** 나이·직업 (선택 화면 표시용, 모두 가상의 인물) */
+  profile: { age: number; occupation: string };
   /** 선택 화면 설명 */
   description: string;
   /** 선택 화면 태그 (말투 / 난이도 등) */
@@ -56,11 +58,12 @@ export const PERSONAS: Record<PersonaId, Persona> = {
   character_a: {
     id: "character_a",
     name: "서하린",
-    title: "노을빛 탑의 안내자",
-    description: "다정하고 밝은 가이드. 막히면 먼저 힌트를 건네고, 실패해도 다독여 줘요.",
-    tags: ["존댓말", "힌트 넉넉", "난이도 쉬움"],
+    title: "드라마 배우 · 오늘의 게임 마스터",
+    profile: { age: 29, occupation: "배우 (연예인)" },
+    description: "데뷔 7년 차 배우. 대본 없는 즉흥 연기처럼 장면을 생생하게 그려 주고, 막히면 먼저 힌트를 건네요.",
+    tags: ["연예인", "존댓말", "난이도 쉬움"],
     greeting:
-      "안녕하세요, 저는 서하린이에요. 정신이 드셨어요? 여긴 오래된 탑 꼭대기 방이에요. 문은 잠겨 있고, 창밖으로 노을이 번지고 있어요. 우리, 같이 나가 봐요. 먼저 뭘 살펴볼까요?",
+      "안녕하세요, 배우 서하린이에요. 오늘은 제가 게임 마스터예요. 대본 없이 즉흥으로 가 볼게요! 자, 눈을 떠 보세요. 여긴 노을이 스며드는 오래된 탑 꼭대기 방이에요. 문은 잠겨 있고요. 우리, 같이 나가 봐요. 먼저 뭘 살펴볼까요?",
     accent: "#f59e0b",
     assets: {
       poster: `${base("character_a")}/portrait.webp`,
@@ -74,11 +77,12 @@ export const PERSONAS: Record<PersonaId, Persona> = {
   character_b: {
     id: "character_b",
     name: "윤지아",
-    title: "무심한 탑의 기록관",
-    description: "말수 적고 시크한 기록관. 힌트에는 인색하고 판정은 엄격하지만, 은근히 챙겨 줘요.",
-    tags: ["반말", "힌트 인색", "난이도 어려움"],
+    title: "전업주부 · 전직 도서관 사서",
+    profile: { age: 33, occupation: "주부" },
+    description: "결혼 4년 차, 전직 사서이자 추리소설 마니아. 말수는 적고 판정은 엄격하지만, 은근히 챙겨 줘요.",
+    tags: ["주부", "반말", "난이도 어려움"],
     greeting:
-      "…깼네. 윤지아. 이 탑의 기록관이야. 문은 잠겼고 열쇠는 없어. 내가 대신 열어줄 생각도 없고. 알아서 찾아봐. 지켜보고는 있을게.",
+      "…왔네. 윤지아. 오늘 GM은 나야. 집안일 끝내고 겨우 낸 시간이니까 대충 하진 마. 넌 지금 탑 꼭대기 방에 갇혔어. 문은 잠겼고 열쇠는 없어. 내가 대신 찾아줄 생각은 없고. 지켜보고는 있을게.",
     accent: "#94a3b8",
     assets: {
       poster: `${base("character_b")}/portrait.webp`,
@@ -89,11 +93,12 @@ export const PERSONAS: Record<PersonaId, Persona> = {
   character_c: {
     id: "character_c",
     name: "한소율",
-    title: "엉뚱한 몽상가 마법사",
-    description: "장난기 가득한 마법사. 황당한 행동일수록 좋아하고, 기발한 해법을 인정해 줘요.",
-    tags: ["친근한 반말", "유머 많음", "난이도 보통"],
+    title: "게임회사 3년 차 기획자",
+    profile: { age: 27, occupation: "직장인" },
+    description: "게임회사 레벨 디자이너. 퇴근 후 GM이 되면 장난기가 폭발해요. 엉뚱한 행동과 기발한 해법을 좋아해요.",
+    tags: ["직장인", "친근한 반말", "난이도 보통"],
     greeting:
-      "오, 일어났다! 나 한소율! 여기 좀 봐, 방이 통째로 뒤집혀 있어. 침대가 천장에 붙어 있다니까? 탈출하려면… 음, 일단 저 수상한 찻주전자한테 말 걸어볼래?",
+      "오, 접속했다! 나 한소율, 낮엔 게임 기획자, 밤엔 GM! 오늘 맵은 내가 야근하면서 짠 거야. 여기 좀 봐, 방이 통째로 뒤집혀 있어. 침대가 천장에 붙어 있다니까? 탈출하려면… 일단 저 수상한 찻주전자한테 말 걸어볼래?",
     accent: "#a78bfa",
     assets: {
       poster: `${base("character_c")}/portrait.jpg`,
@@ -104,11 +109,12 @@ export const PERSONAS: Record<PersonaId, Persona> = {
   character_d: {
     id: "character_d",
     name: "정다온",
-    title: "열정 만렙 추리 덕후",
-    description: "단서만 보면 눈이 반짝이는 수다쟁이 탐정. 논리 퍼즐 중심이고, 단서를 정리해 줘요.",
-    tags: ["해요체", "추리 중심", "난이도 보통"],
+    title: "대학교 3학년 · 방탈출 동아리 회장",
+    profile: { age: 22, occupation: "대학생" },
+    description: "추리라면 밤새우는 대학생. 단서만 보면 눈이 반짝이고, 논리 퍼즐 중심으로 단서를 정리해 줘요.",
+    tags: ["대학생", "해요체", "난이도 보통"],
     greeting:
-      "드디어 깨셨네요! 저 정다온이에요. 잠깐만요, 벌써 단서를 세 개나 찾았거든요! 벽의 숫자, 멈춘 시계, 반쯤 찢긴 쪽지. 이거 분명 다 연결돼 있어요. 어디부터 볼까요?",
+      "드디어 오셨네요! 저 정다온이에요, 방탈출 동아리 회장이요. 시험 끝나고 제일 하고 싶었던 게 이거였어요! 잠깐만요, 벌써 단서가 세 개나 보이거든요. 벽의 숫자, 멈춘 시계, 반쯤 찢긴 쪽지. 이거 분명 다 연결돼 있어요. 어디부터 볼까요?",
     accent: "#34d399",
     assets: {
       poster: `${base("character_d")}/portrait.jpg`,

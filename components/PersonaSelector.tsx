@@ -68,7 +68,12 @@ export default function PersonaSelector({
                     className="h-full w-full transition duration-300 group-hover:scale-105"
                   />
                   <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-3 pt-10">
-                    <p className="text-lg font-semibold text-white">{p.name}</p>
+                    <p className="text-lg font-semibold text-white">
+                      {p.name}
+                      <span className="ml-2 text-sm font-normal text-slate-300">
+                        {p.profile.age}세 · {p.profile.occupation}
+                      </span>
+                    </p>
                     <p className="text-xs" style={{ color: p.accent }}>
                       {p.title}
                     </p>

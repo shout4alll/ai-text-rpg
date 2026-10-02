@@ -11,6 +11,7 @@
     "gen:clips": "node scripts/make-placeholder-clips.mjs"
   },
   "dependencies": {
+    "@ai-sdk/amazon-bedrock": "^5.0.105",
     "@ai-sdk/anthropic": "^4.0.71",
     "@ai-sdk/google": "^4.0.87",
     "@ai-sdk/openai": "^4.0.83",

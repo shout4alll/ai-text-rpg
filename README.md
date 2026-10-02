@@ -27,11 +27,13 @@ components/
   AvatarBoundary.tsx  # 모델 로드 실패 시 폴백 처리
   CubeAvatar.tsx      # 폴백용 큐브 아바타
   AvatarScene.tsx     # <Canvas>, 조명, 바닥
+config/ai.ts          # AI 프로바이더/모델 설정 (서버 전용)
 config/personas.ts    # 캐릭터 공개 메타데이터 (이름, 인사말, 자원 경로)
 config/personaPrompts.ts # 캐릭터별 시스템 프롬프트 (서버 전용)
 lib/avatarConfig.ts   # 모델 URL / 키 / 바닥 높이 설정
 lib/avatarMotion.ts   # jump/nod/shake 모션 샘플링
 scripts/              # 플레이스홀더 GLB 생성기 (npm run gen:placeholder)
+docs/AI_PROVIDERS.md  # 프로바이더·모델 전환 방법, Bedrock 주의사항
 docs/PERSONAS.md      # 멀티 페르소나 구조 / 캐릭터 추가 / 폴백 규칙
 docs/VIDEO_AVATAR.md  # 실사 영상 아바타 / AI 영상 도구로 클립 제작하는 가이드
 docs/AVATAR_SETUP.md  # (3d 모드) GLB 모델 교체 가이드
@@ -41,15 +43,11 @@ public/avatar/clips/     # character_a 폴백용 임시 클립
 types/game.ts         # ChatResponse 등 공용 타입
 ```
 
-## 환경 변수
+## 환경 변수 / AI 모델
 
-`.env.example` 을 `.env.local` 로 복사해서 키를 채우세요. (Vercel에서는 Project Settings → Environment Variables)
+AI 프로바이더와 모델은 `config/ai.ts`에서 관리합니다. 현재 **Amazon Bedrock(Nova Lite)이 활성**이고, Google은 대기, OpenAI·Anthropic은 주석 처리돼 있습니다. 자세한 내용은 `docs/AI_PROVIDERS.md`를 보세요.
 
-| 변수 | 설명 |
-| --- | --- |
-| `AI_PROVIDER` | `google`(기본), `openai`, `anthropic` |
-| `AI_MODEL` | 모델 ID (선택). 기본값: google `gemini-flash-latest`, openai `gpt-4o-mini`, anthropic `claude-haiku-4-5` |
-| `GOOGLE_GENERATIVE_AI_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` | 사용하는 프로바이더의 API 키 |
+`.env.example`을 `.env.local`로 복사해서 키를 채우세요. (Vercel에서는 Project Settings → Environment Variables)
 
 ## API
 
