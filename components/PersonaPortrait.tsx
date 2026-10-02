@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { Persona } from "@/config/personas";
+import type { Persona } from "@/lib/personas/types";
 
 interface PersonaPortraitProps {
   persona: Persona;

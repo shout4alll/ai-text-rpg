@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import PersonaPortrait from "@/components/PersonaPortrait";
 import { AVATAR_CLIP_EXT } from "@/lib/avatarConfig";
-import type { Persona } from "@/config/personas";
+import type { Persona } from "@/lib/personas/types";
 import type { AvatarAnimation, Emotion } from "@/types/game";
 
 /**
@@ -171,8 +171,6 @@ export default function VideoAvatar({ persona, animation, animationKey, emotion 
           })}
       </div>
 
-      {/* 상단 HP 표시 가독성용 그라데이션 */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/60 to-transparent" />
     </div>
   );
 }

@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AI Text RPG",
-  description: "Next.js + React Three Fiber AI text RPG prototype",
+  title: "우연한 대화",
+  description: "지나가다 우연히 만난 사람들과 나누는 AI 대화",
 };
 
 export default function RootLayout({

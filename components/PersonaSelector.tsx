@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import PersonaPortrait from "@/components/PersonaPortrait";
-import type { Persona, PersonaId } from "@/config/personas";
+import type { Persona, PersonaId } from "@/lib/personas/types";
 
 type Filter = "all" | "female" | "male";
 const FILTERS: { id: Filter; label: string }[] = [
@@ -44,11 +44,11 @@ export default function PersonaSelector({
         <div className="mb-6 flex items-start justify-between gap-4">
           <div>
             <h1 id="persona-selector-title" className="text-2xl font-bold">
-              함께할 가이드를 선택하세요
+              오늘, 누구와 마주칠까요?
             </h1>
             <p className="mt-1 text-sm text-slate-400">
-              캐릭터마다 성격, 말투, 난이도가 달라요.
-              {hasProgress && " 다른 캐릭터를 고르면 지금 대화와 HP가 초기화돼요."}
+              지나가다 우연히 마주친 사람들이에요. 마음이 가는 인연에게 말을 걸어 보세요.
+              {hasProgress && " 다른 사람을 고르면 지금 대화는 처음부터 다시 시작돼요."}
             </p>
           </div>
           {onClose && (
@@ -101,13 +101,11 @@ export default function PersonaSelector({
                     className="h-full w-full transition duration-300 group-hover:scale-105"
                   />
                   <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-3 pt-10">
-                    <p className="text-lg font-semibold text-white">
-                      {p.name}
-                      <span className="ml-2 text-sm font-normal text-slate-300">
-                        {p.profile.age}세 · {p.profile.occupation}
-                      </span>
+                    <p className="text-lg font-semibold text-white">{p.name}</p>
+                    <p className="truncate text-xs text-slate-300">
+                      {p.profile.age}세 · {p.profile.occupation}
                     </p>
-                    <p className="text-xs" style={{ color: p.accent }}>
+                    <p className="mt-0.5 text-xs" style={{ color: p.accent }}>
                       {p.title}
                     </p>
                   </div>

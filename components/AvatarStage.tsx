@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import VideoAvatar from "@/components/VideoAvatar";
 import { AVATAR_MODE } from "@/lib/avatarConfig";
-import type { Persona } from "@/config/personas";
+import type { Persona } from "@/lib/personas/types";
 import type { AvatarAnimation, Emotion } from "@/types/game";
 
 // 3D 모드일 때만 three.js 번들을 불러온다.

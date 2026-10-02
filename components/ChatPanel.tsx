@@ -31,7 +31,7 @@ export default function ChatPanel({
       <div className="flex-1 space-y-3 overflow-y-auto p-4">
         {messages.length === 0 && (
           <p className="text-sm text-slate-500">
-            모험을 시작해 보세요. 무엇이든 입력하면 이야기가 진행됩니다.
+            대화를 시작해 보세요.
           </p>
         )}
         {messages.map((m) => (
@@ -65,7 +65,7 @@ export default function ChatPanel({
           value={input}
           onChange={(e) => onInputChange(e.target.value)}
           disabled={loading || disabled}
-          placeholder={disabled ? "게임 오버" : "행동을 입력하세요..."}
+          placeholder="메시지를 입력하세요..."
           className="flex-1 rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm outline-none focus:border-indigo-500 disabled:opacity-50"
         />
         <button
