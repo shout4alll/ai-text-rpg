@@ -29,6 +29,16 @@ export type Motion =
   | "sink"
   | "sinkSoft";
 
+/** 화면이 실제로 재생할 반응 (AI 리액션·터치 리액션 공통) */
+export interface ReactionCue {
+  /** 찾아볼 영상 이름 순서 — 첫 번째로 "존재하는" 영상을 재생 */
+  clips: string[];
+  /** 영상이 없을 때의 화면 움직임 */
+  motion: Motion;
+  /** 화면 색감 (rgba) */
+  tint?: string;
+}
+
 export interface AvatarReactionDef {
   /** 화면 표시용 이름 */
   label: string;
@@ -132,4 +142,130 @@ export function affectionStage(
   let stage = stages[0];
   for (const s of stages) if (value >= s.min) stage = s;
   return stage;
+}
+
+/* ── 3) TOUCH_REACTIONS : 유저가 화면(인물)을 터치했을 때의 반응 ──────────────
+ *   - LLM 호출 없이 즉시 반응한다. (빠르고 비용 0)
+ *   - 영상: clips 순서대로 찾는다. 첫 번째는 터치 전용 클립 "touch_<id>" 이다.
+ *           예) public/avatar/personas/<id>/clips/touch_shy.mp4 를 넣으면 다음 배포부터 그 영상이 재생된다.
+ *           없으면 일반 리액션 영상(shy, love …) → 그것도 없으면 motion + 이모지 효과로 대신한다.
+ *   - lines: 아바타 위에 잠깐 뜨는 한마디. 말투가 갈리지 않는 감탄사 위주.
+ *            인물별로 바꾸려면 personas/<id>.json 의 "touchLines" 로 덮어쓴다.
+ *   - 어떤 반응이 나올지는 pickTouchReaction() 이 터치 위치·연타·호감도로 정한다.
+ */
+export interface TouchReactionDef {
+  label: string;
+  /** 찾아볼 영상 이름 순서 */
+  clips: string[];
+  /** 영상이 없을 때의 화면 움직임 */
+  motion: Motion;
+  /** 터치한 자리에서 터져 나오는 이모지 */
+  particles: string[];
+  tint?: string;
+  /** 기본 한마디 (무작위 1개) */
+  lines: string[];
+  /** 3D 모드 호환 */
+  avatar: AvatarReactionId;
+}
+
+const TOUCH_REACTION_DEFS = {
+  shy: {
+    label: "부끄러움",
+    clips: ["touch_shy", "shy", "smile", "happy"],
+    motion: "tilt",
+    particles: ["💗", "☺️", "💕"],
+    tint: "rgba(244,114,182,0.18)",
+    lines: ["앗…", "에이… 부끄럽게…", "왜, 왜요…?", "히…"],
+    avatar: "shy",
+  },
+  joy: {
+    label: "즐거움",
+    clips: ["touch_joy", "laugh", "excited", "happy"],
+    motion: "bounce",
+    particles: ["✨", "😆", "🎶"],
+    lines: ["헤헤", "간지러워요 ㅋㅋ", "아하하!", "히히"],
+    avatar: "laugh",
+  },
+  pout: {
+    label: "앙탈",
+    clips: ["touch_pout", "pout", "angry", "shake"],
+    motion: "sway",
+    particles: ["💢", "😤", "💨"],
+    lines: ["흥!", "그만 찔러요~!", "아 진짜아~", "삐질 거예요!"],
+    avatar: "pout",
+  },
+  lovely: {
+    label: "사랑스러움",
+    clips: ["touch_lovely", "love", "shy", "happy"],
+    motion: "pop",
+    particles: ["❤️", "💕", "🥰", "💖"],
+    tint: "rgba(244,63,94,0.16)",
+    lines: ["좋아…♡", "헤헤, 기분 좋다", "더 해 줘요…", "♡"],
+    avatar: "love",
+  },
+  surprised: {
+    label: "깜짝",
+    clips: ["touch_surprised", "surprised"],
+    motion: "pop",
+    particles: ["❗", "😳"],
+    lines: ["깜짝이야!", "엇!", "어머!"],
+    avatar: "surprised",
+  },
+} satisfies Record<string, TouchReactionDef>;
+
+export type TouchReactionId = keyof typeof TOUCH_REACTION_DEFS;
+export const TOUCH_REACTIONS: Record<TouchReactionId, TouchReactionDef> = TOUCH_REACTION_DEFS;
+export const TOUCH_REACTION_IDS = Object.keys(TOUCH_REACTIONS) as [TouchReactionId, ...TouchReactionId[]];
+
+/** 터치한 부위 (화면 세로 위치 기준 대략값) */
+export type TouchZone = "head" | "face" | "body";
+
+export function touchZoneOf(yRatio: number): TouchZone {
+  if (yRatio < 0.3) return "head";
+  if (yRatio < 0.55) return "face";
+  return "body";
+}
+
+/**
+ * 터치 → 반응 고르기
+ * @param zone   터치 부위
+ * @param combo  짧은 시간 안에 연속으로 터치한 횟수 (1 = 첫 터치)
+ * @param affection 호감도 0~100
+ * @param relationship 연애형/친구형
+ * @param rand   0~1 난수 (테스트용 주입)
+ */
+export function pickTouchReaction(
+  zone: TouchZone,
+  combo: number,
+  affection: number,
+  relationship: "romance" | "friendship" = "romance",
+  rand: number = Math.random()
+): TouchReactionId {
+  // 연타하면 앙탈
+  if (combo >= 5) return "pout";
+  if (combo >= 3 && rand < 0.6) return "pout";
+
+  // 아직 어색한 사이: 놀라거나 부끄러워한다
+  if (affection < 20) {
+    if (zone === "body") return rand < 0.6 ? "surprised" : "pout";
+    return rand < 0.55 ? "shy" : "surprised";
+  }
+
+  // 친구형은 설렘(lovely) 대신 즐거움 위주
+  const close = affection >= 45;
+  const lovelyOk = relationship === "romance" && close;
+
+  if (zone === "head") {
+    // 머리 쓰다듬기
+    if (lovelyOk) return rand < 0.55 ? "lovely" : "shy";
+    return rand < 0.5 ? "joy" : "shy";
+  }
+  if (zone === "face") {
+    // 볼 콕
+    if (lovelyOk) return rand < 0.45 ? "shy" : rand < 0.8 ? "lovely" : "pout";
+    return rand < 0.5 ? "shy" : rand < 0.8 ? "joy" : "pout";
+  }
+  // 몸 (간지럼 / 쿡 찌르기)
+  if (close) return rand < 0.55 ? "joy" : "pout";
+  return rand < 0.4 ? "joy" : rand < 0.75 ? "pout" : "surprised";
 }

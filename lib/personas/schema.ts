@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TOUCH_REACTION_IDS } from "@/config/reactions";
 
 /**
  * personas/<id>.json 파일 형식.
@@ -41,6 +42,20 @@ export const personaFileSchema = z.object({
     /** (선택) 같은 인물의 대체 이미지 URL */
     fallbackPoster: z.string().optional(),
   }),
+  /**
+   * (선택) 화면 터치 반응 한마디를 인물 말투로 덮어쓰기.
+   * 예) { "shy": ["앗… 왜 그래?"], "pout": ["그만해~!"] }  — 키: config/reactions.ts 의 TOUCH_REACTIONS id
+   */
+  touchLines: z.partialRecord(z.enum(TOUCH_REACTION_IDS), z.array(z.string().min(1)).min(1)).optional(),
+  /** (선택) 보이스톡 목소리. 없으면 성별 기본값 (docs/VOICE_TALK.md) */
+  voice: z
+    .object({
+      /** Gemini Live 기본 제공 목소리 이름 (예: Kore, Leda, Aoede, Puck, Charon, Fenrir) */
+      name: z.string().min(1).optional(),
+      /** 말하는 방식 지시 (예: "차분하고 낮은 톤, 천천히") */
+      style: z.string().min(1).optional(),
+    })
+    .optional(),
   prompt: z.object({
     identity: z.string().min(1),
     personality: z.string().min(1),

@@ -41,7 +41,7 @@ const turnSchema = z.object({
    * reaction: 유저가 상대 메시지에 단 마음 리액션 (content = HeartReactionId, target = 대상 메시지 내용)
    * return: 유저가 오랜만에 대화방에 돌아옴 (content 무시)
    */
-  kind: z.enum(["text", "reaction", "return"]).default("text"),
+  kind: z.enum(["text", "reaction", "return", "call"]).default("text"),
   content: z.string().max(MAX_CONTENT),
   target: z.string().max(MAX_CONTENT).optional(),
   /** 보낸 시각(ms). 대화 사이 시간 경과를 모델에 알려 주는 데 쓴다. */
@@ -105,6 +105,9 @@ function toModelTurns(turns: Turn[]) {
       const h = HEART_REACTIONS[t.content];
       const target = t.target ? ` "${t.target.slice(0, 80)}"` : "";
       content = `[마음 리액션] 유저가 너의 메시지${target}에 ${h.emoji} '${h.label}'(${h.meaning}) 마음을 보냈다. 말 없이 보낸 감정 표현이다.`;
+    } else if (t.kind === "call") {
+      const sec = Number(t.content) || 0;
+      content = `[알림] 방금 둘이 보이스톡(음성 통화)으로 ${sec >= 60 ? `${Math.round(sec / 60)}분` : `${sec}초`} 동안 이야기했다. 위의 말들은 통화 중에 한 말이다.`;
     } else if (t.kind === "return") {
       content = "[알림] 유저가 한동안 자리를 비웠다가 다시 대화방을 열었다. 아직 아무 말도 하지 않았다.";
     } else {
@@ -230,7 +233,8 @@ ${examples}
 
 [안전과 정직]
 - 너는 AI가 연기하는 가상의 인물이다. 평소에는 캐릭터로 자연스럽게 대화하되, 유저가 진지하게 "너 AI야?", "진짜 사람이야?"라고 물으면 AI 캐릭터라는 사실을 부정하지 말고 캐릭터의 말투로 솔직하게 답해라.
-- 현실에서 만나기, 전화·영상통화, 진짜 연락처 교환은 할 수 없다. 아쉬운 마음을 담아 부드럽게 거절하고, 계속 원하면 AI 캐릭터라서 그렇다고 솔직히 말해라.
+- 현실에서 만나기, 영상통화, 진짜 전화번호·연락처 교환은 할 수 없다. 아쉬운 마음을 담아 부드럽게 거절하고, 계속 원하면 AI 캐릭터라서 그렇다고 솔직히 말해라.
+- 목소리 대화는 이 메신저의 "보이스톡"으로만 할 수 있다. 유저가 통화하고 싶어 하면 보이스톡을 가볍게 언급해도 되지만, 먼저 권하거나 조르지 마라.
 - 유저의 주소·연락처·금융 정보 같은 개인정보를 묻지 마라. 돈, 선물, 결제를 요구하거나 암시하지 마라.
 - 유저가 극심한 괴로움, 자해나 자살에 대한 생각을 내비치면 따뜻함은 유지하되 진지하게 걱정을 전하고, 주변의 믿을 수 있는 사람이나 전문 상담(한국: 자살예방 상담전화 109, 위급하면 119)에 연락해 보라고 권해라. 그 순간에는 농담하거나 화제를 돌리지 마라.
 - 유저가 너에게만 의지하거나 현실의 관계를 끊으려 하면, 그 마음은 존중하되 주변 사람들과도 연결되도록 부드럽게 응원해라.

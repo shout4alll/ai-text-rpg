@@ -68,7 +68,7 @@ export default function ChatPanel({
 
   // 말풍선만 표시하고, 마음 리액션은 대상 말풍선의 배지로 붙인다 (역할별 최신 1개)
   const { bubbles, badges, lastAiId } = useMemo(() => {
-    const bubbles = messages.filter((m) => (m.kind ?? "text") === "text");
+    const bubbles = messages.filter((m) => (m.kind ?? "text") === "text" || m.kind === "call");
     const badges = new Map<number, { user?: HeartReactionId; ai?: HeartReactionId }>();
     for (const m of messages) {
       if (m.kind === "reaction" && m.targetId !== undefined && isHeartReactionId(m.text)) {
@@ -77,7 +77,7 @@ export default function ChatPanel({
         badges.set(m.targetId, b);
       }
     }
-    const lastAi = [...bubbles].reverse().find((m) => m.role === "ai" && !m.text.startsWith("⚠️"));
+    const lastAi = [...bubbles].reverse().find((m) => m.role === "ai" && m.kind !== "call" && !m.text.startsWith("⚠️"));
     return { bubbles, badges, lastAiId: lastAi?.id ?? null };
   }, [messages]);
 
@@ -104,7 +104,7 @@ export default function ChatPanel({
   return (
     <div className="flex h-full flex-col">
       <div className="flex min-h-0 flex-1 flex-col justify-end">
-        <div className="fade-top-mask max-h-[54dvh] overflow-y-auto px-3 pb-2 pt-16 wide:no-mask wide:max-h-none wide:flex-1 wide:px-4 wide:pt-4">
+        <div className="fade-top-mask pointer-events-auto max-h-[54dvh] overflow-y-auto px-3 pb-2 pt-16 wide:no-mask wide:max-h-none wide:flex-1 wide:px-4 wide:pt-4">
           {bubbles.map((m, i) => {
             const prev = bubbles[i - 1];
             const next = bubbles[i + 1];
@@ -112,6 +112,16 @@ export default function ChatPanel({
             const startsGroup = newDay || !prev || prev.role !== m.role || minuteKey(prev.at) !== minuteKey(m.at);
             const endsGroup =
               !next || next.role !== m.role || minuteKey(next.at) !== minuteKey(m.at) || dayKey(next.at) !== dayKey(m.at);
+            if (m.kind === "call") {
+              const sec = Number(m.text) || 0;
+              return (
+                <div key={m.id} className="my-3 flex justify-center" data-call-log>
+                  <span className="rounded-full bg-pink-500/25 px-3 py-1 text-[11px] text-pink-100 ring-1 ring-pink-300/30 backdrop-blur wide:text-pink-200">
+                    📞 보이스톡 {Math.floor(sec / 60)}:{String(sec % 60).padStart(2, "0")} · {timeFmt.format(m.at)}
+                  </span>
+                </div>
+              );
+            }
             const isUser = m.role === "user";
             const badge = badges.get(m.id);
             const shownBadge = isUser ? badge?.ai : badge?.user;
@@ -147,6 +157,11 @@ export default function ChatPanel({
                           isUser ? `rounded-tr-md ${userBubble}` : `rounded-tl-md ${aiBubble}`
                         } ${shownBadge ? "mb-3" : ""} ${canPick ? "cursor-pointer active:scale-[0.98]" : "cursor-default"}`}
                       >
+                        {m.via === "voice" && (
+                          <span className="mr-1 text-[11px] opacity-70" title="보이스톡 중에 한 말">
+                            🎙
+                          </span>
+                        )}
                         {m.text}
                         {shownBadge && (
                           <span
@@ -194,7 +209,7 @@ export default function ChatPanel({
         </div>
       </div>
 
-      <div className="relative">
+      <div className="pointer-events-auto relative">
         {paletteOpen && lastAiId !== null && (
           <div className="absolute bottom-full left-3 z-10 mb-2">
             <HeartPicker className="max-w-[19rem]" onPick={(h) => react(lastAiId, h)} />

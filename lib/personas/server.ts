@@ -90,6 +90,7 @@ export function toPublic(p: PersonaFile): Persona {
     relationshipType: p.relationshipType,
     greeting: p.greeting,
     accent: p.accent,
+    ...(p.touchLines ? { touchLines: p.touchLines } : {}),
     assets: {
       poster: `${base}/${p.image.portrait}`,
       clips,

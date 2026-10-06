@@ -3,16 +3,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AvatarStage from "@/components/AvatarStage";
 import ChatPanel from "@/components/ChatPanel";
-import EffectsLayer, { type Burst, type Particle } from "@/components/EffectsLayer";
+import EffectsLayer, { type Burst, type Particle, type TouchMark, type TouchSpark } from "@/components/EffectsLayer";
 import PersonaPortrait from "@/components/PersonaPortrait";
 import PersonaSelector from "@/components/PersonaSelector";
+import VoiceCall, { type VoiceCallHandle, type VoiceCallResult } from "@/components/VoiceCall";
 import {
   AFFECTION_START,
   AVATAR_REACTIONS,
   HEART_REACTIONS,
+  TOUCH_REACTIONS,
   affectionStage,
+  pickTouchReaction,
+  touchZoneOf,
   type AvatarReactionId,
   type HeartReactionId,
+  type ReactionCue,
+  type TouchReactionId,
 } from "@/config/reactions";
 import type { Persona, PersonaId } from "@/lib/personas/types";
 import type { ChatMessage, ChatResponse } from "@/types/game";
@@ -78,7 +84,7 @@ function saveChat(id: PersonaId, chat: Omit<StoredChat, "v">) {
 /* -------------------------------------------------------------------------- */
 interface Turn {
   role: "user" | "assistant";
-  kind: "text" | "reaction" | "return";
+  kind: "text" | "reaction" | "return" | "call";
   content: string;
   target?: string;
   at?: number;
@@ -94,6 +100,8 @@ function toTurns(msgs: ChatMessage[]): Turn[] {
       turns.push({ role: m.role === "user" ? "user" : "assistant", kind: "text", content: m.text, at: m.at });
     } else if (m.kind === "reaction" && m.role === "user") {
       turns.push({ role: "user", kind: "reaction", content: m.text, target: byId.get(m.targetId ?? -1)?.text, at: m.at });
+    } else if (m.kind === "call") {
+      turns.push({ role: "user", kind: "call", content: m.text, at: m.at });
     }
   }
   return turns.slice(-MAX_SEND);
@@ -133,10 +141,20 @@ export default function ChatApp({ personas }: { personas: Persona[] }) {
 
   // 화면 리액션 & 효과
   const [reaction, setReaction] = useState<AvatarReactionId>("idle");
+  const [cue, setCue] = useState<ReactionCue | null>(null);
   const [reactionKey, setReactionKey] = useState(0);
   const [particles, setParticles] = useState<Particle[]>([]);
   const [bursts, setBursts] = useState<Burst[]>([]);
+  const [sparks, setSparks] = useState<TouchSpark[]>([]);
+  const [marks, setMarks] = useState<TouchMark[]>([]);
   const effectId = useRef(0);
+  // 화면 터치 연타 추적
+  const touchRef = useRef({ lastAt: 0, combo: 0, lastFire: 0 });
+
+  // 보이스톡
+  const [voiceOpen, setVoiceOpen] = useState(false);
+  const [voiceSpeaking, setVoiceSpeaking] = useState(false);
+  const voiceHandle = useRef<VoiceCallHandle | null>(null);
 
   // 열 때 자동으로 할 일 (못 받은 답장 이어받기 / 오랜만에 돌아옴)
   const [autoAction, setAutoAction] = useState<null | "unanswered" | "return">(null);
@@ -172,11 +190,85 @@ export default function ChatApp({ personas }: { personas: Persona[] }) {
 
   const playReaction = useCallback(
     (r: AvatarReactionId) => {
+      const def = AVATAR_REACTIONS[r] ?? AVATAR_REACTIONS.idle;
       setReaction(r);
+      setCue(r === "idle" ? null : { clips: def.clips, motion: def.motion, tint: def.tint });
       setReactionKey((k) => k + 1);
-      spawnParticles(AVATAR_REACTIONS[r]?.particles);
+      spawnParticles(def.particles);
     },
     [spawnParticles]
+  );
+
+  /* ── 화면 터치 리액션 (LLM 호출 없이 즉시) ─────────────────────────────── */
+  /** 손가락 자리에서 이모지가 튀어나가는 효과 */
+  const spawnSparks = useCallback((emojis: string[], x: number, y: number, count: number) => {
+    const items: TouchSpark[] = Array.from({ length: count }, (_, i) => {
+      const angle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.3; // 위쪽 부채꼴
+      const dist = 50 + Math.random() * 70;
+      return {
+        id: effectId.current++,
+        emoji: emojis[i % emojis.length],
+        x,
+        y,
+        dx: Math.cos(angle) * dist,
+        dy: Math.sin(angle) * dist,
+        rot: (Math.random() - 0.5) * 50,
+        dur: 900 + Math.random() * 500,
+        delay: i * 40,
+        size: 1.2 + Math.random() * 0.9,
+      };
+    });
+    setSparks((p) => [...p, ...items]);
+    const ids = new Set(items.map((p) => p.id));
+    setTimeout(() => setSparks((p) => p.filter((x) => !ids.has(x.id))), 1800);
+  }, []);
+
+  /**
+   * 터치 반응 재생. 보이스톡 중이면 상대에게도 알려 준다(onTouchNotify).
+   * 반환값: 고른 반응 id (보이스톡에 알리는 용도)
+   */
+  const handleTouch = useCallback(
+    (x: number, y: number): TouchReactionId | null => {
+      if (!persona) return null;
+      const now = Date.now();
+      const t = touchRef.current;
+      t.combo = now - t.lastAt < 1200 ? t.combo + 1 : 1;
+      t.lastAt = now;
+
+      // 물결은 매번, 반응은 너무 잦지 않게 (0.35초)
+      const id = effectId.current++;
+      const firing = now - t.lastFire > 350;
+      const zone = touchZoneOf(y / 100);
+      const touchId = firing ? pickTouchReaction(zone, t.combo, affection, persona.relationshipType) : null;
+      const def = touchId ? TOUCH_REACTIONS[touchId] : null;
+      const lines = touchId ? persona.touchLines?.[touchId] ?? def?.lines : undefined;
+      const line = lines && lines.length ? lines[Math.floor(Math.random() * lines.length)] : undefined;
+
+      setMarks((m) => [
+        // 한마디는 최신 것 하나만 남긴다
+        ...m.map((x) => (line ? { ...x, line: undefined } : x)),
+        { id, x, y, line, color: persona.accent },
+      ]);
+      setTimeout(() => setMarks((m) => m.filter((x) => x.id !== id)), 1900);
+
+      if (!touchId || !def) {
+        spawnSparks(["✨"], x, y, 2);
+        return null;
+      }
+      t.lastFire = now;
+      setReaction(def.avatar);
+      setCue({ clips: def.clips, motion: def.motion, tint: def.tint });
+      setReactionKey((k) => k + 1);
+      spawnSparks(def.particles, x, y, 6);
+      voiceHandle.current?.notifyTouch(touchId);
+      try {
+        navigator.vibrate?.(touchId === "pout" ? [12, 40, 12] : 12);
+      } catch {
+        /* 진동 미지원 */
+      }
+      return touchId;
+    },
+    [persona, affection, spawnSparks]
   );
 
   /* ── 대화방 열기 / 지우기 ──────────────────────────────────────────────── */
@@ -200,6 +292,8 @@ export default function ChatApp({ personas }: { personas: Persona[] }) {
       setPersonaId(id);
       writeStorage(LAST_KEY, id);
       setReaction("idle");
+      setCue(null);
+      setVoiceOpen(false);
       setInput("");
       setTyping(false);
       setBusy(false);
@@ -400,6 +494,43 @@ export default function ChatApp({ personas }: { personas: Persona[] }) {
     return out;
   }, [personas, personaId, messages]);
 
+  /** 인물 화면 터치 (손가락 위치를 % 로 변환) */
+  const onStagePointerDown = (e: React.PointerEvent<HTMLElement>) => {
+    if (e.button !== 0 && e.pointerType === "mouse") return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    handleTouch(x, y);
+  };
+
+  /* ── 보이스톡 ──────────────────────────────────────────────────────────── */
+  const startVoice = () => {
+    if (busy || voiceOpen) return;
+    setConfirmReset(false);
+    setVoiceOpen(true);
+  };
+
+  const endVoice = useCallback(
+    ({ seconds, transcript }: VoiceCallResult) => {
+      setVoiceOpen(false);
+      setVoiceSpeaking(false);
+      if (seconds <= 0 && transcript.length === 0) return;
+      // 통화 내용을 톡 기록에 남긴다 → 이후 텍스트 대화가 통화 맥락을 이어 간다
+      const lines = transcript.slice(-30).map<ChatMessage>((t) => ({
+        id: nextId.current++,
+        role: t.role,
+        kind: "text",
+        text: t.text.slice(0, 1000),
+        at: t.at,
+        via: "voice",
+        read: true,
+      }));
+      const log: ChatMessage = { id: nextId.current++, role: "ai", kind: "call", text: String(seconds), at: Date.now() };
+      setMessages((prev) => [...prev, ...lines, log]);
+    },
+    []
+  );
+
   /* ── 화면 ─────────────────────────────────────────────────────────────── */
   if (!hydrated) return <main className="h-[100dvh] w-full bg-slate-950" />;
 
@@ -417,9 +548,14 @@ export default function ChatApp({ personas }: { personas: Persona[] }) {
   return (
     <main className="relative h-[100dvh] w-full overflow-hidden bg-slate-950 wide:flex">
       {/* 리액션 화면: 폰/세로 = 전체 배경, 가로로 넓은 화면 = 왼쪽 절반 */}
-      <section className="absolute inset-0 wide:relative wide:inset-auto wide:w-1/2 wide:border-r wide:border-slate-800">
-        <AvatarStage persona={persona} reaction={reaction} reactionKey={reactionKey} />
-        <EffectsLayer particles={particles} bursts={bursts} />
+      {/* 터치하면 인물이 반응한다 (폰에서는 메신저 빈 곳을 터치해도 이 화면으로 전달됨) */}
+      <section
+        className="absolute inset-0 touch-manipulation select-none wide:relative wide:inset-auto wide:w-1/2 wide:border-r wide:border-slate-800"
+        onPointerDown={onStagePointerDown}
+        data-touch-stage
+      >
+        <AvatarStage persona={persona} reaction={reaction} cue={cue} reactionKey={reactionKey} speaking={voiceSpeaking} />
+        <EffectsLayer particles={particles} bursts={bursts} sparks={sparks} marks={marks} />
         <div className="pointer-events-none absolute inset-x-0 bottom-0 hidden bg-gradient-to-t from-black/80 via-black/40 to-transparent p-5 pt-16 wide:block">
           <p className="text-lg font-semibold text-white">
             {persona.name}
@@ -439,8 +575,9 @@ export default function ChatApp({ personas }: { personas: Persona[] }) {
       </section>
 
       {/* 메신저: 폰/세로 = 배경 위에 겹쳐서, 넓은 화면 = 오른쪽 절반 */}
-      <section className="absolute inset-0 flex flex-col bg-gradient-to-b from-black/55 via-transparent to-black/75 wide:relative wide:inset-auto wide:w-1/2 wide:bg-none wide:bg-slate-950">
-        <header className="flex items-center gap-3 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] wide:border-b wide:border-slate-800">
+      {/* 폰: 메신저가 인물 화면 위에 겹치므로 빈 곳은 터치가 통과(pointer-events-none)하고 실제 UI만 터치를 받는다 */}
+      <section className="pointer-events-none absolute inset-0 flex flex-col bg-gradient-to-b from-black/55 via-transparent to-black/75 wide:pointer-events-auto wide:relative wide:inset-auto wide:w-1/2 wide:bg-none wide:bg-slate-950">
+        <header className={`pointer-events-auto flex items-center gap-3 ${voiceOpen ? "invisible" : ""} px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] wide:border-b wide:border-slate-800`}>
           <PersonaPortrait
             persona={persona}
             size="sm"
@@ -463,6 +600,19 @@ export default function ChatApp({ personas }: { personas: Persona[] }) {
               </span>
             </div>
           </div>
+          <button
+            onClick={startVoice}
+            disabled={busy || voiceOpen}
+            aria-label="보이스톡 걸기"
+            title="보이스톡 (유료)"
+            data-voice-button
+            className="relative shrink-0 rounded-full bg-pink-500/90 px-3 py-1.5 text-xs font-semibold text-white shadow hover:bg-pink-500 disabled:opacity-50"
+          >
+            📞 보이스톡
+            <span className="absolute -right-1 -top-1.5 rounded-full bg-amber-400 px-1 text-[9px] font-bold leading-tight text-slate-900">
+              PRO
+            </span>
+          </button>
           {hasConversation &&
             (confirmReset ? (
               <button
@@ -489,7 +639,7 @@ export default function ChatApp({ personas }: { personas: Persona[] }) {
             대화 목록
           </button>
         </header>
-        <div className="min-h-0 flex-1">
+        <div className={`min-h-0 flex-1 ${voiceOpen ? "invisible" : ""}`}>
           <ChatPanel
             persona={persona}
             messages={messages}
@@ -502,6 +652,24 @@ export default function ChatApp({ personas }: { personas: Persona[] }) {
           />
         </div>
       </section>
+
+      {voiceOpen && (
+        <div className="pointer-events-none absolute inset-0 z-30 wide:right-1/2" data-voice-layer>
+          <VoiceCall
+            persona={persona}
+            affection={affection}
+            recent={toTurns(messages)
+              .filter((t) => t.kind === "text")
+              .map((t) => ({ role: t.role, content: t.content }))}
+            onEnd={endVoice}
+            onSpeakingChange={setVoiceSpeaking}
+            onReaction={playReaction}
+            registerHandle={(h) => {
+              voiceHandle.current = h;
+            }}
+          />
+        </div>
+      )}
 
       {selectorOpen && (
         <PersonaSelector

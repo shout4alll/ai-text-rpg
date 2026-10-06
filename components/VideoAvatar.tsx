@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import PersonaPortrait from "@/components/PersonaPortrait";
-import { AVATAR_REACTIONS, type AvatarReactionId, type Motion } from "@/config/reactions";
+import type { Motion, ReactionCue } from "@/config/reactions";
 import type { Persona } from "@/lib/personas/types";
 
 /**
@@ -22,9 +22,15 @@ import type { Persona } from "@/lib/personas/types";
 
 interface VideoAvatarProps {
   persona: Persona;
-  reaction: AvatarReactionId;
-  /** 같은 리액션이 연속으로 와도 다시 재생되도록 하는 트리거 카운터 */
+  /** 재생할 반응 (AI 리액션 또는 터치 리액션) */
+  cue: ReactionCue | null;
+  /** 같은 반응이 연속으로 와도 다시 재생되도록 하는 트리거 카운터 */
   reactionKey: number;
+  /**
+   * 보이스톡에서 상대가 말하는 중.
+   * clips 에 "talk" 영상이 있으면 idle 대신 talk 루프를 보여 주고, 없으면 미세한 말하기 모션을 준다.
+   */
+  speaking?: boolean;
 }
 
 const BASE = "scale(1.04)"; // 이동 시 가장자리가 비지 않도록 살짝 확대한 상태가 기본
@@ -57,7 +63,10 @@ const MOTIONS: Record<Exclude<Motion, "none">, { frames: Keyframe[]; duration: n
   sinkSoft: { duration: 1400, frames: ty([0, 6, 0]) },
 };
 
-export default function VideoAvatar({ persona, reaction, reactionKey }: VideoAvatarProps) {
+/** 계속 반복 재생하는 클립 (이벤트가 끝나면 이 중 하나로 돌아온다) */
+const LOOPS = new Set(["idle", "talk"]);
+
+export default function VideoAvatar({ persona, cue, reactionKey, speaking = false }: VideoAvatarProps) {
   const clips = persona.assets.clips; // { 이름: URL } — 실제로 있는 영상만
   const names = Object.keys(clips);
 
@@ -70,14 +79,13 @@ export default function VideoAvatar({ persona, reaction, reactionKey }: VideoAva
 
   useEffect(() => setMounted(true), []);
 
-  const latest = useRef({ reaction, ready });
-  latest.current = { reaction, ready };
+  const latest = useRef({ cue, ready });
+  latest.current = { cue, ready };
 
   useEffect(() => {
     if (reactionKey === 0) return;
-    const { reaction, ready } = latest.current;
-    const def = AVATAR_REACTIONS[reaction] ?? AVATAR_REACTIONS.idle;
-    if (reaction === "idle") return;
+    const { cue: def, ready } = latest.current;
+    if (!def) return;
 
     // 색감 효과
     if (def.tint && tintRef.current) {
@@ -86,10 +94,10 @@ export default function VideoAvatar({ persona, reaction, reactionKey }: VideoAva
     }
 
     // 영상: clips 순서대로 준비된 것 하나
-    const clip = def.clips.find((c) => c !== "idle" && ready[c]);
+    const clip = def.clips.find((c) => !LOOPS.has(c) && ready[c]);
     const video = clip ? videoRefs.current[clip] : null;
     if (clip && video) {
-      for (const n of names) if (n !== "idle" && n !== clip) videoRefs.current[n]?.pause();
+      for (const n of names) if (!LOOPS.has(n) && n !== clip) videoRefs.current[n]?.pause();
       video.currentTime = 0;
       video.play().catch(() => {});
       setActive(clip);
@@ -97,9 +105,11 @@ export default function VideoAvatar({ persona, reaction, reactionKey }: VideoAva
     }
 
     // 영상이 없으면 화면 움직임
-    if (def.motion !== "none") {
-      const m = MOTIONS[def.motion];
-      mediaRef.current?.animate(m.frames, { duration: m.duration, easing: "ease-in-out" });
+    if (def.motion !== "none" && mediaRef.current) {
+      // 연속 터치 시 이전 움직임이 겹치지 않도록 정리
+      for (const a of mediaRef.current.getAnimations()) a.cancel();
+      const m = MOTIONS[def.motion as Exclude<Motion, "none">];
+      mediaRef.current.animate(m.frames, { duration: m.duration, easing: "ease-in-out" });
     }
     // names 는 persona 별로 고정(상위에서 key 로 재마운트)이라 의존성에서 제외
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -108,6 +118,8 @@ export default function VideoAvatar({ persona, reaction, reactionKey }: VideoAva
   return (
     <div className="absolute inset-0 overflow-hidden bg-slate-950" data-reaction-stage>
       <div ref={mediaRef} className="absolute inset-0" style={{ transform: BASE }}>
+        {/* 말하기 모션: talk 영상이 없을 때만 (안쪽 래퍼에 줘서 리액션 움직임과 겹치지 않게) */}
+        <div className={`absolute inset-0 ${speaking && !ready.talk ? "avatar-talk" : ""}`}>
         <PersonaPortrait
           persona={persona}
           className="absolute inset-0 h-full w-full"
@@ -117,7 +129,11 @@ export default function VideoAvatar({ persona, reaction, reactionKey }: VideoAva
         {mounted &&
           names.map((name) => {
             const isIdle = name === "idle";
-            const visible = isIdle ? !!ready.idle : active === name;
+            const isTalk = name === "talk";
+            const loop = isIdle || isTalk;
+            // talk 루프는 말하는 중에만, idle 은 그 외에 (이벤트 클립이 재생 중이면 그게 위에 덮인다)
+            const talkOn = speaking && !!ready.talk;
+            const visible = isTalk ? talkOn && !active : isIdle ? !!ready.idle : active === name;
             const markReady = () => setReady((r) => (r[name] ? r : { ...r, [name]: true }));
             return (
               <video
@@ -130,16 +146,22 @@ export default function VideoAvatar({ persona, reaction, reactionKey }: VideoAva
                 muted
                 playsInline
                 preload="auto"
-                loop={isIdle}
-                autoPlay={isIdle}
+                loop={loop}
+                autoPlay={loop}
                 onLoadedData={markReady}
                 onCanPlay={markReady}
-                onEnded={isIdle ? undefined : () => setActive((a) => (a === name ? null : a))}
+                onEnded={loop ? undefined : () => setActive((a) => (a === name ? null : a))}
                 className="absolute inset-0 h-full w-full object-cover transition-opacity duration-200"
-                style={{ objectPosition: persona.assets.objectPosition, opacity: visible ? 1 : 0 }}
+                style={{
+                  objectPosition: persona.assets.objectPosition,
+                  opacity: visible ? 1 : 0,
+                  // 겹침 순서: idle < talk < 이벤트 클립
+                  zIndex: isIdle ? 0 : isTalk ? 1 : 2,
+                }}
               />
             );
           })}
+        </div>
       </div>
       <div ref={tintRef} className="pointer-events-none absolute inset-0 opacity-0 mix-blend-soft-light" />
     </div>

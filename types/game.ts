@@ -21,8 +21,13 @@ export interface ChatResponse {
 export interface ChatMessage {
   id: number;
   role: "user" | "ai";
-  /** text: 말풍선 / reaction: 다른 메시지에 단 마음 리액션 (말풍선으로 표시하지 않음) */
-  kind?: "text" | "reaction";
+  /**
+   * text: 말풍선 / reaction: 다른 메시지에 단 마음 리액션 (말풍선으로 표시하지 않음)
+   * call: 보이스톡 통화 기록 (가운데 알림으로 표시, text = 통화 초)
+   */
+  kind?: "text" | "reaction" | "call";
+  /** "voice" 면 보이스톡 중에 한 말 (받아쓰기) */
+  via?: "voice";
   /** kind=text: 내용 / kind=reaction: HeartReactionId */
   text: string;
   /** kind=reaction: 리액션을 단 대상 메시지 id */

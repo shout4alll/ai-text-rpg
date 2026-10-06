@@ -3,6 +3,8 @@
  * 실제 데이터는 personas/<id>.json 에 있고, 서버(lib/personas/server.ts)가 읽어서
  * 화면에 필요한 공개 필드만 이 형태로 브라우저에 넘긴다. (프롬프트는 넘기지 않음)
  */
+import type { TouchReactionId } from "@/config/reactions";
+
 export type PersonaId = string;
 
 export interface PersonaAssets {
@@ -32,4 +34,6 @@ export interface Persona {
   greeting: string;
   accent: string;
   assets: PersonaAssets;
+  /** 화면 터치 반응 한마디 (인물별 덮어쓰기, 없으면 config/reactions.ts 기본값) */
+  touchLines?: Partial<Record<TouchReactionId, string[]>>;
 }

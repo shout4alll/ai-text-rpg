@@ -15,6 +15,7 @@
     "@ai-sdk/anthropic": "^4.0.71",
     "@ai-sdk/google": "^4.0.87",
     "@ai-sdk/openai": "^4.0.83",
+    "@google/genai": "^2.27.0",
     "@react-three/drei": "^9.122.0",
     "@react-three/fiber": "^8.17.10",
     "ai": "^7.0.126",

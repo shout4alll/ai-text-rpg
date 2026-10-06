@@ -16,6 +16,10 @@
 파일 이름은 리액션 id입니다: `idle`, `smile`, `laugh`, `nod`, `shake`, `shy`, `love`, `pout`, `surprised`, `sad`, `touched`, `thinking`, `excited`, `comfort`, `sleepy` (+ 확장자).
 예전 이름인 `happy`, `angry`도 대체 순서에 포함되어 있어 그대로 쓸 수 있습니다.
 
+**터치 반응 전용 (선택):** `touch_shy`, `touch_joy`, `touch_pout`, `touch_lovely`, `touch_surprised` — 화면을 터치했을 때 바로 재생됩니다. 1~2초짜리 짧은 클립을 권장합니다. 없으면 위의 일반 리액션 영상을 씁니다. (`docs/REACTIONS.md` 1-1)
+
+**보이스톡 전용 (선택):** `talk` — 통화 중 상대가 말하는 동안 idle 대신 반복 재생됩니다. 입을 움직이며 말하는 루프 영상입니다. 없으면 정지 화면에 미세한 말하기 모션을 줍니다.
+
 ## 영상 생성 도구는 아무거나 괜찮습니다
 
 코드는 **mp4 파일만 있으면** 되므로 도구는 상관없습니다. (Flow/Veo, Kling, Runway, Luma, Hailuo, Seedance, Pika 등) 도구마다 기능과 요금이 자주 바뀌어서, 순위 대신 **고를 때 확인할 기준**을 적습니다.

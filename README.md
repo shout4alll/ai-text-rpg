@@ -1,6 +1,6 @@
 # 메신저형 AI 페르소나 채팅
 
-정해진 인물들과 메신저로 대화하며 교감하고 관계를 키워 가는 AI 채팅 앱입니다. Next.js 14 (App Router) + Tailwind + Vercel AI SDK로 만들었습니다.
+정해진 인물들과 메신저로 대화하며 교감하고 관계를 키워 가는 AI 채팅 앱입니다. 화면 속 인물을 **터치하면 부끄러워하거나 앙탈을 부리며 반응**하고, **📞 보이스톡**으로 목소리 대화도 할 수 있습니다(유료 기능). Next.js 14 (App Router) + Tailwind + Vercel AI SDK로 만들었습니다.
 좌측에는 답장에 맞춰 반응하는 인물 사진·영상, 우측에는 메신저가 있고, 캐릭터는 `personas/*.json` 파일로 관리합니다.
 
 ## 실행
@@ -38,6 +38,10 @@ docs/AI_PROVIDERS.md  # 프로바이더·모델 전환 방법, Bedrock 주의사
 docs/REACTIONS.md     # 화면 리액션 15종, 마음 리액션 10종, 호감도, 영상 추가 방법
 docs/PERSONAS.md      # 멀티 페르소나 구조 / 캐릭터 추가 / 폴백 규칙
 docs/VIDEO_AVATAR.md  # 실사 영상 아바타 / AI 영상 도구로 클립 제작하는 가이드
+docs/VOICE_TALK.md    # 보이스톡(AI 음성 통화, Gemini Live) 설정·유료화·비용
+app/api/voice/session/route.ts  # 보이스톡 일회용 토큰 발급
+lib/voice/            # 보이스톡 이용권 체크(★ 결제 연동 지점)·음성 프롬프트
+components/VoiceCall.tsx  # 보이스톡 통화 화면
 docs/AVATAR_SETUP.md  # (3d 모드) GLB 모델 교체 가이드
 public/avatar/personas/  # 캐릭터별 이미지 + clips/
 public/avatar/clips/     # character_a 폴백용 임시 클립
