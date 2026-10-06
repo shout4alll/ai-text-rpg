@@ -17,6 +17,15 @@ export interface PersonaAssets {
   clips: Record<string, string>;
   /** object-fit: cover 기준점 (CSS object-position) */
   objectPosition: string;
+  /**
+   * (자동) 리액션 화면 전용 정지 이미지 — public/avatar/personas/<id>/stage.jpg 가 있으면 사용.
+   * 영상 첫 장면과 같은 구도의 이미지를 넣으면 영상 전환이 자연스럽다.
+   */
+  stagePoster?: string;
+  /** 리액션 화면(영상·stage 이미지)의 기준점 */
+  stagePosition: string;
+  /** (자동) 유료 리액션 영상 — clips/premium/ 폴더. 이용권이 있을 때만 재생 */
+  premiumClips: Record<string, string>;
   /** (선택) 같은 인물의 대체 이미지 */
   fallbackPoster?: string;
 }

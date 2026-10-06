@@ -89,3 +89,13 @@ body {
   100% { box-shadow: 0 0 0 18px rgba(244, 114, 182, 0); }
 }
 .voice-ring { animation: voice-ring 1.2s ease-out infinite; }
+
+/* 잠금 안내 칩: 살짝 튀어나왔다 유지 */
+@keyframes touch-line-static {
+  0% { transform: translateY(8px) scale(0.9); opacity: 0; }
+  10% { transform: translateY(0) scale(1.04); opacity: 1; }
+  15% { transform: scale(1); }
+  85% { opacity: 1; }
+  100% { opacity: 0; }
+}
+.touch-line-static { animation: touch-line-static 4.5s ease-out forwards; }

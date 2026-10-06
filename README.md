@@ -39,6 +39,9 @@ docs/REACTIONS.md     # 화면 리액션 15종, 마음 리액션 10종, 호감�
 docs/PERSONAS.md      # 멀티 페르소나 구조 / 캐릭터 추가 / 폴백 규칙
 docs/VIDEO_AVATAR.md  # 실사 영상 아바타 / AI 영상 도구로 클립 제작하는 가이드
 docs/VOICE_TALK.md    # 보이스톡(AI 음성 통화, Gemini Live) 설정·유료화·비용
+docs/REACTION_VIDEOS.md  # ★ 리액션 영상 연출 규칙·무료/유료·캐릭터별 영상 추가 방법
+lib/reactionDirector.ts  # 영상을 언제 틀지 정하는 연출 담당 (빈도 조절: DIRECTOR_TUNING)
+lib/entitlements.ts   # 유료 리액션 영상 이용 권한 (PREMIUM_ACCESS)
 app/api/voice/session/route.ts  # 보이스톡 일회용 토큰 발급
 lib/voice/            # 보이스톡 이용권 체크(★ 결제 연동 지점)·음성 프롬프트
 components/VoiceCall.tsx  # 보이스톡 통화 화면

@@ -37,6 +37,8 @@ export const personaFileSchema = z.object({
     /** public/avatar/personas/<id>/ 안의 파일명 */
     portrait: z.string().min(1).default("portrait.jpg"),
     objectPosition: z.string().default("50% 30%"),
+    /** 리액션 화면(세로 영상)의 기준점 */
+    stagePosition: z.string().default("50% 30%"),
     /** (선택) 같은 인물의 대체 클립 폴더 URL */
     fallbackClipsDir: z.string().optional(),
     /** (선택) 같은 인물의 대체 이미지 URL */

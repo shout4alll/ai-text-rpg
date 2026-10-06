@@ -17,7 +17,6 @@
   "image": {
     "portrait": "portrait.webp",
     "objectPosition": "60% 35%",
-    "fallbackClipsDir": "/avatar/clips",
     "fallbackPoster": "/avatar/portrait.png"
   },
   "prompt": {

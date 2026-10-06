@@ -26,6 +26,10 @@ AI가 답장마다 하나를 고르면, 화면이 다음 순서로 반응합니�
 | `excited` | 신남 | excited → laugh → happy | 통통 튐 | 🎉 |
 | `comfort` | 토닥임 | comfort → nod | 부드러운 끄덕임 | 🤍 |
 | `sleepy` | 졸림 | sleepy → idle | 살짝 가라앉음 | 💤 |
+| `turn_away` | 등 돌림 | turn_away → pout → shake | 흔들흔들 | 💢 + 어두운 톤 · **마지막 장면에서 멈춤** |
+| `kiss` | 뽀뽀 (**유료**) | kiss → love → shy | 확대 | 💋❤️💕 |
+
+> 영상을 **언제** 틀지는 `lib/reactionDirector.ts`가 정합니다. 쿨다운, 특별한 순간, 등 돌림/화해, 유료 잠금 규칙이 있습니다. → **`docs/REACTION_VIDEOS.md`**
 
 ### 영상 추가하는 법 (나중에 영상 리소스를 만들 때)
 

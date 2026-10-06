@@ -37,6 +37,8 @@ export interface ReactionCue {
   motion: Motion;
   /** 화면 색감 (rgba) */
   tint?: string;
+  /** true 면 영상이 끝나도 마지막 장면에서 멈춰 있는다 (예: 등 돌린 채로 삐져 있기). 다음 반응이 오면 풀린다 */
+  hold?: boolean;
 }
 
 export interface AvatarReactionDef {
@@ -52,6 +54,10 @@ export interface AvatarReactionDef {
   particles?: string[];
   /** 화면 색감 (rgba) */
   tint?: string;
+  /** 영상이 끝나도 마지막 장면 유지 */
+  hold?: boolean;
+  /** "premium" = 유료 리액션 (이용권이 없으면 대체 반응 + 잠금 안내) */
+  tier?: "premium";
   emotion: Emotion;
   animation: AvatarAnimation;
 }
@@ -72,6 +78,28 @@ const AVATAR_REACTION_DEFS = {
   excited: { label: "신남", when: "들뜨고 신날 때", clips: ["excited", "laugh", "happy"], motion: "bounce", particles: ["🎉"], emotion: "happy", animation: "jump" },
   comfort: { label: "토닥임", when: "상대를 위로하고 싶을 때", clips: ["comfort", "nod"], motion: "nodSoft", particles: ["🤍"], emotion: "neutral", animation: "nod" },
   sleepy: { label: "졸림", when: "피곤하거나 밤늦어 졸릴 때", clips: ["sleepy", "idle"], motion: "sinkSoft", particles: ["💤"], emotion: "neutral", animation: "idle" },
+  turn_away: {
+    label: "등 돌림",
+    when: "유저가 무례하거나 상처 주는 말을 해서 실망해 등을 돌리고 싶을 때. 아주 드물게만",
+    clips: ["turn_away", "pout", "shake"],
+    motion: "sway",
+    particles: ["💢"],
+    tint: "rgba(30,41,59,0.25)",
+    hold: true,
+    emotion: "angry",
+    animation: "shake",
+  },
+  kiss: {
+    label: "뽀뽀",
+    when: "아주 특별한 사이에서 애정이 최고조일 때 손 키스를 날리는 순간. 정말 드물게만",
+    clips: ["kiss", "love", "shy"],
+    motion: "pop",
+    particles: ["💋", "❤️", "💕"],
+    tint: "rgba(244,63,94,0.18)",
+    tier: "premium",
+    emotion: "happy",
+    animation: "jump",
+  },
 } satisfies Record<string, AvatarReactionDef>;
 
 export type AvatarReactionId = keyof typeof AVATAR_REACTION_DEFS;

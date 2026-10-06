@@ -21,6 +21,7 @@ import {
   type TouchReactionId,
 } from "@/config/reactions";
 import type { Persona, PersonaId } from "@/lib/personas/types";
+import { createReactionDirector, type DirectorDecision, type DirectorEvent } from "@/lib/reactionDirector";
 import type { ChatMessage, ChatResponse } from "@/types/game";
 
 /* -------------------------------------------------------------------------- */
@@ -125,7 +126,14 @@ const visibleText = (m: ChatMessage) => (m.kind ?? "text") === "text";
 
 /* -------------------------------------------------------------------------- */
 
-export default function ChatApp({ personas }: { personas: Persona[] }) {
+export default function ChatApp({
+  personas,
+  premiumReactions = false,
+}: {
+  personas: Persona[];
+  /** 유료 리액션 영상(뽀뽀 등) 사용 가능 — 서버가 정한다 (lib/entitlements.ts) */
+  premiumReactions?: boolean;
+}) {
   const byId = useMemo(() => new Map(personas.map((p) => [p.id, p])), [personas]);
 
   const [hydrated, setHydrated] = useState(false);
@@ -188,16 +196,75 @@ export default function ChatApp({ personas }: { personas: Persona[] }) {
     setTimeout(() => setBursts((x) => x.filter((y) => y.id !== b.id)), 1300);
   }, []);
 
-  const playReaction = useCallback(
-    (r: AvatarReactionId) => {
-      const def = AVATAR_REACTIONS[r] ?? AVATAR_REACTIONS.idle;
-      setReaction(r);
-      setCue(r === "idle" ? null : { clips: def.clips, motion: def.motion, tint: def.tint });
-      setReactionKey((k) => k + 1);
-      spawnParticles(def.particles);
+  /* ── 리액션 연출 (lib/reactionDirector.ts 가 영상을 틀지, 움직임만 줄지 정한다) ── */
+  const director = useMemo(() => createReactionDirector(), []);
+  const [sulking, setSulking] = useState(false);
+  const [teaser, setTeaser] = useState<AvatarReactionId | null>(null);
+  const affectionRef = useRef(affection);
+  affectionRef.current = affection;
+  const sulkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /** 연출 판단에 필요한 정보 */
+  const directorCtx = useCallback(
+    (nextAffection: number) => {
+      const free = persona?.assets.clips ?? {};
+      const paid = persona?.assets.premiumClips ?? {};
+      return {
+        affection: affectionRef.current,
+        nextAffection,
+        relationship: persona?.relationshipType ?? "romance",
+        premium: premiumReactions,
+        hasClip: (n: string) => n in free || (premiumReactions && n in paid),
+        hasPremiumClip: (n: string) => n in paid,
+      } as const;
     },
-    [spawnParticles]
+    [persona, premiumReactions]
   );
+
+  /** 연출 결과를 화면에 반영 */
+  const applyDecision = useCallback(
+    (d: DirectorDecision, particlesAt?: { x: number; y: number }) => {
+      setReaction(d.reaction);
+      if (d.cue) {
+        setCue(d.cue);
+        setReactionKey((k) => k + 1);
+      }
+      if (!particlesAt) spawnParticles(d.particles);
+      if (d.sulk?.state === "start") {
+        setSulking(true);
+        if (sulkTimer.current) clearTimeout(sulkTimer.current);
+        if (d.sulk.autoReleaseMs) {
+          sulkTimer.current = setTimeout(() => {
+            if (director.releaseTouchSulk()) {
+              setSulking(false);
+              setReaction("idle");
+              setCue(null); // 멈춰 있던 등 돌린 장면을 풀고 기본 화면으로
+              setReactionKey((k) => k + 1);
+            }
+          }, d.sulk.autoReleaseMs);
+        }
+      } else if (d.sulk?.state === "end") {
+        setSulking(false);
+        if (sulkTimer.current) clearTimeout(sulkTimer.current);
+      }
+      if (d.teaser) {
+        setTeaser(d.teaser);
+        setTimeout(() => setTeaser(null), 4500);
+      }
+    },
+    [director, spawnParticles]
+  );
+
+  /** AI 답장·보이스톡 표정 → 연출 */
+  const playReaction = useCallback(
+    (r: AvatarReactionId, opts?: { delta?: number; kind?: Extract<DirectorEvent, { type: "ai" }>["kind"]; heart?: HeartReactionId }) => {
+      const delta = opts?.delta ?? 0;
+      const ev: DirectorEvent = { type: "ai", reaction: r, affectionDelta: delta, kind: opts?.kind ?? "text", heart: opts?.heart };
+      applyDecision(director.decide(ev, directorCtx(clampAffection(affectionRef.current + delta))));
+    },
+    [applyDecision, director, directorCtx]
+  );
+  const playVoiceReaction = useCallback((r: AvatarReactionId) => playReaction(r, { kind: "voice" }), [playReaction]);
 
   /* ── 화면 터치 리액션 (LLM 호출 없이 즉시) ─────────────────────────────── */
   /** 손가락 자리에서 이모지가 튀어나가는 효과 */
@@ -256,10 +323,14 @@ export default function ChatApp({ personas }: { personas: Persona[] }) {
         return null;
       }
       t.lastFire = now;
-      setReaction(def.avatar);
-      setCue({ clips: def.clips, motion: def.motion, tint: def.tint });
-      setReactionKey((k) => k + 1);
-      spawnSparks(def.particles, x, y, 6);
+      const d = director.decide({ type: "touch", touch: touchId, combo: t.combo }, directorCtx(affectionRef.current));
+      applyDecision(d, { x, y });
+      spawnSparks(d.particles ?? def.particles, x, y, d.video ? 8 : 6);
+      if (d.reaction === "turn_away") {
+        // 등 돌린 동안: 한마디도 토라진 말로
+        const sulkLine = d.sulk ? "이제 안 놀아요!" : ["…흥.", "……", "말 걸어 줘야 풀려요"][Math.floor(Math.random() * 3)];
+        setMarks((m) => m.map((mk) => (mk.id === id ? { ...mk, line: sulkLine } : mk)));
+      }
       voiceHandle.current?.notifyTouch(touchId);
       try {
         navigator.vibrate?.(touchId === "pout" ? [12, 40, 12] : 12);
@@ -268,7 +339,7 @@ export default function ChatApp({ personas }: { personas: Persona[] }) {
       }
       return touchId;
     },
-    [persona, affection, spawnSparks]
+    [persona, affection, spawnSparks, director, directorCtx, applyDecision]
   );
 
   /* ── 대화방 열기 / 지우기 ──────────────────────────────────────────────── */
@@ -293,6 +364,9 @@ export default function ChatApp({ personas }: { personas: Persona[] }) {
       writeStorage(LAST_KEY, id);
       setReaction("idle");
       setCue(null);
+      director.reset();
+      setSulking(false);
+      setTeaser(null);
       setVoiceOpen(false);
       setInput("");
       setTyping(false);
@@ -307,7 +381,7 @@ export default function ChatApp({ personas }: { personas: Persona[] }) {
       else if (texts.some((m) => m.role === "user") && Date.now() - lastAt > RETURN_GAP) setAutoAction("return");
       else setAutoAction(null);
     },
-    [byId]
+    [byId, director]
   );
 
   const resetChat = useCallback(
@@ -352,7 +426,7 @@ export default function ChatApp({ personas }: { personas: Persona[] }) {
 
   /* ── 답장 받기 (공통) ──────────────────────────────────────────────────── */
   const requestReply = useCallback(
-    async (msgs: ChatMessage[], kind: Turn["kind"], tapbackTargetId: number | null) => {
+    async (msgs: ChatMessage[], kind: Turn["kind"], tapbackTargetId: number | null, heart?: HeartReactionId) => {
       if (!personaId) return;
       const pid = personaId;
       const session = sessionRef.current;
@@ -404,7 +478,7 @@ export default function ChatApp({ personas }: { personas: Persona[] }) {
         }
 
         if (data.messages.length === 0) {
-          playReaction(data.reaction); // 말 없이 표정만
+          playReaction(data.reaction, { delta: data.affectionDelta, kind: kind === "call" ? "text" : kind, heart }); // 말 없이 표정만
           return;
         }
 
@@ -420,7 +494,7 @@ export default function ChatApp({ personas }: { personas: Persona[] }) {
           }
           const text = data.messages[i];
           setMessages((prev) => [...prev, { id: nextId.current++, role: "ai", kind: "text", text, at: Date.now() }]);
-          if (i === 0) playReaction(data.reaction);
+          if (i === 0) playReaction(data.reaction, { delta: data.affectionDelta, kind: kind === "call" ? "text" : kind, heart });
         }
       } catch (err) {
         if (!same()) return;
@@ -473,7 +547,7 @@ export default function ChatApp({ personas }: { personas: Persona[] }) {
       setMessages(msgs);
       spawnBurst(HEART_REACTIONS[heart].emoji);
       spawnParticles([HEART_REACTIONS[heart].emoji], 4);
-      requestReply(msgs, "reaction", null);
+      requestReply(msgs, "reaction", null, heart);
     },
     [busy, personaId, messages, requestReply, spawnBurst, spawnParticles]
   );
@@ -554,7 +628,30 @@ export default function ChatApp({ personas }: { personas: Persona[] }) {
         onPointerDown={onStagePointerDown}
         data-touch-stage
       >
-        <AvatarStage persona={persona} reaction={reaction} cue={cue} reactionKey={reactionKey} speaking={voiceSpeaking} />
+        <AvatarStage
+          persona={persona}
+          reaction={reaction}
+          cue={cue}
+          reactionKey={reactionKey}
+          speaking={voiceSpeaking}
+          premium={premiumReactions}
+        />
+        {/* 등 돌린(삐진) 상태 안내 — 말로 풀어 주면 다시 돌아본다 */}
+        {sulking && (
+          <div className="pointer-events-none absolute inset-x-0 top-[38%] flex justify-center" data-sulking>
+            <span className="rounded-full bg-black/55 px-3 py-1.5 text-xs text-white/90 backdrop-blur">
+              💢 {persona.name} 님이 토라졌어요 · 다정하게 말을 걸어 보세요
+            </span>
+          </div>
+        )}
+        {/* 유료 리액션 잠금 안내 (가끔만) */}
+        {teaser && (
+          <div className="pointer-events-none absolute inset-x-0 top-[30%] flex justify-center" data-teaser={teaser}>
+            <span className="touch-line-static rounded-full bg-gradient-to-r from-pink-500 to-rose-500 px-3.5 py-1.5 text-xs font-semibold text-white shadow-lg">
+              💋 {persona.name} 님의 특별한 리액션이 있어요 · PRO
+            </span>
+          </div>
+        )}
         <EffectsLayer particles={particles} bursts={bursts} sparks={sparks} marks={marks} />
         <div className="pointer-events-none absolute inset-x-0 bottom-0 hidden bg-gradient-to-t from-black/80 via-black/40 to-transparent p-5 pt-16 wide:block">
           <p className="text-lg font-semibold text-white">
@@ -584,7 +681,7 @@ export default function ChatApp({ personas }: { personas: Persona[] }) {
             className="h-10 w-10 shrink-0 overflow-hidden rounded-2xl ring-1 ring-white/20"
           />
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold [text-shadow:0_1px_2px_rgba(0,0,0,.5)]" style={{ color: persona.accent }}>
+            <p className="truncate whitespace-nowrap text-sm font-semibold [text-shadow:0_1px_2px_rgba(0,0,0,.5)]" style={{ color: persona.accent }}>
               {persona.name}
             </p>
             <p className="truncate text-xs text-white/80 [text-shadow:0_1px_2px_rgba(0,0,0,.6)] wide:text-slate-400 wide:[text-shadow:none]">
@@ -663,7 +760,7 @@ export default function ChatApp({ personas }: { personas: Persona[] }) {
               .map((t) => ({ role: t.role, content: t.content }))}
             onEnd={endVoice}
             onSpeakingChange={setVoiceSpeaking}
-            onReaction={playReaction}
+            onReaction={playVoiceReaction}
             registerHandle={(h) => {
               voiceHandle.current = h;
             }}

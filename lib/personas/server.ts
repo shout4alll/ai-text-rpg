@@ -57,6 +57,15 @@ export function getPersonaFile(id: string): PersonaFile {
 
 const CLIP_EXT = process.env.NEXT_PUBLIC_AVATAR_CLIP_EXT || "mp4";
 
+/** public/<urlPath> 파일이 있는지 */
+function publicFileExists(urlPath: string): boolean {
+  try {
+    return fs.statSync(path.join(process.cwd(), "public", urlPath)).isFile();
+  } catch {
+    return false;
+  }
+}
+
 /** public/<urlDir> 안의 영상 파일을 찾아 { 이름: URL } 로 반환 (없으면 빈 객체) */
 function scanClips(urlDir: string): Record<string, string> {
   const out: Record<string, string> = {};
@@ -95,6 +104,9 @@ export function toPublic(p: PersonaFile): Persona {
       poster: `${base}/${p.image.portrait}`,
       clips,
       objectPosition: p.image.objectPosition,
+      ...(publicFileExists(`${base}/stage.jpg`) ? { stagePoster: `${base}/stage.jpg` } : {}),
+      stagePosition: p.image.stagePosition,
+      premiumClips: scanClips(`${base}/clips/premium`),
       ...(p.image.fallbackPoster ? { fallbackPoster: p.image.fallbackPoster } : {}),
     },
   };
