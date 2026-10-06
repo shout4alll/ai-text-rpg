@@ -49,6 +49,22 @@ export const personaFileSchema = z.object({
    * 예) { "shy": ["앗… 왜 그래?"], "pout": ["그만해~!"] }  — 키: config/reactions.ts 의 TOUCH_REACTIONS id
    */
   touchLines: z.partialRecord(z.enum(TOUCH_REACTION_IDS), z.array(z.string().min(1)).min(1)).optional(),
+  /**
+   * (선택) 앨범 — 미리 찍어 둔 사진·영상. 파일은 public/avatar/personas/<id>/ 기준 경로.
+   * 유저가 사진·영상을 보여 달라고 하면 AI가 이 중 어울리는 것을 골라 보낸다. (docs/MEDIA.md)
+   */
+  album: z
+    .array(
+      z.object({
+        id: z.string().regex(/^[a-z0-9_-]+$/, "album id 는 영문 소문자·숫자·_·-"),
+        type: z.enum(["photo", "video"]),
+        /** 예: "album/laugh.jpg", "clips/love.mp4" */
+        file: z.string().min(1),
+        /** 어떤 사진인지 한 줄 설명 (AI가 고를 때 참고) */
+        desc: z.string().min(1),
+      })
+    )
+    .default([]),
   /** (선택) 보이스톡 목소리. 없으면 성별 기본값 (docs/VOICE_TALK.md) */
   voice: z
     .object({

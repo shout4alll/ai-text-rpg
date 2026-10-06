@@ -33,6 +33,8 @@ interface VideoAvatarProps {
   speaking?: boolean;
   /** 유료 리액션 영상(clips/premium) 사용 가능 */
   premium?: boolean;
+  /** 리액션 영상의 소리(목소리·웃음소리) 켜기. idle 루프는 항상 무음 */
+  sound?: boolean;
 }
 
 const BASE = "scale(1.04)"; // 이동 시 가장자리가 비지 않도록 살짝 확대한 상태가 기본
@@ -70,7 +72,7 @@ const LOOPS = new Set(["idle", "talk"]);
 /** 영상 전환 페이드 (ms) — 클립마다 첫 장면이 조금씩 달라도 자연스럽게 이어지도록 */
 const FADE_MS = 280;
 
-export default function VideoAvatar({ persona, cue, reactionKey, speaking = false, premium = false }: VideoAvatarProps) {
+export default function VideoAvatar({ persona, cue, reactionKey, speaking = false, premium = false, sound = true }: VideoAvatarProps) {
   // { 이름: URL } — 실제로 있는 영상만 (유료 영상은 이용권이 있을 때만 섞는다)
   const clips = useMemo(
     () => ({ ...persona.assets.clips, ...(premium ? persona.assets.premiumClips : {}) }),
@@ -90,12 +92,45 @@ export default function VideoAvatar({ persona, cue, reactionKey, speaking = fals
 
   useEffect(() => setMounted(true), []);
 
-  const latest = useRef({ cue, ready, names });
-  latest.current = { cue, ready, names };
+  const latest = useRef({ cue, ready, names, sound });
+  latest.current = { cue, ready, names, sound };
+
+  /*
+   * 소리 잠금 해제: 브라우저(특히 iOS)는 사용자 동작 없이 소리 나는 재생을 막는다.
+   * 첫 터치/키 입력 때 이벤트 클립들을 소리 켠 채 한 번 재생→즉시 정지해 두면, 이후 AI 답장에도 소리가 난다.
+   */
+  const unlocked = useRef(false);
+  useEffect(() => {
+    if (!sound) return;
+    const unlock = () => {
+      if (unlocked.current) return;
+      unlocked.current = true;
+      for (const [n, v] of Object.entries(videoRefs.current)) {
+        if (!v || LOOPS.has(n) || !v.paused) continue;
+        v.muted = false;
+        v.play()
+          .then(() => {
+            if (!v.dataset.playing) {
+              v.pause();
+              v.currentTime = 0;
+            }
+          })
+          .catch(() => {
+            v.muted = true;
+          });
+      }
+    };
+    window.addEventListener("pointerdown", unlock, { once: true, capture: true });
+    window.addEventListener("keydown", unlock, { once: true, capture: true });
+    return () => {
+      window.removeEventListener("pointerdown", unlock, { capture: true });
+      window.removeEventListener("keydown", unlock, { capture: true });
+    };
+  }, [sound]);
 
   useEffect(() => {
     if (reactionKey === 0) return;
-    const { cue: def, ready, names } = latest.current;
+    const { cue: def, ready, names, sound } = latest.current;
     if (!def) return;
 
     // 색감 효과
@@ -108,10 +143,23 @@ export default function VideoAvatar({ persona, cue, reactionKey, speaking = fals
     const clip = def.clips.find((c) => !LOOPS.has(c) && ready[c]);
     const video = clip ? videoRefs.current[clip] : null;
     if (clip && video) {
-      for (const n of names) if (!LOOPS.has(n) && n !== clip) videoRefs.current[n]?.pause();
+      for (const n of names) {
+        const other = videoRefs.current[n];
+        if (other && !LOOPS.has(n) && n !== clip) {
+          other.pause();
+          delete other.dataset.playing;
+        }
+      }
       holdRef.current = def.hold ? clip : null;
       video.currentTime = 0;
-      video.play().catch(() => {});
+      video.dataset.playing = "1";
+      video.muted = !sound;
+      video.volume = 0.9;
+      // 소리 재생이 막히면(사용자 동작 전) 무음으로라도 즉시 재생
+      video.play().catch(() => {
+        video.muted = true;
+        video.play().catch(() => {});
+      });
       setActive(clip);
       return;
     }
@@ -128,6 +176,12 @@ export default function VideoAvatar({ persona, cue, reactionKey, speaking = fals
       mediaRef.current.animate(m.frames, { duration: m.duration, easing: "ease-in-out" });
     }
   }, [reactionKey]);
+
+  // 소리 끄기를 누르면 재생 중인 클립도 바로 음소거
+  useEffect(() => {
+    if (sound) return;
+    for (const v of Object.values(videoRefs.current)) if (v) v.muted = true;
+  }, [sound]);
 
   // 상위에서 cue 를 비우면(null) 멈춰 있던 장면을 풀고 기본 화면으로 돌아간다
   useEffect(() => {
@@ -187,6 +241,8 @@ export default function VideoAvatar({ persona, cue, reactionKey, speaking = fals
                     loop
                       ? undefined
                       : () => {
+                          const v = videoRefs.current[name];
+                          if (v) delete v.dataset.playing;
                           if (holdRef.current === name) return; // 마지막 장면에서 멈춤 유지
                           setActive((a) => (a === name ? null : a));
                         }

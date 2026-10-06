@@ -6,7 +6,24 @@ import ChatPanel from "@/components/ChatPanel";
 import EffectsLayer, { type Burst, type Particle, type TouchMark, type TouchSpark } from "@/components/EffectsLayer";
 import PersonaPortrait from "@/components/PersonaPortrait";
 import PersonaSelector from "@/components/PersonaSelector";
-import VoiceCall, { type VoiceCallHandle, type VoiceCallResult } from "@/components/VoiceCall";
+import VoiceCall, { type VoiceBilling, type VoiceCallHandle, type VoiceCallResult } from "@/components/VoiceCall";
+import PlansModal, { type PlansReason } from "@/components/PlansModal";
+import { CASH_PRICE, PLANS, type PlanId } from "@/config/plans";
+import {
+  addVoiceSeconds,
+  consumeFreeExchange,
+  consumePlanPhoto,
+  freeExchangesLeft,
+  getMembership,
+  planPhotosLeft,
+  planVoiceSecondsLeft,
+  refundPlanPhoto,
+  setPlanForTest,
+  type MembershipState,
+} from "@/lib/membership";
+import MediaPurchaseModal from "@/components/MediaPurchaseModal";
+import { DEMO_TOPUP, MEDIA_COST } from "@/config/media";
+import { getCash, refundCash, setCash, spendCash } from "@/lib/wallet";
 import {
   AFFECTION_START,
   AVATAR_REACTIONS,
@@ -46,12 +63,14 @@ function readStorage(key: string): string | null {
     return null;
   }
 }
-function writeStorage(key: string, value: string | null) {
+function writeStorage(key: string, value: string | null): boolean {
   try {
     if (value === null) localStorage.removeItem(key);
     else localStorage.setItem(key, value);
+    return true;
   } catch {
     /* 저장 불가 환경(시크릿 모드, 용량 초과 등)은 무시 */
+    return false;
   }
 }
 
@@ -77,7 +96,39 @@ function loadChat(id: PersonaId): StoredChat | null {
 }
 
 function saveChat(id: PersonaId, chat: Omit<StoredChat, "v">) {
-  writeStorage(chatKey(id), JSON.stringify({ v: 2, messages: chat.messages.slice(-MAX_STORED), affection: chat.affection }));
+  const messages = chat.messages.slice(-MAX_STORED);
+  if (writeStorage(chatKey(id), JSON.stringify({ v: 2, messages, affection: chat.affection }))) return;
+  // 용량 초과: 실시간 생성 사진(data URL)은 빼고 저장 (대화 기록은 지킨다)
+  const slim = messages.map((m) =>
+    m.media?.generated && m.media.src.startsWith("data:") ? { ...m, media: { ...m.media, src: "" } } : m
+  );
+  writeStorage(chatKey(id), JSON.stringify({ v: 2, messages: slim, affection: chat.affection }));
+}
+
+/** 생성 사진을 메신저용 크기(가로 720, JPEG)로 줄여 data URL 로 */
+async function compressImage(base64: string, mimeType: string): Promise<string> {
+  const src = `data:${mimeType};base64,${base64}`;
+  try {
+    const img = new Image();
+    img.src = src;
+    await img.decode();
+    const scale = Math.min(1, 720 / img.naturalWidth);
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(img.naturalWidth * scale);
+    canvas.height = Math.round(img.naturalHeight * scale);
+    canvas.getContext("2d")?.drawImage(img, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.82);
+  } catch {
+    return src;
+  }
+}
+
+function readPass(): string | null {
+  try {
+    return localStorage.getItem("ai-rpg.voicePass");
+  } catch {
+    return null;
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -85,7 +136,7 @@ function saveChat(id: PersonaId, chat: Omit<StoredChat, "v">) {
 /* -------------------------------------------------------------------------- */
 interface Turn {
   role: "user" | "assistant";
-  kind: "text" | "reaction" | "return" | "call";
+  kind: "text" | "reaction" | "return" | "call" | "media";
   content: string;
   target?: string;
   at?: number;
@@ -103,6 +154,8 @@ function toTurns(msgs: ChatMessage[]): Turn[] {
       turns.push({ role: "user", kind: "reaction", content: m.text, target: byId.get(m.targetId ?? -1)?.text, at: m.at });
     } else if (m.kind === "call") {
       turns.push({ role: "user", kind: "call", content: m.text, at: m.at });
+    } else if (m.kind === "media" && m.role === "ai") {
+      turns.push({ role: "assistant", kind: "media", content: m.text, at: m.at });
     }
   }
   return turns.slice(-MAX_SEND);
@@ -159,10 +212,33 @@ export default function ChatApp({
   // 화면 터치 연타 추적
   const touchRef = useRef({ lastAt: 0, combo: 0, lastFire: 0 });
 
+  // 유료 실시간 사진 (모달 → 캐시 차감 → 생성)
+  const [photoOffer, setPhotoOffer] = useState<null | { personaId: PersonaId; request: string }>(null);
+  const [cash, setCashState] = useState(0);
+  const [photoBusy, setPhotoBusy] = useState(false);
+
+  // 리액션 영상 소리 (기본 켬, 기기에 기억)
+  const [soundOn, setSoundOn] = useState(true);
+  useEffect(() => {
+    setSoundOn(readStorage("ai-rpg.sound") !== "0");
+  }, []);
+
   // 보이스톡
   const [voiceOpen, setVoiceOpen] = useState(false);
   const [voiceSpeaking, setVoiceSpeaking] = useState(false);
   const voiceHandle = useRef<VoiceCallHandle | null>(null);
+  const [voiceBilling, setVoiceBilling] = useState<VoiceBilling | null>(null);
+  /** 캐시 통화: 지금까지 결제한 분 */
+  const cashMinutesPaid = useRef(0);
+
+  // 멤버십 (무료 체험 · 구독 · 월 사용량) — lib/membership.ts
+  const [membership, setMembership] = useState<MembershipState | null>(null);
+  const refreshMembership = useCallback(() => {
+    setMembership(getMembership());
+    setCashState(getCash());
+  }, []);
+  useEffect(() => refreshMembership(), [refreshMembership]);
+  const [plansModal, setPlansModal] = useState<PlansReason | null>(null);
 
   // 열 때 자동으로 할 일 (못 받은 답장 이어받기 / 오랜만에 돌아옴)
   const [autoAction, setAutoAction] = useState<null | "unanswered" | "return">(null);
@@ -204,6 +280,9 @@ export default function ChatApp({
   affectionRef.current = affection;
   const sulkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  /** 유료 리액션 영상: 서버 설정(PREMIUM_ACCESS=open) 또는 PRIME 이상 구독 */
+  const premiumUnlocked = premiumReactions || (membership ? PLANS[membership.plan].premiumReactions : false);
+
   /** 연출 판단에 필요한 정보 */
   const directorCtx = useCallback(
     (nextAffection: number) => {
@@ -213,12 +292,12 @@ export default function ChatApp({
         affection: affectionRef.current,
         nextAffection,
         relationship: persona?.relationshipType ?? "romance",
-        premium: premiumReactions,
-        hasClip: (n: string) => n in free || (premiumReactions && n in paid),
+        premium: premiumUnlocked,
+        hasClip: (n: string) => n in free || (premiumUnlocked && n in paid),
         hasPremiumClip: (n: string) => n in paid,
       } as const;
     },
-    [persona, premiumReactions]
+    [persona, premiumUnlocked]
   );
 
   /** 연출 결과를 화면에 반영 */
@@ -364,6 +443,7 @@ export default function ChatApp({
       writeStorage(LAST_KEY, id);
       setReaction("idle");
       setCue(null);
+      setPhotoOffer(null);
       director.reset();
       setSulking(false);
       setTeaser(null);
@@ -439,7 +519,13 @@ export default function ChatApp({
       const req = fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ personaId: pid, messages: turns, timeZone: userTimeZone(), affection }),
+        body: JSON.stringify({
+          personaId: pid,
+          messages: turns,
+          timeZone: userTimeZone(),
+          affection,
+          sentAlbumIds: msgs.flatMap((m) => (m.media?.albumId ? [m.media.albumId] : [])),
+        }),
       }).then(async (res) => {
         if (!res.ok) {
           const err = (await res.json().catch(() => null)) as { error?: string } | null;
@@ -478,7 +564,7 @@ export default function ChatApp({
         }
 
         if (data.messages.length === 0) {
-          playReaction(data.reaction, { delta: data.affectionDelta, kind: kind === "call" ? "text" : kind, heart }); // 말 없이 표정만
+          playReaction(data.reaction, { delta: data.affectionDelta, kind: kind === "call" || kind === "media" ? "text" : kind, heart }); // 말 없이 표정만
           return;
         }
 
@@ -494,7 +580,23 @@ export default function ChatApp({
           }
           const text = data.messages[i];
           setMessages((prev) => [...prev, { id: nextId.current++, role: "ai", kind: "text", text, at: Date.now() }]);
-          if (i === 0) playReaction(data.reaction, { delta: data.affectionDelta, kind: kind === "call" ? "text" : kind, heart });
+          if (i === 0) playReaction(data.reaction, { delta: data.affectionDelta, kind: kind === "call" || kind === "media" ? "text" : kind, heart });
+        }
+
+        // 사진·영상: 앨범이면 "찍어 둔 거 보내 줄게요" 하고 바로 전송, 새 사진이면 유료 안내 모달
+        const media = data.media;
+        if (media?.action === "album") {
+          setTyping(true);
+          await sleep(700 + Math.random() * 600);
+          if (!same()) return;
+          const it = media.item;
+          setMessages((prev) => [
+            ...prev,
+            { id: nextId.current++, role: "ai", kind: "media", text: it.desc, at: Date.now(), media: { type: it.type, src: it.src, albumId: it.id } },
+          ]);
+        } else if (media?.action === "custom") {
+          setCashState(getCash());
+          setPhotoOffer({ personaId: pid, request: media.request });
         }
       } catch (err) {
         if (!same()) return;
@@ -552,6 +654,69 @@ export default function ChatApp({
     [busy, personaId, messages, requestReply, spawnBurst, spawnParticles]
   );
 
+  /* ── 유료 실시간 사진 ─────────────────────────────────────────────────── */
+  const addNotice = (text: string) =>
+    setMessages((prev) => [...prev, { id: nextId.current++, role: "ai", kind: "notice", text, at: Date.now(), local: true }]);
+
+  const cancelPhoto = () => {
+    setPhotoOffer(null);
+    addNotice("사진 받기를 취소했어요");
+  };
+
+  const buyPhoto = async () => {
+    const offer = photoOffer;
+    if (!offer || photoBusy) return;
+    // 구독 사진이 남았으면 그걸로, 아니면 캐시
+    const usePlan = consumePlanPhoto();
+    const cost = usePlan ? 0 : MEDIA_COST.photo;
+    if (!usePlan && !spendCash(cost)) {
+      setCashState(getCash());
+      return;
+    }
+    const refund = () => (usePlan ? refundPlanPhoto() : refundCash(cost));
+    refreshMembership();
+    setPhotoOffer(null);
+    setPhotoBusy(true);
+    setTyping(true);
+    const session = sessionRef.current;
+    try {
+      const pass = readPass();
+      const res = await fetch("/api/media/photo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(pass ? { "x-voice-pass": pass } : {}) },
+        body: JSON.stringify({ personaId: offer.personaId, request: offer.request, timeZone: userTimeZone() }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { image?: string; mimeType?: string; error?: string };
+      if (!res.ok || !data.image) throw new Error(data.error ?? `HTTP ${res.status}`);
+      const src = await compressImage(data.image, data.mimeType ?? "image/png");
+      if (session !== sessionRef.current) {
+        refund(); // 받기 전에 다른 대화방으로 옮김 → 환불
+        return;
+      }
+      setMessages((prev) => [
+        ...prev,
+        { id: nextId.current++, role: "ai", kind: "media", text: `방금 찍은 사진: ${offer.request}`, at: Date.now(), media: { type: "photo", src, generated: true } },
+      ]);
+      playReaction("shy");
+    } catch (err) {
+      refund();
+      refreshMembership();
+      if (session === sessionRef.current) {
+        addNotice(`⚠️ ${err instanceof Error ? err.message : "사진을 받지 못했어요."} ${usePlan ? "사용한 사진 1장은" : `캐시 💎${cost}은`} 돌려드렸어요.`);
+      }
+    } finally {
+      setPhotoBusy(false);
+      if (session === sessionRef.current) setTyping(false);
+    }
+  };
+
+  const toggleSound = () => {
+    setSoundOn((on) => {
+      writeStorage("ai-rpg.sound", on ? "0" : "1");
+      return !on;
+    });
+  };
+
   const handleSelect = (id: PersonaId) => {
     setSelectorOpen(false);
     if (id !== personaId) openChat(id);
@@ -578,16 +743,74 @@ export default function ChatApp({
   };
 
   /* ── 보이스톡 ──────────────────────────────────────────────────────────── */
+  /**
+   * 보이스톡 시작 — 과금 방식 결정 (config/plans.ts)
+   *  1) 무료 체험이 남았으면: 주고받기 N회까지
+   *  2) 구독 통화 시간이 남았으면: 남은 시간까지
+   *  3) 아니면: 멤버십/캐시 안내 모달
+   */
   const startVoice = () => {
     if (busy || voiceOpen) return;
     setConfirmReset(false);
+    const m = getMembership();
+    const trialLeft = freeExchangesLeft(m);
+    const planLeft = planVoiceSecondsLeft(m);
+    if (trialLeft > 0) {
+      setVoiceBilling({ mode: "trial", label: `🎁 무료 체험 · 주고받기 ${trialLeft}번 남음`, maxExchanges: trialLeft });
+    } else if (planLeft > 0) {
+      setVoiceBilling({ mode: "plan", label: `${PLANS[m.plan].name} · ${Math.ceil(planLeft / 60)}분 남음`, maxSeconds: planLeft });
+    } else {
+      refreshMembership();
+      setPlansModal("voice");
+      return;
+    }
     setVoiceOpen(true);
   };
 
+  /** 캐시로 통화 시작: 첫 1분을 먼저 차감 */
+  const startCashCall = () => {
+    if (!spendCash(CASH_PRICE.voicePerMinute)) {
+      refreshMembership();
+      return;
+    }
+    cashMinutesPaid.current = 1;
+    refreshMembership();
+    setPlansModal(null);
+    setVoiceBilling({ mode: "cash", label: `💎 ${CASH_PRICE.voicePerMinute}/분 · 보유 💎${getCash()}` });
+    setVoiceOpen(true);
+  };
+
+  /** 캐시 통화: 1분이 넘어갈 때마다 차감, 부족하면 하던 말 마저 듣고 종료 */
+  const onVoiceTick = useCallback(
+    (sec: number) => {
+      if (voiceBilling?.mode !== "cash") return;
+      const needed = Math.floor(sec / 60) + 1;
+      if (needed <= cashMinutesPaid.current) return;
+      if (spendCash(CASH_PRICE.voicePerMinute)) {
+        cashMinutesPaid.current = needed;
+        setCashState(getCash());
+      } else {
+        voiceHandle.current?.end("limit");
+      }
+    },
+    [voiceBilling]
+  );
+
+  const onVoiceExchange = useCallback(() => {
+    if (voiceBilling?.mode === "trial") consumeFreeExchange();
+  }, [voiceBilling]);
+
   const endVoice = useCallback(
-    ({ seconds, transcript }: VoiceCallResult) => {
+    ({ seconds, transcript, reason }: VoiceCallResult) => {
       setVoiceOpen(false);
       setVoiceSpeaking(false);
+      // 사용량 정산 + 다음 단계 안내
+      if (voiceBilling?.mode === "plan") addVoiceSeconds(seconds);
+      // 캐시 통화가 연결도 못 하고 끝나면 먼저 낸 1분은 돌려준다
+      if (voiceBilling?.mode === "cash" && seconds === 0) refundCash(cashMinutesPaid.current * CASH_PRICE.voicePerMinute);
+      refreshMembership();
+      if (reason === "trial") setPlansModal("trial-end");
+      else if (reason === "limit") setPlansModal("voice");
       if (seconds <= 0 && transcript.length === 0) return;
       // 통화 내용을 톡 기록에 남긴다 → 이후 텍스트 대화가 통화 맥락을 이어 간다
       const lines = transcript.slice(-30).map<ChatMessage>((t) => ({
@@ -602,7 +825,7 @@ export default function ChatApp({
       const log: ChatMessage = { id: nextId.current++, role: "ai", kind: "call", text: String(seconds), at: Date.now() };
       setMessages((prev) => [...prev, ...lines, log]);
     },
-    []
+    [voiceBilling, refreshMembership]
   );
 
   /* ── 화면 ─────────────────────────────────────────────────────────────── */
@@ -634,8 +857,20 @@ export default function ChatApp({
           cue={cue}
           reactionKey={reactionKey}
           speaking={voiceSpeaking}
-          premium={premiumReactions}
+          premium={premiumUnlocked}
+          sound={soundOn && !voiceOpen}
         />
+        {/* 리액션 영상 소리 켜기/끄기 */}
+        <button
+          type="button"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={toggleSound}
+          aria-label={soundOn ? "리액션 소리 끄기" : "리액션 소리 켜기"}
+          data-sound-toggle={soundOn ? "on" : "off"}
+          className="absolute right-3 top-[calc(max(0.75rem,env(safe-area-inset-top))+4.25rem)] z-10 flex h-9 w-9 items-center justify-center rounded-full bg-black/35 text-base text-white/90 ring-1 ring-white/20 backdrop-blur wide:top-3"
+        >
+          {soundOn ? "🔊" : "🔇"}
+        </button>
         {/* 등 돌린(삐진) 상태 안내 — 말로 풀어 주면 다시 돌아본다 */}
         {sulking && (
           <div className="pointer-events-none absolute inset-x-0 top-[38%] flex justify-center" data-sulking>
@@ -680,12 +915,12 @@ export default function ChatApp({
             size="sm"
             className="h-10 w-10 shrink-0 overflow-hidden rounded-2xl ring-1 ring-white/20"
           />
-          <div className="min-w-0 flex-1">
+          <div className="min-w-[4.5rem] flex-1">
             <p className="truncate whitespace-nowrap text-sm font-semibold [text-shadow:0_1px_2px_rgba(0,0,0,.5)]" style={{ color: persona.accent }}>
               {persona.name}
             </p>
             <p className="truncate text-xs text-white/80 [text-shadow:0_1px_2px_rgba(0,0,0,.6)] wide:text-slate-400 wide:[text-shadow:none]">
-              {typing ? "입력 중…" : persona.status}
+              {photoBusy ? "사진 찍는 중…" : typing ? "입력 중…" : persona.status}
             </p>
             <div className="mt-1 flex items-center gap-1.5" title={`호감도 ${Math.round(affection)}`} data-affection={Math.round(affection)}>
               <span className="text-[11px] text-pink-300">♥</span>
@@ -695,6 +930,19 @@ export default function ChatApp({
               <span className="whitespace-nowrap text-[10px] text-white/80 wide:text-slate-400" data-stage>
                 {stage.label}
               </span>
+              {/* 멤버십 배지 → 구독 안내 */}
+              <button
+                type="button"
+                onClick={() => {
+                  refreshMembership();
+                  setPlansModal("menu");
+                }}
+                data-plan-badge={membership?.plan ?? "free"}
+                className="ml-0.5 shrink-0 rounded-full px-1.5 py-px text-[9px] font-bold leading-tight ring-1 ring-white/30"
+                style={{ color: membership && membership.plan !== "free" ? PLANS[membership.plan].color : "rgba(255,255,255,.75)" }}
+              >
+                {membership && membership.plan !== "free" ? `👑 ${PLANS[membership.plan].name}` : "멤버십"}
+              </button>
             </div>
           </div>
           <button
@@ -721,9 +969,12 @@ export default function ChatApp({
             ) : (
               <button
                 onClick={() => setConfirmReset(true)}
+                aria-label="처음부터"
+                title="처음부터"
                 className="shrink-0 rounded-lg px-2.5 py-1.5 text-xs text-white/80 hover:bg-white/10 wide:text-slate-400"
               >
-                처음부터
+                <span className="wide:hidden" aria-hidden>↺</span>
+                <span className="hidden wide:inline">처음부터</span>
               </button>
             ))}
           <button
@@ -764,8 +1015,53 @@ export default function ChatApp({
             registerHandle={(h) => {
               voiceHandle.current = h;
             }}
+            billing={voiceBilling ?? { mode: "trial", label: "" }}
+            onExchange={onVoiceExchange}
+            onTick={onVoiceTick}
           />
         </div>
+      )}
+
+      {photoOffer && photoOffer.personaId === persona.id && (
+        <MediaPurchaseModal
+          persona={persona}
+          request={photoOffer.request}
+          cost={MEDIA_COST.photo}
+          cash={cash}
+          planPhotosLeft={membership ? planPhotosLeft(membership) : 0}
+          planName={membership ? PLANS[membership.plan].name : ""}
+          onShowPlans={() => setPlansModal("photo")}
+          onConfirm={buyPhoto}
+          onCancel={cancelPhoto}
+          onTopUp={() => {
+            // 결제 연동 전 테스트용 충전
+            setCash(getCash() + DEMO_TOPUP);
+            setCashState(getCash());
+          }}
+        />
+      )}
+
+      {plansModal && (
+        <PlansModal
+          reason={plansModal}
+          currentPlan={membership?.plan ?? "free"}
+          cash={cash}
+          personaName={persona.name}
+          onSubscribe={(plan: PlanId) => {
+            // 결제 연동 전 테스트: 바로 구독 처리 + 보너스 캐시
+            setPlanForTest(plan);
+            if (PLANS[plan].bonusCash) setCash(getCash() + PLANS[plan].bonusCash);
+            refreshMembership();
+            addNotice(`👑 ${PLANS[plan].name} 멤버십이 시작됐어요 (테스트)`);
+            setPlansModal(null);
+          }}
+          onTopUp={() => {
+            setCash(getCash() + DEMO_TOPUP);
+            refreshMembership();
+          }}
+          onCashCall={plansModal === "voice" || plansModal === "trial-end" ? startCashCall : undefined}
+          onClose={() => setPlansModal(null)}
+        />
       )}
 
       {selectorOpen && (

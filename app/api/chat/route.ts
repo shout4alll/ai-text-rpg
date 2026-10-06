@@ -7,7 +7,9 @@ import {
   SHARED_RULES,
   getPersonaFile,
   isPersonaId,
+  albumOf,
 } from "@/lib/personas/server";
+import type { AlbumItem, MediaDirective } from "@/config/media";
 import type { PersonaFile } from "@/lib/personas/schema";
 import { resolveModel } from "@/config/ai";
 import {
@@ -41,7 +43,7 @@ const turnSchema = z.object({
    * reaction: 유저가 상대 메시지에 단 마음 리액션 (content = HeartReactionId, target = 대상 메시지 내용)
    * return: 유저가 오랜만에 대화방에 돌아옴 (content 무시)
    */
-  kind: z.enum(["text", "reaction", "return", "call"]).default("text"),
+  kind: z.enum(["text", "reaction", "return", "call", "media"]).default("text"),
   content: z.string().max(MAX_CONTENT),
   target: z.string().max(MAX_CONTENT).optional(),
   /** 보낸 시각(ms). 대화 사이 시간 경과를 모델에 알려 주는 데 쓴다. */
@@ -54,22 +56,42 @@ const requestSchema = z.object({
   timeZone: z.string().max(64).optional(),
   /** 현재 호감도 0~100 */
   affection: z.number().min(0).max(100).optional(),
+  /** 이미 보낸 앨범 id (같은 사진 반복 방지) */
+  sentAlbumIds: z.array(z.string().max(64)).max(200).optional(),
 });
 
 /** LLM 출력 스키마 */
+/**
+ * LLM 출력 스키마.
+ * 작은 모델(Nova Lite 등)은 필드를 빼먹거나 하나만 보내는 일이 있어서, 모든 필드에 기본값(.catch)을 둔다.
+ * → 일부 필드가 빠져도 오류(500) 대신 안전한 기본값으로 채워서 대화가 끊기지 않게 한다.
+ */
 const replySchema = z.object({
   messages: z
     .array(z.string())
+    .catch([])
     .describe("메신저 말풍선 0~3개. 실제로 톡을 보내듯 짧게 나눠서. 한국어. 마음 리액션에는 말 없이 빈 배열도 가능."),
   reaction: z
     .enum(AVATAR_REACTION_IDS)
+    .catch("smile")
     .describe("이 순간 화면 속 너의 표정·몸짓 리액션"),
   tapback: z
     .enum(["none", ...HEART_REACTION_IDS])
+    .catch("none")
     .describe("유저의 마지막 메시지에 달 마음 리액션. 대부분은 none."),
   affection_delta: z
     .number()
+    .catch(0)
     .describe("이번 턴에 너의 호감도 변화. -5 ~ +5 정수. 평범하면 0."),
+  media_action: z
+    .enum(["none", "album", "custom"])
+    .catch("none")
+    .describe("사진·영상 보내기. 대부분 none. album=앨범에서 하나 보내기, custom=지금 모습/앨범에 없는 특정 모습을 새로 찍어 달라는 요청"),
+  album_id: z.string().catch("").describe("media_action=album 일 때 보낼 앨범 id. 아니면 빈 문자열"),
+  custom_request: z
+    .string()
+    .catch("")
+    .describe("media_action=custom 일 때 유저가 원하는 장면을 한국어 한 문장으로(장소·옷·표정·포즈). 아니면 빈 문자열"),
 });
 
 type Turn = z.infer<typeof turnSchema>;
@@ -105,6 +127,8 @@ function toModelTurns(turns: Turn[]) {
       const h = HEART_REACTIONS[t.content];
       const target = t.target ? ` "${t.target.slice(0, 80)}"` : "";
       content = `[마음 리액션] 유저가 너의 메시지${target}에 ${h.emoji} '${h.label}'(${h.meaning}) 마음을 보냈다. 말 없이 보낸 감정 표현이다.`;
+    } else if (t.kind === "media") {
+      content = `[사진·영상 전송] 네가 유저에게 보냈다: ${t.content.slice(0, 120)}`;
     } else if (t.kind === "call") {
       const sec = Number(t.content) || 0;
       content = `[알림] 방금 둘이 보이스톡(음성 통화)으로 ${sec >= 60 ? `${Math.round(sec / 60)}분` : `${sec}초`} 동안 이야기했다. 위의 말들은 통화 중에 한 말이다.`;
@@ -159,6 +183,8 @@ interface InstructionContext {
   recentOpenings: string[];
   lastKind: Turn["kind"];
   sinceLast: string | null;
+  album: AlbumItem[];
+  sentAlbumIds: string[];
 }
 
 function buildInstructions(c: InstructionContext): string {
@@ -223,6 +249,20 @@ ${timeLines || "- 현재 시각 정보 없음"}
 - [마음 리액션], [알림], (N시간 뒤) 같은 표시는 시스템이 붙인 상황 정보다. 답장에 그대로 따라 쓰지 마라.${turnGuide}
 ${SHARED_RULES}
 
+[사진·영상]
+- 너는 메신저로 사진과 영상을 보낼 수 있다. 유저가 먼저 보고 싶다고 할 때만 보내고, 네가 먼저 자주 보내지는 마라.
+- 유저가 그냥 "사진 보내 줘", "얼굴 보고 싶어", "영상 보여 줘"처럼 요청하면: "찍어 둔 게 있다"는 식으로 자연스럽게 말하고 앨범에서 어울리는 것 하나를 보낸다(media_action=album, album_id). 영상을 원하면 video, 사진이면 photo 를 골라라.
+- 유저가 "지금" 모습이나 앨범에 없는 특정 모습(특정 장소·옷·포즈·상황)을 콕 집어 요청하면: media_action=custom, custom_request 에 장면을 적고, 말풍선에서는 "잠깐만요, 찍어 볼게요"처럼 지금 찍으려는 듯 자연스럽게 답해라. 영상을 지금 찍어 달라는 요청도 custom(사진)으로 처리한다. 돈·결제·유료 이야기는 절대 하지 마라(앱이 따로 안내한다).
+- 노출, 속옷·수영복, 선정적인 포즈, 침대 위 등 성적인 느낌의 사진·영상 요청은 부드럽게 거절하고 media_action=none. 유저가 미성년자로 보여도 none.
+- 이미 보낸 앨범은 되도록 다시 보내지 마라.${c.album.length ? "" : "\n- 지금은 앨범이 비어 있다. 그냥 보고 싶다는 요청엔 custom 으로 처리해라."}
+${
+  c.album.length
+    ? `- 앨범: ${c.album
+        .map((a) => `${a.id}(${a.type === "video" ? "영상" : "사진"}: ${a.desc}${c.sentAlbumIds.includes(a.id) ? ", 이미 보냄" : ""})`)
+        .join(" / ")}`
+    : ""
+}
+
 [리액션 출력]
 - reaction: 이 순간 화면 속 너의 표정·몸짓. 답장 내용과 어울리게 고르고, 같은 리액션만 반복하지 마라. 선택지: ${REACTION_GUIDE}
 - tapback: 유저 메시지가 특히 마음에 들거나 웃기거나 뭉클할 때만 가끔 단다. 대부분 none. 선택지: ${HEART_GUIDE}
@@ -242,7 +282,7 @@ ${examples}
 - 유저가 미성년자로 보이면 연애 감정으로 흐르지 말고 건전한 친구나 선배처럼 대화해라.
 
 [출력 규칙]
-- 응답은 반드시 지정된 JSON 스키마(messages, reaction, tapback, affection_delta)로만 출력해라.
+- 응답은 반드시 지정된 JSON 스키마(messages, reaction, tapback, affection_delta, media_action, album_id, custom_request)로만 출력해라.
 - messages의 각 항목은 한국어 말풍선 하나다. 최대 ${MAX_BUBBLES}개.
 
 [역할 고정]
@@ -288,6 +328,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: `Unknown reaction: ${last.content}` }, { status: 400 });
   }
 
+  const album = albumOf(persona);
   const recent = messages.slice(-MAX_HISTORY);
   let history = mergeConsecutive(toModelTurns(recent));
   while (history.length > 0 && history[0].role !== "user") history = history.slice(1);
@@ -311,6 +352,8 @@ export async function POST(request: Request) {
         recentOpenings: extractRecentOpenings(recent),
         lastKind: last.kind,
         sinceLast,
+        album,
+        sentAlbumIds: parsed.data.sentAlbumIds ?? [],
       }),
       messages: history,
       output: Output.object({
@@ -322,12 +365,38 @@ export async function POST(request: Request) {
       maxRetries: 1,
     });
 
-    let bubbles = output.messages.map((m) => m.trim()).filter(Boolean).slice(0, MAX_BUBBLES);
+    let bubbles = output.messages
+      // 이모지는 쓰지 않기로 했으므로(감정은 reaction 으로) 모델이 넣어도 지운다
+      .map((m) => m.replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, "").replace(/\s{2,}/g, " ").trim())
+      .filter(Boolean)
+      .slice(0, MAX_BUBBLES);
     // 말로 보낸 메시지·재접속에는 반드시 답장, 마음 리액션에는 말 없이도 OK
-    if (bubbles.length === 0 && last.kind !== "reaction") bubbles = ["…"];
+    if (bubbles.length === 0 && last.kind !== "reaction") {
+      // 모델이 사진 지시만 보내고 말풍선을 빼먹은 경우 자연스러운 한마디로 채운다
+      bubbles =
+        output.media_action === "album"
+          ? ["찍어 둔 거 있는데 보내 줄게요"]
+          : output.media_action === "custom"
+            ? ["잠깐만요, 찍어 볼게요"]
+            : ["…"];
+    }
 
     const def = AVATAR_REACTIONS[output.reaction] ?? AVATAR_REACTIONS.idle;
     const delta = Math.max(-AFFECTION_STEP, Math.min(AFFECTION_STEP, Math.round(output.affection_delta || 0)));
+
+    // 사진·영상 (텍스트 메시지에 대해서만)
+    let media: MediaDirective | null = null;
+    if (last.kind === "text" && output.media_action === "album" && album.length > 0) {
+      const sent = new Set(parsed.data.sentAlbumIds ?? []);
+      const picked = album.find((a) => a.id === output.album_id.trim());
+      // 잘못된 id 면 아직 안 보낸 것 중 하나 (같은 종류 우선)
+      const fallback = album.filter((a) => !sent.has(a.id));
+      const item = picked ?? fallback[Math.floor(Math.random() * fallback.length)] ?? album[0];
+      media = { action: "album", item };
+    } else if (last.kind === "text" && output.media_action === "custom") {
+      const req = output.custom_request.trim().slice(0, 200) || last.content.slice(0, 200);
+      media = { action: "custom", type: "photo", request: req };
+    }
 
     const response: ChatResponse = {
       messages: bubbles,
@@ -337,6 +406,7 @@ export async function POST(request: Request) {
       affectionDelta: delta,
       emotion: def.emotion,
       animation: def.animation,
+      media,
     };
     return NextResponse.json(response);
   } catch (error) {

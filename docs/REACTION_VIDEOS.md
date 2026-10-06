@@ -16,7 +16,10 @@
 | `clips/turn_away.mp4` | 질려서 뒤돌아섬 | **등 돌림**: 상처 주는 말 또는 심한 연타 → 등 돌린 채 멈춤 |
 | `clips/premium/kiss.mp4` | 손 키스 | **뽀뽀 (유료)**: 특별한 사이(호감도 75+)의 결정적 순간 |
 
-- 원본은 1080×1920에 4~6초, 소리가 있는 영상이었습니다. 화면용으로 **720×1280, 무음, 빠른 시작 설정**으로 변환해서 용량을 개당 약 0.8~1.6MB로 줄였습니다(원본 2~4.5MB).
+- 원본은 1080×1920에 4~6초 영상입니다. 화면용으로 **720×1280, 빠른 시작 설정**으로 변환해서 용량을 개당 약 0.8~1.7MB로 줄였습니다(원본 2~4.5MB).
+- **소리(목소리·웃음소리)도 살렸습니다.** 클립마다 음량 차이가 커서 크기를 고르게 맞췄습니다. idle 루프는 무음입니다.
+  - 브라우저는 사용자가 화면을 한 번 터치하기 전에는 소리 재생을 막습니다. 그래서 첫 터치 때 소리를 열어 두고, 그 전에는 무음으로 재생합니다.
+  - 화면 오른쪽 위 🔊/🔇 버튼으로 끌 수 있습니다(기기에 기억). 보이스톡 중에는 자동으로 무음입니다.
 - 클립마다 첫 장면 구도가 조금씩 달라서, 전환할 때 0.28초 페이드를 줍니다. **다음 영상부터는 모든 클립을 같은 시작 이미지(stage.jpg)로 생성**하면 훨씬 매끄럽습니다.
 - 영상 오른쪽 아래에 생성 도구의 워터마크(✦)가 보입니다. 상용 서비스 전에 워터마크 없는 플랜으로 다시 뽑는 걸 권장합니다.
 
@@ -77,8 +80,8 @@ public/avatar/personas/<id>/clips/premium/  ← 유료 (이용권 있을 때만)
 **변환 명령 (원본 → 서비스용)**
 
 ```bash
-# 리액션 클립: 720p, 무음, 빠른 시작
-ffmpeg -i 원본.mp4 -an -vf "scale=720:-2,fps=24" -c:v libx264 -preset slow -crf 25 -pix_fmt yuv420p -g 12 -movflags +faststart shy.mp4
+# 리액션 클립: 720p, 소리 포함(음량 맞춤), 빠른 시작
+ffmpeg -i 원본.mp4 -vf "scale=720:-2,fps=24" -c:v libx264 -preset slow -crf 25 -pix_fmt yuv420p -g 12 -af "loudnorm=I=-19:TP=-2:LRA=11" -ar 44100 -c:a aac -b:a 96k -movflags +faststart shy.mp4
 
 # idle: 원본 앞 1.1초를 느리게 왕복 (루프 이음새 없음)
 ffmpeg -t 1.1 -i 원본.mp4 -an -filter_complex "[0:v]scale=720:-2,setpts=1.6*PTS,split[a][b];[b]reverse[r];[a][r]concat=n=2:v=1,fps=24[v]" -map "[v]" -c:v libx264 -crf 24 -pix_fmt yuv420p -movflags +faststart idle.mp4

@@ -23,14 +23,31 @@ export interface VoiceTranscriptLine {
   at: number;
 }
 
+/** 왜 끊겼는지: user=유저가 끊음, trial=무료 체험 소진, limit=구독 시간·캐시 소진, time=1회 최대 시간 */
+export type VoiceEndReason = "user" | "trial" | "limit" | "time" | "error";
+
 export interface VoiceCallResult {
   seconds: number;
   transcript: VoiceTranscriptLine[];
+  reason: VoiceEndReason;
 }
 
 export interface VoiceCallHandle {
   /** 유저가 화면을 터치했다는 사실을 상대에게 전달 (말하는 중이 아닐 때만, 너무 잦지 않게) */
   notifyTouch: (id: TouchReactionId) => void;
+  /** 상위에서 통화 종료 (예: 캐시 부족) — 상대가 하던 말은 마저 듣고 끊는다 */
+  end: (reason: VoiceEndReason) => void;
+}
+
+/** 이번 통화의 과금 방식 (상위 ChatApp 이 정한다 — config/plans.ts) */
+export interface VoiceBilling {
+  mode: "trial" | "plan" | "cash";
+  /** 화면 표시 (예: "무료 체험 3회 남음", "VIP · 112분 남음", "💎 5/분") */
+  label: string;
+  /** trial: 남은 주고받기 횟수 → 다 쓰면 자동 종료 */
+  maxExchanges?: number;
+  /** plan: 남은 통화 시간(초) → 다 쓰면 자동 종료 */
+  maxSeconds?: number;
 }
 
 interface VoiceCallProps {
@@ -44,6 +61,11 @@ interface VoiceCallProps {
   onReaction: (r: AvatarReactionId) => void;
   /** 터치 알림 함수를 상위에 등록 */
   registerHandle: (h: VoiceCallHandle | null) => void;
+  billing: VoiceBilling;
+  /** 상대가 한 번 말을 마칠 때마다 (무료 체험 차감용) */
+  onExchange?: () => void;
+  /** 통화 중 0.5초마다 경과 시간 (캐시 분당 차감용) */
+  onTick?: (seconds: number) => void;
 }
 
 type Phase = "connecting" | "live" | "ending" | "error" | "paywall";
@@ -126,6 +148,9 @@ export default function VoiceCall({
   onSpeakingChange,
   onReaction,
   registerHandle,
+  billing,
+  onExchange,
+  onTick,
 }: VoiceCallProps) {
   const [phase, setPhase] = useState<Phase>("connecting");
   const [error, setError] = useState<string | null>(null);
@@ -133,6 +158,7 @@ export default function VoiceCall({
   const [elapsed, setElapsed] = useState(0);
   const [maxSeconds, setMaxSeconds] = useState(600);
   const [speaking, setSpeaking] = useState(false);
+  const [closingReason, setClosingReason] = useState<VoiceEndReason | null>(null);
   const [userLevel, setUserLevel] = useState(0);
   const [caption, setCaption] = useState<{ role: "user" | "ai"; text: string } | null>(null);
 
@@ -159,10 +185,16 @@ export default function VoiceCall({
     speaking: false,
     lastTouchNotify: 0,
     ended: false,
+    /** 이번 상대 차례에 실제로 소리를 냈는지 (주고받기 1회로 셀지) */
+    aiTurnAudio: false,
+    exchanges: 0,
+    /** 곧 끊길 예정 (상대 말이 끝나면) */
+    closing: null as VoiceEndReason | null,
+    reason: "user" as VoiceEndReason,
   });
 
-  const cb = useRef({ onEnd, onSpeakingChange, onReaction });
-  cb.current = { onEnd, onSpeakingChange, onReaction };
+  const cb = useRef({ onEnd, onSpeakingChange, onReaction, onExchange, onTick, billing });
+  cb.current = { onEnd, onSpeakingChange, onReaction, onExchange, onTick, billing };
 
   const setSpeakingBoth = useCallback((v: boolean) => {
     if (r.current.speaking === v) return;
@@ -218,6 +250,7 @@ export default function VoiceCall({
       s.nextTime = at + buf.duration;
       s.sources.add(src);
       src.onended = () => s.sources.delete(src);
+      s.aiTurnAudio = true;
       setSpeakingBoth(true);
       clearTimeout(s.speakTimer as number);
       s.speakTimer = setTimeout(() => setSpeakingBoth(false), (s.nextTime - ctx.currentTime) * 1000 + 250);
@@ -226,10 +259,11 @@ export default function VoiceCall({
   );
 
   /* ── 종료 ─────────────────────────────────────────────────────────────── */
-  const hangUp = useCallback(() => {
+  const hangUp = useCallback((reason: VoiceEndReason = "user") => {
     const s = r.current;
     if (s.ended) return;
     s.ended = true;
+    s.reason = s.closing ?? reason;
     setPhase("ending");
     flush("user");
     flush("ai");
@@ -246,8 +280,21 @@ export default function VoiceCall({
     s.outCtx?.close().catch(() => {});
     const seconds = s.startedAt ? Math.round((Date.now() - s.startedAt) / 1000) : 0;
     registerHandle(null);
-    cb.current.onEnd({ seconds, transcript: s.transcript });
+    cb.current.onEnd({ seconds, transcript: s.transcript, reason: s.reason });
   }, [flush, stopPlayback, registerHandle]);
+
+  /** 상대가 하던 말을 마저 들려준 뒤 끊기 */
+  const endAfterSpeech = useCallback(
+    (reason: VoiceEndReason) => {
+      const s = r.current;
+      if (s.ended || s.closing) return;
+      s.closing = reason;
+      setClosingReason(reason);
+      const left = s.outCtx ? Math.max(0, s.nextTime - s.outCtx.currentTime) : 0;
+      setTimeout(() => hangUp(reason), left * 1000 + 700);
+    },
+    [hangUp]
+  );
 
   /* ── 연결 ─────────────────────────────────────────────────────────────── */
   useEffect(() => {
@@ -280,6 +327,7 @@ export default function VoiceCall({
             affection,
             timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             recent,
+            mode: cb.current.billing.mode,
           }),
         });
         const info = (await res.json().catch(() => ({}))) as {
@@ -338,7 +386,17 @@ export default function VoiceCall({
                 s.aiBuf += sc.outputTranscription.text;
                 setCaption({ role: "ai", text: s.aiBuf });
               }
-              if (sc.turnComplete) flush("ai");
+              if (sc.turnComplete) {
+                flush("ai");
+                // 상대가 실제로 말한 차례만 주고받기 1회로 센다
+                if (s.aiTurnAudio) {
+                  s.aiTurnAudio = false;
+                  s.exchanges += 1;
+                  cb.current.onExchange?.();
+                  const maxEx = cb.current.billing.maxExchanges;
+                  if (maxEx !== undefined && s.exchanges >= maxEx) endAfterSpeech("trial");
+                }
+              }
             },
             onerror: (e) => {
               console.error("[voice] error", e);
@@ -348,7 +406,7 @@ export default function VoiceCall({
               }
             },
             onclose: () => {
-              if (!s.ended && !cancelled) hangUp();
+              if (!s.ended && !cancelled) hangUp("time");
             },
           },
         });
@@ -397,6 +455,7 @@ export default function VoiceCall({
             s.lastTouchNotify = now;
             s.session.sendRealtimeInput({ text: `[터치] 유저가 화면 속 너를 건드렸다 (${TOUCH_REACTIONS[id].label} 반응).` });
           },
+          end: (reason) => endAfterSpeech(reason),
         });
       } catch (err) {
         if (cancelled) return;
@@ -440,10 +499,14 @@ export default function VoiceCall({
     const t = setInterval(() => {
       const sec = (Date.now() - r.current.startedAt) / 1000;
       setElapsed(sec);
-      if (sec >= maxSeconds) hangUp();
+      cb.current.onTick?.(sec);
+      if (sec >= maxSeconds) hangUp("time");
+      // 구독 남은 시간을 다 쓰면 하던 말 마저 듣고 종료
+      const planMax = cb.current.billing.maxSeconds;
+      if (planMax !== undefined && sec >= planMax) endAfterSpeech("limit");
     }, 500);
     return () => clearInterval(t);
-  }, [phase, maxSeconds, hangUp]);
+  }, [phase, maxSeconds, hangUp, endAfterSpeech]);
 
   const toggleMute = () => {
     r.current.muted = !r.current.muted;
@@ -456,11 +519,11 @@ export default function VoiceCall({
     else {
       r.current.ended = true;
       registerHandle(null);
-      cb.current.onEnd({ seconds: 0, transcript: [] });
+      cb.current.onEnd({ seconds: 0, transcript: [], reason: phase === "paywall" ? "limit" : "error" });
     }
   };
 
-  const remaining = Math.max(0, maxSeconds - elapsed);
+  const remaining = Math.max(0, Math.min(maxSeconds, billing.maxSeconds ?? Infinity) - elapsed);
   const status =
     phase === "connecting"
       ? "연결 중…"
@@ -489,6 +552,14 @@ export default function VoiceCall({
           {status}
           {phase === "live" && <span className="ml-2 tabular-nums text-white/70">{fmtTime(elapsed)}</span>}
         </p>
+        <p className="mt-1 rounded-full bg-black/40 px-2.5 py-0.5 text-[10px] text-white/85" data-voice-billing={billing.mode}>
+          {billing.label}
+        </p>
+        {closingReason && (
+          <p className="mt-1 text-[11px] text-amber-300">
+            {closingReason === "trial" ? "무료 체험이 끝나서 곧 통화가 끝나요" : "남은 통화 시간을 다 써서 곧 통화가 끝나요"}
+          </p>
+        )}
         {phase === "live" && remaining <= 60 && (
           <p className="mt-1 text-[11px] text-amber-300">{Math.ceil(remaining)}초 뒤 통화가 끝나요</p>
         )}

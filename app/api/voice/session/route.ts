@@ -30,6 +30,8 @@ const bodySchema = z.object({
     .array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(1000) }))
     .max(40)
     .optional(),
+  /** 과금 방식 — trial(무료 체험)은 서버에서도 통화 길이를 짧게 제한 */
+  mode: z.enum(["trial", "plan", "cash"]).optional(),
 });
 
 export async function POST(request: Request) {
@@ -59,7 +61,8 @@ export async function POST(request: Request) {
   const persona = getPersonaFile(body.personaId);
   const model = process.env.GEMINI_LIVE_MODEL?.trim() || DEFAULT_MODEL;
   const voice = voiceNameFor(persona);
-  const maxSeconds = voiceMaxSeconds();
+  // 무료 체험(주고받기 5번)은 3분이면 충분 → 토큰 자체를 짧게 (클라이언트 조작 대비)
+  const maxSeconds = body.mode === "trial" ? Math.min(180, voiceMaxSeconds()) : voiceMaxSeconds();
 
   try {
     const ai = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: "v1alpha" } });

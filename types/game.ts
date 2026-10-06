@@ -1,4 +1,5 @@
 import type { AvatarReactionId, HeartReactionId } from "@/config/reactions";
+import type { MediaDirective, MediaType } from "@/config/media";
 
 export type Emotion = "neutral" | "happy" | "sad" | "angry" | "surprised";
 export type AvatarAnimation = "idle" | "jump" | "nod" | "shake";
@@ -16,6 +17,8 @@ export interface ChatResponse {
   /** 3D 모드 호환 */
   emotion: Emotion;
   animation: AvatarAnimation;
+  /** 사진·영상 보내기 (앨범 즉시 전송 / 유료 실시간 사진 요청) */
+  media: MediaDirective | null;
 }
 
 export interface ChatMessage {
@@ -24,8 +27,20 @@ export interface ChatMessage {
   /**
    * text: 말풍선 / reaction: 다른 메시지에 단 마음 리액션 (말풍선으로 표시하지 않음)
    * call: 보이스톡 통화 기록 (가운데 알림으로 표시, text = 통화 초)
+   * media: 사진·영상 (text = 설명, media = 파일)
+   * notice: 앱 안내 (화면에만, AI 에게 보내지 않음)
    */
-  kind?: "text" | "reaction" | "call";
+  kind?: "text" | "reaction" | "call" | "media" | "notice";
+  /** kind=media */
+  media?: {
+    type: MediaType;
+    /** URL 또는 data URL (실시간 생성 사진) */
+    src: string;
+    /** 앨범 id (반복 방지용) */
+    albumId?: string;
+    /** 실시간 생성 사진 */
+    generated?: boolean;
+  };
   /** "voice" 면 보이스톡 중에 한 말 (받아쓰기) */
   via?: "voice";
   /** kind=text: 내용 / kind=reaction: HeartReactionId */

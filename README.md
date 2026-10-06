@@ -40,6 +40,14 @@ docs/PERSONAS.md      # 멀티 페르소나 구조 / 캐릭터 추가 / 폴백 �
 docs/VIDEO_AVATAR.md  # 실사 영상 아바타 / AI 영상 도구로 클립 제작하는 가이드
 docs/VOICE_TALK.md    # 보이스톡(AI 음성 통화, Gemini Live) 설정·유료화·비용
 docs/REACTION_VIDEOS.md  # ★ 리액션 영상 연출 규칙·무료/유료·캐릭터별 영상 추가 방법
+docs/MEDIA.md         # ★ 사진·영상 보내기 (앨범 무료 / 실시간 사진 유료·캐시)
+docs/MEMBERSHIP.md    # ★ 유료 정책: 보이스톡 무료 체험 5번 → 캐시/멤버십(BEST·PRIME·VIP)
+config/plans.ts       # 가격·체험 횟수·멤버십 단계별 혜택 (숫자는 여기서만)
+lib/membership.ts     # 멤버십 상태·월 사용량 (결제 연동 전 테스트 저장소)
+components/PlansModal.tsx  # 멤버십·캐시 안내 모달
+app/api/media/photo/route.ts  # 유료 실시간 사진 생성 (인물 사진 기준)
+config/media.ts       # 사진 비용·테스트 캐시
+components/MediaPurchaseModal.tsx  # 유료 사진 확인 모달
 lib/reactionDirector.ts  # 영상을 언제 틀지 정하는 연출 담당 (빈도 조절: DIRECTOR_TUNING)
 lib/entitlements.ts   # 유료 리액션 영상 이용 권한 (PREMIUM_ACCESS)
 app/api/voice/session/route.ts  # 보이스톡 일회용 토큰 발급

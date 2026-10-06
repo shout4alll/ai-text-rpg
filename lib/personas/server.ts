@@ -5,6 +5,7 @@ import { z } from "zod";
 import { PERSONA_FILES, SHARED_FILE } from "@/personas";
 import { personaFileSchema, sharedFileSchema, type PersonaFile } from "@/lib/personas/schema";
 import type { Persona } from "@/lib/personas/types";
+import type { AlbumItem } from "@/config/media";
 
 /**
  * 페르소나 파일 로더 (서버 전용).
@@ -81,6 +82,12 @@ function scanClips(urlDir: string): Record<string, string> {
   return out;
 }
 
+/** 앨범 항목을 공개 URL 로 */
+export function albumOf(p: PersonaFile): AlbumItem[] {
+  const base = `/avatar/personas/${p.id}`;
+  return p.album.map((a) => ({ id: a.id, type: a.type, src: `${base}/${a.file.replace(/^\/+/, "")}`, desc: a.desc }));
+}
+
 /** 화면용 공개 데이터 (프롬프트 제외) */
 export function toPublic(p: PersonaFile): Persona {
   const base = `/avatar/personas/${p.id}`;
@@ -100,6 +107,7 @@ export function toPublic(p: PersonaFile): Persona {
     greeting: p.greeting,
     accent: p.accent,
     ...(p.touchLines ? { touchLines: p.touchLines } : {}),
+    album: albumOf(p),
     assets: {
       poster: `${base}/${p.image.portrait}`,
       clips,

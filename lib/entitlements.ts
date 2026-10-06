@@ -18,3 +18,18 @@ export function premiumReactionsUnlocked(): boolean {
   if (v === "paid") return false;
   return process.env.NODE_ENV !== "production";
 }
+
+/**
+ * 유료 실시간 사진(/api/media/photo) 호출 허용 여부.
+ * MEDIA_ACCESS: open(개발 기본) | paid(배포 기본 — VOICE_DEV_PASS 와 같은 x-voice-pass 헤더로만 통과) | off
+ * ▶ 결제 연동 시: 여기서 로그인 사용자 확인 + 서버 잔액 차감을 하도록 바꾼다.
+ */
+export function checkMediaAccess(request: Request): { ok: true } | { ok: false; status: 402 | 403; error: string } {
+  const v = process.env.MEDIA_ACCESS?.trim();
+  const mode = v === "open" || v === "paid" || v === "off" ? v : process.env.NODE_ENV === "production" ? "paid" : "open";
+  if (mode === "off") return { ok: false, status: 403, error: "사진 기능이 지금은 꺼져 있어요." };
+  if (mode === "open") return { ok: true };
+  const pass = process.env.VOICE_DEV_PASS;
+  if (pass && request.headers.get("x-voice-pass") === pass) return { ok: true };
+  return { ok: false, status: 402, error: "실시간 사진은 이용권이 필요한 유료 기능이에요." };
+}

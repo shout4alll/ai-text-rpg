@@ -65,10 +65,14 @@ export default function ChatPanel({
   const pickerRef = useRef<HTMLDivElement>(null);
   const [pickerFor, setPickerFor] = useState<number | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  /** 크게 보기 */
+  const [viewer, setViewer] = useState<ChatMessage["media"] | null>(null);
 
   // 말풍선만 표시하고, 마음 리액션은 대상 말풍선의 배지로 붙인다 (역할별 최신 1개)
   const { bubbles, badges, lastAiId } = useMemo(() => {
-    const bubbles = messages.filter((m) => (m.kind ?? "text") === "text" || m.kind === "call");
+    const bubbles = messages.filter(
+      (m) => (m.kind ?? "text") === "text" || m.kind === "call" || m.kind === "media" || m.kind === "notice"
+    );
     const badges = new Map<number, { user?: HeartReactionId; ai?: HeartReactionId }>();
     for (const m of messages) {
       if (m.kind === "reaction" && m.targetId !== undefined && isHeartReactionId(m.text)) {
@@ -77,7 +81,9 @@ export default function ChatPanel({
         badges.set(m.targetId, b);
       }
     }
-    const lastAi = [...bubbles].reverse().find((m) => m.role === "ai" && m.kind !== "call" && !m.text.startsWith("⚠️"));
+    const lastAi = [...bubbles]
+      .reverse()
+      .find((m) => m.role === "ai" && (m.kind ?? "text") === "text" && !m.text.startsWith("⚠️"));
     return { bubbles, badges, lastAiId: lastAi?.id ?? null };
   }, [messages]);
 
@@ -112,6 +118,56 @@ export default function ChatPanel({
             const startsGroup = newDay || !prev || prev.role !== m.role || minuteKey(prev.at) !== minuteKey(m.at);
             const endsGroup =
               !next || next.role !== m.role || minuteKey(next.at) !== minuteKey(m.at) || dayKey(next.at) !== dayKey(m.at);
+            if (m.kind === "notice") {
+              return (
+                <div key={m.id} className="my-3 flex justify-center" data-notice>
+                  <span className="rounded-full bg-black/40 px-3 py-1 text-[11px] text-white/75 backdrop-blur wide:bg-slate-800/80 wide:text-slate-400">
+                    {m.text}
+                  </span>
+                </div>
+              );
+            }
+            if (m.kind === "media" && m.media) {
+              const md = m.media;
+              const first = !prev || prev.role !== "ai" || minuteKey(prev.at) !== minuteKey(m.at);
+              return (
+                <div key={m.id} className={`flex gap-2 ${first ? "mt-3" : "mt-1"}`} data-media={md.type}>
+                  <div className="w-9 shrink-0">
+                    {first && (
+                      <PersonaPortrait persona={persona} size="sm" className="h-9 w-9 overflow-hidden rounded-2xl ring-1 ring-white/20" />
+                    )}
+                  </div>
+                  <div className="flex items-end gap-1.5">
+                    {md.src ? (
+                      <button
+                        type="button"
+                        onClick={() => setViewer(md)}
+                        aria-label={md.type === "video" ? "영상 크게 보기" : "사진 크게 보기"}
+                        className="relative block overflow-hidden rounded-2xl rounded-tl-md ring-1 ring-white/15"
+                      >
+                        {md.type === "video" ? (
+                          <>
+                            <video src={md.src} muted playsInline preload="metadata" className="block w-40 object-cover wide:w-44" style={{ aspectRatio: "9 / 16" }} />
+                            <span className="absolute inset-0 flex items-center justify-center text-3xl text-white/90 [text-shadow:0_1px_6px_rgba(0,0,0,.6)]">
+                              ▶
+                            </span>
+                          </>
+                        ) : (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={md.src} alt="사진" loading="lazy" className="block max-h-72 w-40 object-cover wide:w-44" />
+                        )}
+                        {md.generated && (
+                          <span className="absolute left-1.5 top-1.5 rounded-full bg-black/55 px-1.5 py-0.5 text-[9px] text-white/90">AI 생성</span>
+                        )}
+                      </button>
+                    ) : (
+                      <span className={`rounded-2xl px-3.5 py-2 text-xs ${aiBubble}`}>사진은 이 기기에 저장되지 않았어요</span>
+                    )}
+                    <span className={`pb-0.5 text-[10px] ${metaText}`}>{timeFmt.format(m.at)}</span>
+                  </div>
+                </div>
+              );
+            }
             if (m.kind === "call") {
               const sec = Number(m.text) || 0;
               return (
@@ -208,6 +264,26 @@ export default function ChatPanel({
           <div ref={bottomRef} />
         </div>
       </div>
+
+      {viewer && (
+        <div
+          className="pointer-events-auto fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4"
+          onClick={() => setViewer(null)}
+          role="dialog"
+          aria-label="크게 보기"
+          data-media-viewer
+        >
+          {viewer.type === "video" ? (
+            <video src={viewer.src} controls autoPlay playsInline className="max-h-full max-w-full rounded-xl" onClick={(e) => e.stopPropagation()} />
+          ) : (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={viewer.src} alt="사진" className="max-h-full max-w-full rounded-xl object-contain" />
+          )}
+          <button type="button" className="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] text-2xl text-white/80" aria-label="닫기">
+            ✕
+          </button>
+        </div>
+      )}
 
       <div className="pointer-events-auto relative">
         {paletteOpen && lastAiId !== null && (
