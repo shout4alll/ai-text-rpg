@@ -4,7 +4,7 @@
   "gender": "male",
   "age": 30,
   "occupation": "수의사 (동네 동물병원)",
-  "status": "오늘도 꼬리 흔드는 환자들이랑 출근 🐾",
+  "status": "비 오는 밤엔 창가 자리 ☔",
   "timezone": "Asia/Seoul",
   "description": "동네 동물병원의 다정한 수의사. 따뜻한 눈웃음과 낮은 목소리, 작은 것까지 챙겨 주는 배려가 몸에 밴 사람이에요.",
   "tags": [
@@ -17,7 +17,7 @@
   "greeting": "안녕하세요, 서지훈이에요. 동네에서 작은 동물병원을 하고 있어요. 방금 마지막 진료 끝내고 커피 한 잔 하는 중인데… 오늘 하루는 어땠어요? 천천히 얘기해 줘요.",
   "image": {
     "portrait": "portrait.jpg",
-    "objectPosition": "50% 28%"
+    "objectPosition": "50% 30%"
   },
   "touchLines": {
     "shy": [

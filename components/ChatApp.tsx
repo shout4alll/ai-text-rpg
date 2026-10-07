@@ -6,6 +6,10 @@ import ChatPanel from "@/components/ChatPanel";
 import EffectsLayer, { type Burst, type Particle, type TouchMark, type TouchSpark } from "@/components/EffectsLayer";
 import PersonaPortrait from "@/components/PersonaPortrait";
 import PersonaSelector from "@/components/PersonaSelector";
+import ProfileSheet, { type ProfileStats } from "@/components/ProfileSheet";
+import {
+  IconBack, IconBackup, IconBrain, IconBubble, IconCrown, IconMore, IconPhone, IconScreen, IconSound, IconTrash, IconUser,
+} from "@/components/icons";
 import VoiceCall, { type VoiceBilling, type VoiceCallHandle, type VoiceCallResult } from "@/components/VoiceCall";
 import PlansModal, { type PlansReason } from "@/components/PlansModal";
 import { CASH_PRICE, PLANS, type PlanId } from "@/config/plans";
@@ -71,6 +75,40 @@ interface StoredChat {
   bestStage?: number;
   /** 🧠 기억 노트 (/api/memory) — upTo: 이 메시지 id 까지 정리함 */
   memory?: { facts: string[]; upTo: number; at: number };
+}
+
+/** 💬 카톡 모드 저장 키 */
+const KAKAO_KEY = "ai-rpg.kakaoMode";
+
+/** 헤더 ⋯ 메뉴 항목 */
+function MenuItem({
+  icon,
+  label,
+  onClick,
+  data,
+  danger = false,
+  disabled = false,
+}: {
+  icon: React.ReactNode;
+  label: React.ReactNode;
+  onClick: () => void;
+  data: string;
+  danger?: boolean;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      {...{ [`data-menu-${data}`]: true }}
+      disabled={disabled}
+      onClick={onClick}
+      className={`flex w-full items-center gap-2.5 px-4 py-2.5 text-left transition hover:bg-paper disabled:opacity-40 ${danger ? "text-brand-600" : ""}`}
+    >
+      <span className={danger ? "text-brand-500" : "text-ink-mute"}>{icon}</span>
+      {label}
+    </button>
+  );
 }
 
 function readStorage(key: string): string | null {
@@ -273,6 +311,19 @@ export default function ChatApp({
   useEffect(() => {
     setSoundOn(readStorage("ai-rpg.sound") !== "0");
   }, []);
+
+  // 💬 카톡 모드 (배경 영상 없이 메신저처럼, 기기에 기억) · 👤 프로필
+  const [kakaoMode, setKakaoMode] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  useEffect(() => {
+    setKakaoMode(readStorage(KAKAO_KEY) === "1");
+  }, []);
+  const toggleKakao = () => {
+    setKakaoMode((on) => {
+      writeStorage(KAKAO_KEY, on ? "0" : "1");
+      return !on;
+    });
+  };
 
   // 보이스톡
   const [voiceOpen, setVoiceOpen] = useState(false);
@@ -1260,11 +1311,11 @@ export default function ChatApp({
   );
 
   /* ── 화면 ─────────────────────────────────────────────────────────────── */
-  if (!hydrated) return <main className="h-[100dvh] w-full bg-slate-950" />;
+  if (!hydrated) return <main className="h-[100dvh] w-full bg-paper" />;
 
   if (!persona) {
     return (
-      <main className="h-[100dvh] w-full bg-slate-950">
+      <main className="h-[100dvh] w-full bg-paper">
         <PersonaSelector personas={personas} currentId={null} onSelect={handleSelect} previews={previews()} onBackup={() => setBackupOpen(true)} />
         {backupOpen && <BackupModal onClose={() => setBackupOpen(false)} onRestored={() => window.location.reload()} />}
       </main>
@@ -1276,275 +1327,385 @@ export default function ChatApp({
   const prog = affectionProgress(affection, persona.relationshipType);
   const lastAiTextId =
     [...messages].reverse().find((m) => m.role === "ai" && (m.kind ?? "text") === "text" && !m.text.startsWith("⚠️"))?.id ?? null;
+  /** 💬 카톡 모드 (보이스톡 중에는 잠시 영상 화면으로) */
+  const kakaoView = kakaoMode && !voiceOpen;
+  const profileStats: ProfileStats = {
+    messages: messages.filter((m) => !m.local && (m.kind ?? "text") === "text").length,
+    firstAt: messages.find((m) => !m.local)?.at ?? null,
+    memories: memory?.facts.length ?? 0,
+    media: messages.flatMap((m) =>
+      m.role === "ai" && m.kind === "media" && m.media?.src ? [{ src: m.media.src, type: m.media.type }] : []
+    ),
+  };
 
-  return (
-    <main className="relative h-[100dvh] w-full overflow-hidden bg-slate-950 wide:flex">
-      {/* 리액션 화면: 폰/세로 = 전체 배경, 가로로 넓은 화면 = 왼쪽 절반 */}
-      {/* 터치하면 인물이 반응한다 (폰에서는 메신저 빈 곳을 터치해도 이 화면으로 전달됨) */}
-      <section
-        className="absolute inset-0 touch-manipulation select-none wide:relative wide:inset-auto wide:w-1/2 wide:border-r wide:border-slate-800"
-        onPointerDown={onStagePointerDown}
-        data-touch-stage
+  /* 삐짐 안내 카드 (영상 화면 가운데 / 카톡 모드에서는 헤더 아래) */
+  const sulkCard = sulk && (
+    <div
+      className={kakaoView ? "px-3 pt-2" : "absolute inset-x-0 top-[34%] z-10 flex justify-center px-4"}
+      data-sulking={sulk.level}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <div
+        className={`w-full text-center shadow-lift ${
+          kakaoView ? "rounded-2xl bg-white px-3.5 py-2.5 text-kakao-ink" : "max-w-xs rounded-3xl bg-white/90 px-4 py-3 text-ink ring-1 ring-white/70 backdrop-blur-xl"
+        }`}
       >
-        <AvatarStage
-          persona={persona}
-          reaction={reaction}
-          cue={cue}
-          reactionKey={reactionKey}
-          speaking={voiceSpeaking}
-          premium={premiumUnlocked}
-          allure={allureActive}
-          sound={soundOn && !voiceOpen}
-        />
-        {/* 💋 매혹 모드 분위기 (가장자리 붉은 빛) */}
-        {allureActive && (
-          <div
-            className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_55%,rgba(190,24,93,0.22)_100%)]"
-            data-allure-vignette
-          />
-        )}
-        {/* 리액션 영상 소리 켜기/끄기 */}
-        <button
-          type="button"
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={toggleSound}
-          aria-label={soundOn ? "리액션 소리 끄기" : "리액션 소리 켜기"}
-          data-sound-toggle={soundOn ? "on" : "off"}
-          className="absolute right-3 top-[calc(max(0.75rem,env(safe-area-inset-top))+4.25rem)] z-10 flex h-9 w-9 items-center justify-center rounded-full bg-black/35 text-base text-white/90 ring-1 ring-white/20 backdrop-blur wide:top-3"
-        >
-          {soundOn ? "🔊" : "🔇"}
-        </button>
-        {/* 💋 매혹 모드 켜기/끄기 (지원 인물만) */}
-        {persona.allure && !voiceOpen && (
+        <p className="text-[13px] font-semibold">
+          💢 {persona.name} 님이 {sulkLevelDef(sulk.level).label}
+          <span className="ml-1 text-[10px] font-normal text-ink-mute">({sulk.level}단계)</span>
+        </p>
+        <p className="mt-0.5 text-[11px] text-ink-soft">
+          {sulk.cause === "touch" ? "잠시 뒤 풀려요 · 하트로 달래도 돼요" : sulkLevelDef(sulk.level).hint}
+          {sulkLevelDef(sulk.level).sootheNeeded > 1 && sulk.cause === "words" && (
+            <span className="ml-1 font-semibold text-brand-500">
+              ({sulk.soothe}/{sulkLevelDef(sulk.level).sootheNeeded})
+            </span>
+          )}
+        </p>
+        <div className="mt-2 flex justify-center gap-1.5">
+          {sulkLevelDef(sulk.level).freeHearts.length > 0 && lastAiTextId !== null && (
+            <>
+              {(["love", "like"] as const)
+                .filter((h) => (sulkLevelDef(sulk.level).freeHearts as string[]).includes(h))
+                .map((h) => (
+                  <button
+                    key={h}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => handleReact(lastAiTextId, h)}
+                    data-sulk-heart={h}
+                    className="rounded-full bg-paper px-2.5 py-1 text-sm ring-1 ring-ink-line hover:bg-ink-line/60 disabled:opacity-50"
+                  >
+                    {HEART_REACTIONS[h].emoji}
+                  </button>
+                ))}
+            </>
+          )}
           <button
             type="button"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={toggleAllure}
-            aria-label={`${persona.allureUi?.label ?? "매혹 모드"} ${allureActive ? "끄기" : "켜기"}`}
-            aria-pressed={allureActive}
-            data-allure-toggle={allureActive ? "on" : "off"}
-            className={`absolute right-3 top-[calc(max(0.75rem,env(safe-area-inset-top))+7rem)] z-10 flex h-9 w-9 items-center justify-center rounded-full text-base ring-1 backdrop-blur transition wide:top-14 ${
-              allureActive ? "bg-rose-500/80 text-white ring-rose-200/70 shadow-[0_0_14px_rgba(244,63,94,.7)]" : "bg-black/35 text-white/90 ring-white/20 grayscale-[60%]"
+            disabled={busy}
+            onClick={sendGift}
+            data-sulk-gift={giftCost(sulk)}
+            className={`rounded-full px-3 py-1 text-xs font-bold disabled:opacity-50 ${
+              kakaoView ? "bg-kakao-yellow text-kakao-ink" : "bg-gradient-to-r from-brand-500 to-brand-400 text-white shadow-glow"
             }`}
           >
-            {persona.allureUi?.emoji ?? "💋"}
+            {persona.traits.gift.emoji} {persona.traits.gift.name} 선물 · 💎{giftCost(sulk)}
           </button>
-        )}
-        {/* 등 돌린(삐진) 상태 안내 — 말로 풀어 주면 다시 돌아본다 */}
-        {sulk && (
-          <div
-            className="absolute inset-x-0 top-[34%] z-10 flex justify-center px-4"
-            data-sulking={sulk.level}
-            onPointerDown={(e) => e.stopPropagation()}
-          >
-            <div className="w-full max-w-xs rounded-2xl bg-black/60 px-3.5 py-2.5 text-center text-white shadow-lg ring-1 ring-white/15 backdrop-blur">
-              <p className="text-xs font-semibold">
-                💢 {persona.name} 님이 {sulkLevelDef(sulk.level).label}
-                <span className="ml-1 text-[10px] font-normal text-white/60">({sulk.level}단계)</span>
-              </p>
-              <p className="mt-0.5 text-[11px] text-white/75">
-                {sulk.cause === "touch" ? "잠시 뒤 풀려요 · 하트로 달래도 돼요" : sulkLevelDef(sulk.level).hint}
-                {sulkLevelDef(sulk.level).sootheNeeded > 1 && sulk.cause === "words" && (
-                  <span className="ml-1 text-pink-200">
-                    ({sulk.soothe}/{sulkLevelDef(sulk.level).sootheNeeded})
-                  </span>
-                )}
-              </p>
-              <div className="mt-2 flex justify-center gap-1.5">
-                {sulkLevelDef(sulk.level).freeHearts.length > 0 && lastAiTextId !== null && (
-                  <>
-                    {(["love", "like"] as const)
-                      .filter((h) => (sulkLevelDef(sulk.level).freeHearts as string[]).includes(h))
-                      .map((h) => (
-                        <button
-                          key={h}
-                          type="button"
-                          disabled={busy}
-                          onClick={() => handleReact(lastAiTextId, h)}
-                          data-sulk-heart={h}
-                          className="rounded-full bg-white/15 px-2.5 py-1 text-sm hover:bg-white/25 disabled:opacity-50"
-                        >
-                          {HEART_REACTIONS[h].emoji}
-                        </button>
-                      ))}
-                  </>
-                )}
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={sendGift}
-                  data-sulk-gift={giftCost(sulk)}
-                  className="rounded-full bg-gradient-to-r from-pink-500 to-rose-500 px-3 py-1 text-xs font-bold text-white shadow disabled:opacity-50"
-                >
-                  {persona.traits.gift.emoji} {persona.traits.gift.name} 선물 · 💎{giftCost(sulk)}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-        {/* 호감도 단계 상승 배너 */}
-        {stageBanner && (
-          <div key={stageBanner.key} className="pointer-events-none absolute inset-x-0 top-[22%] z-10 flex justify-center" data-stage-up={stageBanner.label}>
-            <div className="stage-up-pop rounded-3xl bg-gradient-to-r from-pink-500/90 to-rose-500/90 px-5 py-3 text-center text-white shadow-2xl ring-1 ring-white/30">
-              <p className="text-[11px] opacity-85">관계가 한 단계 가까워졌어요</p>
-              <p className="text-lg font-extrabold">💗 {stageBanner.label}</p>
-            </div>
-          </div>
-        )}
-        {/* 유료 리액션 잠금 안내 (가끔만) */}
-        {teaser && (
-          <div className="pointer-events-none absolute inset-x-0 top-[30%] flex justify-center" data-teaser={teaser}>
-            <span className="touch-line-static rounded-full bg-gradient-to-r from-pink-500 to-rose-500 px-3.5 py-1.5 text-xs font-semibold text-white shadow-lg">
-              💋 {persona.name} 님의 특별한 리액션이 있어요 · PRO
-            </span>
-          </div>
-        )}
-        <EffectsLayer particles={particles} bursts={bursts} sparks={sparks} marks={marks} />
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 hidden bg-gradient-to-t from-black/80 via-black/40 to-transparent p-5 pt-16 wide:block">
-          <p className="text-lg font-semibold text-white">
-            {persona.name}
-            <span className="ml-2 text-sm font-normal text-slate-300">
-              {persona.profile.age}세 · {persona.profile.occupation}
-            </span>
-          </p>
-          <p className="text-sm" style={{ color: persona.accent }}>
-            {persona.status}
-          </p>
-          {process.env.NODE_ENV !== "production" && (
-            <p className="mt-1 text-xs text-slate-400" data-debug-reaction>
-              reaction: {reaction} · 호감도 {Math.round(affection)}
-            </p>
-          )}
         </div>
-      </section>
+      </div>
+    </div>
+  );
 
-      {/* 메신저: 폰/세로 = 배경 위에 겹쳐서, 넓은 화면 = 오른쪽 절반 */}
-      {/* 폰: 메신저가 인물 화면 위에 겹치므로 빈 곳은 터치가 통과(pointer-events-none)하고 실제 UI만 터치를 받는다 */}
-      <section className="pointer-events-none absolute inset-0 flex flex-col bg-gradient-to-b from-black/55 via-transparent to-black/75 wide:pointer-events-auto wide:relative wide:inset-auto wide:w-1/2 wide:bg-none wide:bg-slate-950">
-        <header className={`pointer-events-auto flex items-center gap-3 ${voiceOpen ? "invisible" : ""} px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] wide:border-b wide:border-slate-800`}>
-          <PersonaPortrait
-            persona={persona}
-            size="sm"
-            className="h-10 w-10 shrink-0 overflow-hidden rounded-2xl ring-1 ring-white/20"
+  /* 호감도 단계 상승 배너 */
+  const stageBannerEl = stageBanner && (
+    <div
+      key={stageBanner.key}
+      className={`pointer-events-none z-20 flex justify-center ${kakaoView ? "fixed inset-x-0 top-[22%]" : "absolute inset-x-0 top-[22%]"}`}
+      data-stage-up={stageBanner.label}
+    >
+      <div className="stage-up-pop rounded-3xl bg-white/95 px-6 py-3.5 text-center text-ink shadow-lift ring-1 ring-brand-100 backdrop-blur">
+        <p className="text-[11px] text-ink-mute">관계가 한 단계 가까워졌어요</p>
+        <p className="bg-gradient-to-r from-brand-600 to-brand-400 bg-clip-text text-lg font-extrabold text-transparent">💗 {stageBanner.label}</p>
+      </div>
+    </div>
+  );
+
+  /* 호감도 줄 (헤더 안) */
+  const affectionRow = (
+    <div
+      className="relative mt-0.5 flex items-center gap-1.5"
+      title={prog.next ? `호감도 ${Math.round(affection)} · 다음 "${prog.next.label}"까지 ${prog.toNext}` : `호감도 ${Math.round(affection)} · 최고 단계`}
+      data-affection={Math.round(affection)}
+    >
+      <span className={`whitespace-nowrap text-[10px] font-bold tabular-nums ${kakaoView ? "text-[#e0457b]" : "text-brand-500"}`} data-affection-num>
+        ♥ {Math.round(affection)}
+      </span>
+      <div className={`h-1 w-10 shrink-0 overflow-hidden rounded-full ${kakaoView ? "bg-black/10" : "bg-ink/10"}`} data-stage-progress={Math.round(prog.ratio * 100)}>
+        <div className="h-full rounded-full bg-gradient-to-r from-brand-400 to-brand-500 transition-all duration-700" style={{ width: `${Math.round(prog.ratio * 100)}%` }} />
+      </div>
+      <span className={`whitespace-nowrap text-[10px] ${kakaoView ? "text-[#4a5560]" : "text-ink-mute"}`} data-stage>
+        {stage.label}
+        {prog.next && <span className="ml-0.5 text-[9px] opacity-70">({prog.toNext})</span>}
+      </span>
+      {affDelta && (
+        <span
+          key={affDelta.key}
+          className={`aff-float absolute -top-3 left-6 text-[11px] font-bold ${affDelta.v > 0 ? "text-brand-500" : "text-sky-500"}`}
+          data-affection-delta={affDelta.v}
+        >
+          {affDelta.v > 0 ? `+${affDelta.v}` : affDelta.v}
+        </span>
+      )}
+      {/* 멤버십 배지 → 구독 안내 */}
+      <button
+        type="button"
+        onClick={() => {
+          refreshMembership();
+          setPlansModal("menu");
+        }}
+        data-plan-badge={membership?.plan ?? "free"}
+        className={`ml-0.5 inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-px text-[9px] font-bold leading-tight ring-1 ${
+          kakaoView ? "ring-black/15" : "ring-ink-line bg-white"
+        }`}
+        style={{ color: membership && membership.plan !== "free" ? PLANS[membership.plan].color : kakaoView ? "#4a5560" : "#8b8690" }}
+      >
+        {membership && membership.plan !== "free" ? (
+          <>
+            <IconCrown className="h-2.5 w-2.5" /> {PLANS[membership.plan].name}
+          </>
+        ) : (
+          "멤버십"
+        )}
+      </button>
+    </div>
+  );
+
+  const iconBtn = kakaoView
+    ? "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-kakao-ink/80 transition hover:bg-black/5"
+    : "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-ink-soft transition hover:bg-ink/5";
+
+  /* 관리 메뉴 */
+  const menu = (
+    <div className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => setMenuOpen((o) => !o)}
+        aria-label="대화 관리"
+        aria-expanded={menuOpen}
+        data-chat-menu
+        className={iconBtn}
+      >
+        <IconMore className="h-5 w-5" />
+      </button>
+      {menuOpen && <div className="fixed inset-0 z-20" onClick={() => setMenuOpen(false)} aria-hidden />}
+      {menuOpen && (
+        <div className="fade-in absolute right-0 top-full z-30 mt-1.5 w-52 overflow-hidden rounded-2xl bg-white py-1.5 text-sm text-ink shadow-lift ring-1 ring-ink-line" role="menu">
+          <MenuItem icon={<IconUser className="h-[18px] w-[18px]" />} label="프로필 보기" data="profile" onClick={() => { setMenuOpen(false); setProfileOpen(true); }} />
+          <MenuItem
+            icon={kakaoView ? <IconScreen className="h-[18px] w-[18px]" /> : <IconBubble className="h-[18px] w-[18px]" />}
+            label={kakaoMode ? "영상 모드로 보기" : "카톡 모드로 보기"}
+            data="kakao"
+            onClick={() => { setMenuOpen(false); toggleKakao(); }}
           />
-          <div className="min-w-[4.5rem] flex-1">
-            <p className="truncate whitespace-nowrap text-sm font-semibold [text-shadow:0_1px_2px_rgba(0,0,0,.5)]" style={{ color: persona.accent }}>
-              {persona.name}
-            </p>
-            <p className="truncate text-xs text-white/80 [text-shadow:0_1px_2px_rgba(0,0,0,.6)] wide:text-slate-400 wide:[text-shadow:none]">
-              {photoBusy ? "사진 찍는 중…" : typing ? "입력 중…" : persona.status}
-            </p>
-            <div
-              className="relative mt-1 flex items-center gap-1.5"
-              title={prog.next ? `호감도 ${Math.round(affection)} · 다음 "${prog.next.label}"까지 ${prog.toNext}` : `호감도 ${Math.round(affection)} · 최고 단계`}
-              data-affection={Math.round(affection)}
-            >
-              <span className="whitespace-nowrap text-[10px] font-semibold tabular-nums text-pink-300" data-affection-num>
-                ♥ {Math.round(affection)}
-              </span>
-              <div className="h-1 w-10 shrink-0 overflow-hidden rounded-full bg-white/20" data-stage-progress={Math.round(prog.ratio * 100)}>
-                <div className="h-full rounded-full bg-pink-400 transition-all duration-700" style={{ width: `${Math.round(prog.ratio * 100)}%` }} />
-              </div>
-              <span className="whitespace-nowrap text-[10px] text-white/80 wide:text-slate-400" data-stage>
-                {stage.label}
-                {prog.next && <span className="ml-0.5 text-[9px] text-white/50">({prog.toNext})</span>}
-              </span>
-              {affDelta && (
-                <span
-                  key={affDelta.key}
-                  className={`aff-float absolute -top-3 left-6 text-[11px] font-bold ${affDelta.v > 0 ? "text-pink-300" : "text-sky-300"}`}
-                  data-affection-delta={affDelta.v}
-                >
-                  {affDelta.v > 0 ? `+${affDelta.v}` : affDelta.v}
-                </span>
-              )}
-              {/* 멤버십 배지 → 구독 안내 */}
-              <button
-                type="button"
-                onClick={() => {
-                  refreshMembership();
-                  setPlansModal("menu");
-                }}
-                data-plan-badge={membership?.plan ?? "free"}
-                className="ml-0.5 shrink-0 rounded-full px-1.5 py-px text-[9px] font-bold leading-tight ring-1 ring-white/30"
-                style={{ color: membership && membership.plan !== "free" ? PLANS[membership.plan].color : "rgba(255,255,255,.75)" }}
-              >
-                {membership && membership.plan !== "free" ? `👑 ${PLANS[membership.plan].name}` : "멤버십"}
-              </button>
-            </div>
-          </div>
-          <button
-            onClick={startVoice}
-            disabled={busy || voiceOpen}
-            aria-label="보이스톡 걸기"
-            title="보이스톡 (유료)"
-            data-voice-button
-            className="relative shrink-0 rounded-full bg-pink-500/90 px-3 py-1.5 text-xs font-semibold text-white shadow hover:bg-pink-500 disabled:opacity-50"
+          <div className="my-1 h-px bg-ink-line" />
+          <MenuItem
+            icon={<IconBrain className="h-[18px] w-[18px]" />}
+            label={<>기억 보기 {memory?.facts.length ? <span className="text-xs text-ink-mute">({memory.facts.length})</span> : null}</>}
+            data="memory"
+            onClick={() => { setMenuOpen(false); setMemoryOpen(true); }}
+          />
+          <MenuItem icon={<IconBackup className="h-[18px] w-[18px]" />} label="대화 기록 백업" data="backup" onClick={() => { setMenuOpen(false); setBackupOpen(true); }} />
+          <MenuItem
+            icon={<IconTrash className="h-[18px] w-[18px]" />}
+            label="대화 초기화"
+            data="reset"
+            danger
+            disabled={!hasConversation}
+            onClick={() => { setMenuOpen(false); setResetOpen(true); }}
+          />
+        </div>
+      )}
+    </div>
+  );
+
+  const backBtn = (
+    <button
+      type="button"
+      onClick={() => {
+        setConfirmReset(false);
+        setSelectorOpen(true);
+      }}
+      aria-label="대화 목록"
+      title="대화 목록"
+      data-chat-list
+      className={`${iconBtn} -ml-1`}
+    >
+      <IconBack className="h-[22px] w-[22px]" />
+    </button>
+  );
+
+  const callBtn = (
+    <button
+      onClick={startVoice}
+      disabled={busy || voiceOpen}
+      aria-label="보이스톡 걸기"
+      title="보이스톡 (유료)"
+      data-voice-button
+      className={`relative flex h-9 shrink-0 items-center gap-1 rounded-full px-2.5 text-xs font-semibold transition disabled:opacity-50 ${
+        kakaoView ? "text-kakao-ink/80 hover:bg-black/5" : "bg-gradient-to-r from-brand-500 to-brand-400 text-white shadow-glow hover:brightness-105 wide:px-3.5"
+      }`}
+    >
+      <IconPhone className="h-[18px] w-[18px]" />
+      {!kakaoView && <span className="hidden wide:inline">보이스톡</span>}
+      {!kakaoView && (
+        <span className="absolute -right-1 -top-1.5 rounded-full bg-amber-300 px-1 text-[8px] font-extrabold leading-tight text-ink ring-2 ring-white">PRO</span>
+      )}
+    </button>
+  );
+
+  const header = kakaoView ? (
+    <header className="pointer-events-auto flex items-center gap-1 bg-kakao-bg/95 px-2 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] text-kakao-ink backdrop-blur" data-header="kakao">
+      {backBtn}
+      <div className="min-w-0 flex-1 pl-1">
+        <p className="truncate text-[15px] font-bold">{persona.name}</p>
+        {affectionRow}
+      </div>
+      <button type="button" onClick={() => setProfileOpen(true)} aria-label="프로필" data-profile-button className={iconBtn}>
+        <IconUser className="h-[21px] w-[21px]" />
+      </button>
+      {callBtn}
+      <button type="button" onClick={toggleKakao} aria-label="영상 모드로" title="영상 모드로" data-kakao-toggle="on" className={iconBtn}>
+        <IconScreen className="h-[21px] w-[21px]" />
+      </button>
+      {menu}
+    </header>
+  ) : (
+    <header
+      className={`pointer-events-auto flex items-center gap-1.5 border-b border-white/50 bg-white/80 px-3 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] shadow-soft backdrop-blur-xl wide:border-ink-line wide:bg-white wide:px-4 wide:py-3 wide:shadow-none wide:backdrop-blur-none ${
+        voiceOpen ? "invisible" : ""
+      }`}
+      data-header="default"
+    >
+      {backBtn}
+      <button type="button" onClick={() => setProfileOpen(true)} aria-label={`${persona.name} 프로필`} className="shrink-0 transition active:scale-95" data-header-avatar>
+        <PersonaPortrait persona={persona} size="sm" className="h-10 w-10 overflow-hidden rounded-2xl ring-2 ring-white shadow-soft" />
+      </button>
+      <div className="min-w-[4.5rem] flex-1 pl-1">
+        <p className="flex items-center gap-1.5 truncate whitespace-nowrap text-[15px] font-bold text-ink">
+          {persona.name}
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: persona.accent }} aria-hidden />
+        </p>
+        <p className="truncate text-[11px] text-ink-mute">{photoBusy ? "사진 찍는 중…" : typing ? "입력 중…" : persona.status}</p>
+        {affectionRow}
+      </div>
+      <button type="button" onClick={() => setProfileOpen(true)} aria-label="프로필" title="프로필" data-profile-button className={iconBtn}>
+        <IconUser className="h-[21px] w-[21px]" />
+      </button>
+      <button type="button" onClick={toggleKakao} aria-label="카톡 모드" title="카톡 모드 (배경 없이 메신저처럼)" data-kakao-toggle="off" className={iconBtn}>
+        <IconBubble className="h-[21px] w-[21px]" />
+      </button>
+      {callBtn}
+      {menu}
+    </header>
+  );
+
+  const chatPanel = (
+    <ChatPanel
+      persona={persona}
+      messages={messages}
+      input={input}
+      typing={typing}
+      busy={busy}
+      onInputChange={setInput}
+      onSubmit={handleSubmit}
+      onReact={handleReact}
+      onAttach={handleAttach}
+      uploading={uploading}
+      variant={kakaoView ? "kakao" : "default"}
+      onOpenProfile={() => setProfileOpen(true)}
+    />
+  );
+
+  return (
+    <main className={`relative h-[100dvh] w-full overflow-hidden ${kakaoView ? "bg-kakao-bg" : "bg-paper wide:flex"}`} data-view={kakaoView ? "kakao" : "stage"}>
+      {kakaoView ? (
+        /* 💬 카톡 모드: 배경 영상 없이 평범한 메신저 화면 */
+        <section className="relative mx-auto flex h-full w-full max-w-3xl flex-col wide:border-x wide:border-kakao-line/70">
+          {header}
+          {sulkCard}
+          <div className="min-h-0 flex-1">{chatPanel}</div>
+          {stageBannerEl}
+        </section>
+      ) : (
+        <>
+          {/* 리액션 화면: 폰/세로 = 전체 배경, 가로로 넓은 화면 = 왼쪽 절반 */}
+          {/* 터치하면 인물이 반응한다 (폰에서는 메신저 빈 곳을 터치해도 이 화면으로 전달됨) */}
+          <section
+            className="absolute inset-0 touch-manipulation select-none bg-ink wide:relative wide:inset-auto wide:w-1/2"
+            onPointerDown={onStagePointerDown}
+            data-touch-stage
           >
-            📞 보이스톡
-            <span className="absolute -right-1 -top-1.5 rounded-full bg-amber-400 px-1 text-[9px] font-bold leading-tight text-slate-900">
-              PRO
-            </span>
-          </button>
-          {/* 관리 메뉴: 기억 보기 · 백업 · 대화 초기화 */}
-          <div className="relative shrink-0">
+            <AvatarStage
+              persona={persona}
+              reaction={reaction}
+              cue={cue}
+              reactionKey={reactionKey}
+              speaking={voiceSpeaking}
+              premium={premiumUnlocked}
+              allure={allureActive}
+              sound={soundOn && !voiceOpen}
+            />
+            {/* 💋 매혹 모드 분위기 (가장자리 붉은 빛) */}
+            {allureActive && (
+              <div
+                className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_55%,rgba(190,24,93,0.22)_100%)]"
+                data-allure-vignette
+              />
+            )}
+            {/* 리액션 영상 소리 켜기/끄기 */}
             <button
               type="button"
-              onClick={() => setMenuOpen((o) => !o)}
-              aria-label="대화 관리"
-              aria-expanded={menuOpen}
-              data-chat-menu
-              className="rounded-lg px-2.5 py-1.5 text-base leading-none text-white/85 hover:bg-white/10 wide:text-slate-300"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={toggleSound}
+              aria-label={soundOn ? "리액션 소리 끄기" : "리액션 소리 켜기"}
+              data-sound-toggle={soundOn ? "on" : "off"}
+              className="absolute right-3 top-[calc(max(0.5rem,env(safe-area-inset-top))+4.75rem)] z-10 flex h-9 w-9 items-center justify-center rounded-full bg-white/75 text-ink shadow-soft ring-1 ring-white/70 backdrop-blur-md wide:top-4"
             >
-              ⋯
+              <IconSound muted={!soundOn} className="h-[18px] w-[18px]" />
             </button>
-            {menuOpen && <div className="fixed inset-0 z-20" onClick={() => setMenuOpen(false)} aria-hidden />}
-            {menuOpen && (
-              <div className="absolute right-0 top-full z-30 mt-1 w-44 overflow-hidden rounded-2xl bg-slate-900/95 py-1 text-sm text-white shadow-xl ring-1 ring-white/10" role="menu">
-                <button type="button" role="menuitem" data-menu-memory onClick={() => { setMenuOpen(false); setMemoryOpen(true); }} className="block w-full px-4 py-2 text-left hover:bg-white/10">
-                  🧠 기억 보기 {memory?.facts.length ? <span className="text-xs text-white/50">({memory.facts.length})</span> : null}
-                </button>
-                <button type="button" role="menuitem" data-menu-backup onClick={() => { setMenuOpen(false); setBackupOpen(true); }} className="block w-full px-4 py-2 text-left hover:bg-white/10">
-                  💾 대화 기록 백업
-                </button>
-                <button
-                  type="button"
-                  role="menuitem"
-                  data-menu-reset
-                  disabled={!hasConversation}
-                  onClick={() => { setMenuOpen(false); setResetOpen(true); }}
-                  className="block w-full px-4 py-2 text-left text-rose-300 hover:bg-white/10 disabled:opacity-40"
-                >
-                  🗑 대화 초기화
-                </button>
+            {/* 💋 매혹 모드 켜기/끄기 (지원 인물만) */}
+            {persona.allure && !voiceOpen && (
+              <button
+                type="button"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={toggleAllure}
+                aria-label={`${persona.allureUi?.label ?? "매혹 모드"} ${allureActive ? "끄기" : "켜기"}`}
+                aria-pressed={allureActive}
+                data-allure-toggle={allureActive ? "on" : "off"}
+                className={`absolute right-3 top-[calc(max(0.5rem,env(safe-area-inset-top))+7.5rem)] z-10 flex h-9 w-9 items-center justify-center rounded-full text-base ring-1 backdrop-blur-md transition wide:top-[3.75rem] ${
+                  allureActive ? "bg-brand-500/90 text-white ring-white/70 shadow-glow" : "bg-white/75 text-ink shadow-soft ring-white/70 grayscale-[40%]"
+                }`}
+              >
+                {persona.allureUi?.emoji ?? "💋"}
+              </button>
+            )}
+            {sulkCard}
+            {stageBannerEl}
+            {/* 유료 리액션 잠금 안내 (가끔만) */}
+            {teaser && (
+              <div className="pointer-events-none absolute inset-x-0 top-[30%] flex justify-center" data-teaser={teaser}>
+                <span className="touch-line-static rounded-full bg-white/90 px-3.5 py-1.5 text-xs font-semibold text-brand-600 shadow-lift backdrop-blur">
+                  💋 {persona.name} 님의 특별한 리액션이 있어요 · PRO
+                </span>
               </div>
             )}
-          </div>
-          <button
-            onClick={() => {
-              setConfirmReset(false);
-              setSelectorOpen(true);
-            }}
-            className="shrink-0 rounded-lg border border-white/30 bg-black/20 px-3 py-1.5 text-xs text-white backdrop-blur hover:bg-white/10 wide:border-slate-700 wide:bg-transparent wide:text-slate-300"
-          >
-            대화 목록
-          </button>
-        </header>
-        <div className={`min-h-0 flex-1 ${voiceOpen ? "invisible" : ""}`}>
-          <ChatPanel
-            persona={persona}
-            messages={messages}
-            input={input}
-            typing={typing}
-            busy={busy}
-            onInputChange={setInput}
-            onSubmit={handleSubmit}
-            onReact={handleReact}
-            onAttach={handleAttach}
-            uploading={uploading}
-          />
-        </div>
-      </section>
+            <EffectsLayer particles={particles} bursts={bursts} sparks={sparks} marks={marks} />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 hidden bg-gradient-to-t from-black/70 via-black/25 to-transparent p-6 pt-20 wide:block">
+              <p className="text-[11px] font-medium uppercase tracking-[0.2em] text-white/60">Now chatting</p>
+              <p className="mt-1 text-2xl font-bold text-white">
+                {persona.name}
+                <span className="ml-2 text-sm font-normal text-white/75">
+                  {persona.profile.age}세 · {persona.profile.occupation}
+                </span>
+              </p>
+              <p className="mt-0.5 text-sm text-white/85">{persona.status}</p>
+              {process.env.NODE_ENV !== "production" && (
+                <p className="mt-1 text-xs text-white/50" data-debug-reaction>
+                  reaction: {reaction} · 호감도 {Math.round(affection)}
+                </p>
+              )}
+            </div>
+          </section>
+
+          {/* 메신저: 폰/세로 = 배경 위에 겹쳐서, 넓은 화면 = 오른쪽 절반 */}
+          {/* 폰: 메신저가 인물 화면 위에 겹치므로 빈 곳은 터치가 통과(pointer-events-none)하고 실제 UI만 터치를 받는다 */}
+          <section className="pointer-events-none absolute inset-0 flex flex-col bg-gradient-to-b from-transparent via-transparent to-black/45 wide:pointer-events-auto wide:relative wide:inset-auto wide:w-1/2 wide:bg-none wide:bg-paper">
+            {header}
+            <div className={`min-h-0 flex-1 ${voiceOpen ? "invisible" : ""}`}>{chatPanel}</div>
+          </section>
+        </>
+      )}
 
       {voiceOpen && (
         <div className="pointer-events-none absolute inset-0 z-30 wide:right-1/2" data-voice-layer>
@@ -1654,6 +1815,17 @@ export default function ChatApp({
           }}
           onCashCall={plansModal === "voice" || plansModal === "trial-end" ? startCashCall : undefined}
           onClose={() => setPlansModal(null)}
+        />
+      )}
+
+      {profileOpen && (
+        <ProfileSheet
+          persona={persona}
+          affection={affection}
+          stats={profileStats}
+          kakao={kakaoView}
+          onCall={voiceOpen ? undefined : startVoice}
+          onClose={() => setProfileOpen(false)}
         />
       )}
 

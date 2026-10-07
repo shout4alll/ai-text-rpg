@@ -18,15 +18,15 @@ function Shell({
 }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/65 p-4 backdrop-blur-sm sm:items-center"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-ink/40 p-4 backdrop-blur-sm sm:items-center"
       role="dialog"
       aria-modal="true"
       aria-label={label}
       onClick={onClose}
     >
       <div
-        className={`max-h-[90dvh] w-full max-w-sm overflow-y-auto rounded-3xl bg-slate-900 text-white shadow-2xl ring-1 ${
-          tone === "rose" ? "ring-rose-400/30" : "ring-white/10"
+        className={`max-h-[90dvh] w-full max-w-sm overflow-y-auto rounded-3xl bg-white text-ink shadow-lift ring-1 ${
+          tone === "rose" ? "ring-brand-100" : "ring-ink-line"
         }`}
         onClick={(e) => e.stopPropagation()}
       >
@@ -58,27 +58,27 @@ export function ResetFlow({
   const [backingUp, setBackingUp] = useState(false);
   return (
     <Shell onClose={onCancel} label="대화 초기화" tone="rose">
-      <div className="flex items-center gap-3 bg-gradient-to-r from-rose-600/30 to-slate-800 px-5 py-4" data-reset-step={step}>
-        <div className="h-12 w-12 shrink-0 overflow-hidden rounded-2xl ring-2 ring-rose-300/50">
+      <div className="flex items-center gap-3 bg-gradient-to-r from-brand-100 to-white px-5 py-4" data-reset-step={step}>
+        <div className="h-12 w-12 shrink-0 overflow-hidden rounded-2xl ring-2 ring-brand-200">
           <PersonaPortrait persona={persona} size="sm" className="h-full w-full" />
         </div>
         <div className="min-w-0">
           <p className="text-base font-bold">{step === 1 ? "대화를 초기화할까요?" : "정말 지울까요?"}</p>
-          <p className="text-xs text-white/70">{persona.name} 님과의 대화</p>
+          <p className="text-xs text-ink-mute">{persona.name} 님과의 대화</p>
         </div>
       </div>
 
       {step === 1 ? (
         <div className="space-y-3 px-5 py-4 text-sm">
-          <p className="text-white/85">처음 만난 사이로 돌아가요. 아래 내용이 모두 지워져요.</p>
-          <ul className="space-y-1 rounded-2xl bg-white/5 px-3.5 py-2.5 text-[13px] text-white/80">
+          <p className="text-ink-soft">처음 만난 사이로 돌아가요. 아래 내용이 모두 지워져요.</p>
+          <ul className="space-y-1 rounded-2xl bg-paper px-3.5 py-2.5 text-[13px] text-ink-soft">
             <li>💬 주고받은 메시지 {messageCount}개 (보이스톡 기록 포함)</li>
             <li>💗 호감도 ♥ {Math.round(affection)}</li>
             <li>🧠 {persona.name} 님의 기억 {memoryCount}개</li>
             <li>🖼 내가 보낸 사진·영상</li>
           </ul>
           <div className="flex gap-2 pt-1">
-            <button type="button" onClick={onCancel} className="flex-1 rounded-2xl bg-white/10 py-3 text-sm font-medium hover:bg-white/15">
+            <button type="button" onClick={onCancel} className="flex-1 rounded-2xl bg-ink/5 py-3 text-sm font-medium hover:bg-ink/10">
               취소
             </button>
             <button
@@ -93,7 +93,7 @@ export function ResetFlow({
         </div>
       ) : (
         <div className="space-y-3 px-5 py-4 text-sm">
-          <p className="rounded-2xl bg-rose-500/15 px-3.5 py-3 text-[13px] leading-relaxed text-rose-100 ring-1 ring-rose-400/30">
+          <p className="rounded-2xl bg-rose-500/15 px-3.5 py-3 text-[13px] leading-relaxed text-brand-700 ring-1 ring-brand-100">
             {persona.name} 님과의 <b>추억이 모두 사라집니다.</b>
             <br />
             지운 뒤에는 되돌릴 수 없어요. 남겨 두고 싶다면 먼저 내 PC에 백업하세요.
@@ -111,12 +111,12 @@ export function ResetFlow({
               }
             }}
             data-reset-backup
-            className="w-full rounded-2xl bg-indigo-600 py-3 text-sm font-bold hover:bg-indigo-500 disabled:opacity-60"
+            className="w-full rounded-2xl bg-brand-500 py-3 text-sm font-bold hover:bg-brand-400 disabled:opacity-60"
           >
             {backingUp ? "백업 파일 만드는 중…" : "💾 백업하고 지우기"}
           </button>
           <div className="flex gap-2">
-            <button type="button" onClick={onCancel} className="flex-1 rounded-2xl bg-white/10 py-3 text-sm font-medium hover:bg-white/15">
+            <button type="button" onClick={onCancel} className="flex-1 rounded-2xl bg-ink/5 py-3 text-sm font-medium hover:bg-ink/10">
               그만두기
             </button>
             <button
@@ -155,25 +155,25 @@ export function MemoryModal({
       <div className="flex items-center justify-between gap-3 px-5 pb-2 pt-4">
         <div>
           <p className="text-base font-bold">🧠 {persona.name} 님의 기억</p>
-          <p className="text-[11px] text-white/55">톡과 보이스톡에서 기억해 둔 것 · 다음 대화에 반영돼요</p>
+          <p className="text-[11px] text-ink-mute">톡과 보이스톡에서 기억해 둔 것 · 다음 대화에 반영돼요</p>
         </div>
-        <button type="button" onClick={onClose} aria-label="닫기" className="text-lg text-white/70">
+        <button type="button" onClick={onClose} aria-label="닫기" className="text-lg text-ink-mute">
           ✕
         </button>
       </div>
       <div className="px-5 pb-5">
         {facts.length === 0 ? (
-          <p className="rounded-2xl bg-white/5 px-3.5 py-3 text-xs text-white/60">아직 기억한 게 없어요. 대화를 조금 더 나누면 생겨요.</p>
+          <p className="rounded-2xl bg-paper px-3.5 py-3 text-xs text-ink-mute">아직 기억한 게 없어요. 대화를 조금 더 나누면 생겨요.</p>
         ) : (
           <ul className="space-y-1.5" data-memory-list>
             {facts.map((f, i) => (
-              <li key={`${i}-${f}`} className="flex items-start gap-2 rounded-xl bg-white/5 px-3 py-2 text-[13px]">
-                <span className="flex-1 text-white/85">{f}</span>
+              <li key={`${i}-${f}`} className="flex items-start gap-2 rounded-xl bg-paper px-3 py-2 text-[13px]">
+                <span className="flex-1 text-ink-soft">{f}</span>
                 <button
                   type="button"
                   onClick={() => onDelete(i)}
                   aria-label="이 기억 지우기"
-                  className="shrink-0 text-xs text-white/40 hover:text-rose-300"
+                  className="shrink-0 text-xs text-ink-mute/80 hover:text-brand-600"
                 >
                   지우기
                 </button>
@@ -185,7 +185,7 @@ export function MemoryModal({
           type="button"
           onClick={onRefresh}
           disabled={updating}
-          className="mt-3 w-full rounded-2xl bg-white/10 py-2.5 text-xs font-medium hover:bg-white/15 disabled:opacity-50"
+          className="mt-3 w-full rounded-2xl bg-ink/5 py-2.5 text-xs font-medium hover:bg-ink/10 disabled:opacity-50"
         >
           {updating ? "정리하는 중…" : "지금까지 대화로 기억 정리하기"}
         </button>
@@ -207,14 +207,14 @@ export function BackupModal({ onClose, onRestored }: { onClose: () => void; onRe
       <div className="flex items-center justify-between gap-3 px-5 pb-2 pt-4">
         <div>
           <p className="text-base font-bold">💾 대화 기록 백업</p>
-          <p className="text-[11px] text-white/55">모든 인물과의 대화·호감도·기억을 내 PC에 파일로 저장해요</p>
+          <p className="text-[11px] text-ink-mute">모든 인물과의 대화·호감도·기억을 내 PC에 파일로 저장해요</p>
         </div>
-        <button type="button" onClick={onClose} aria-label="닫기" className="text-lg text-white/70">
+        <button type="button" onClick={onClose} aria-label="닫기" className="text-lg text-ink-mute">
           ✕
         </button>
       </div>
       <div className="space-y-3 px-5 pb-5 text-sm">
-        <label className="flex items-center gap-2 text-xs text-white/75">
+        <label className="flex items-center gap-2 text-xs text-ink-soft">
           <input type="checkbox" checked={includeMedia} onChange={(e) => setIncludeMedia(e.target.checked)} />
           내가 보낸 사진·영상도 함께 (파일이 커질 수 있어요)
         </label>
@@ -234,13 +234,13 @@ export function BackupModal({ onClose, onRestored }: { onClose: () => void; onRe
               setBusy(false);
             }
           }}
-          className="w-full rounded-2xl bg-indigo-600 py-3 text-sm font-bold hover:bg-indigo-500 disabled:opacity-60"
+          className="w-full rounded-2xl bg-brand-500 py-3 text-sm font-bold hover:bg-brand-400 disabled:opacity-60"
         >
           {busy ? "만드는 중…" : "💾 내 PC에 백업하기"}
         </button>
 
-        <div className="border-t border-white/10 pt-3">
-          <p className="text-xs text-white/60">다른 기기나 예전 백업에서 불러오기</p>
+        <div className="border-t border-ink-line pt-3">
+          <p className="text-xs text-ink-mute">다른 기기나 예전 백업에서 불러오기</p>
           <input
             ref={fileRef}
             type="file"
@@ -260,12 +260,12 @@ export function BackupModal({ onClose, onRestored }: { onClose: () => void; onRe
             }}
           />
           {pending ? (
-            <div className="mt-2 space-y-2 rounded-2xl bg-amber-400/10 p-3 ring-1 ring-amber-300/30">
-              <p className="text-xs text-amber-100">
+            <div className="mt-2 space-y-2 rounded-2xl bg-amber-400/10 p-3 ring-1 ring-amber-200">
+              <p className="text-xs text-amber-700">
                 {new Date(pending.exportedAt).toLocaleString("ko-KR")} 백업이에요. 불러오면 <b>이 기기의 지금 기록이 이 백업으로 바뀌어요.</b>
               </p>
               <div className="flex gap-2">
-                <button type="button" onClick={() => setPending(null)} className="flex-1 rounded-xl bg-white/10 py-2 text-xs">
+                <button type="button" onClick={() => setPending(null)} className="flex-1 rounded-xl bg-ink/5 py-2 text-xs">
                   취소
                 </button>
                 <button
@@ -292,14 +292,14 @@ export function BackupModal({ onClose, onRestored }: { onClose: () => void; onRe
             <button
               type="button"
               onClick={() => fileRef.current?.click()}
-              className="mt-2 w-full rounded-2xl bg-white/10 py-2.5 text-xs font-medium hover:bg-white/15"
+              className="mt-2 w-full rounded-2xl bg-ink/5 py-2.5 text-xs font-medium hover:bg-ink/10"
             >
               📂 백업 파일 불러오기
             </button>
           )}
         </div>
-        {msg && <p className="text-xs text-white/75" data-backup-msg>{msg}</p>}
-        <p className="text-[10px] leading-relaxed text-white/40">
+        {msg && <p className="text-xs text-ink-soft" data-backup-msg>{msg}</p>}
+        <p className="text-[10px] leading-relaxed text-ink-mute/80">
           대화는 이 브라우저에만 저장돼요. 브라우저 데이터를 지우거나 기기를 바꾸면 사라지니 가끔 백업해 두세요.
         </p>
       </div>

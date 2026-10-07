@@ -6,6 +6,67 @@ import { HEART_REACTIONS, HEART_REACTION_IDS, isHeartReactionId, type HeartReact
 import type { Persona } from "@/lib/personas/types";
 import type { ChatMessage } from "@/types/game";
 import { mediaUrl } from "@/lib/userMedia";
+import { IconHeart, IconImage, IconSend } from "@/components/icons";
+
+export type ChatVariant = "default" | "kakao";
+
+/** 화면 모드별 스타일 (default = 영상 위 / 넓은 화면은 wide: 로 오른쪽 패널, kakao = 메신저 모드) */
+function stylesOf(v: ChatVariant) {
+  if (v === "kakao") {
+    return {
+      scroll: "flex-1 overflow-y-auto px-3 pb-3 pt-3",
+      ai: "bg-white text-kakao-ink",
+      user: "bg-kakao-yellow text-kakao-ink",
+      aiShape: "rounded-[16px] rounded-tl-[5px]",
+      userShape: "rounded-[16px] rounded-tr-[5px]",
+      meta: "text-[#55606b]",
+      name: "text-[#3a4550]",
+      chip: "bg-black/15 text-white",
+      avatar: "h-10 w-10 overflow-hidden rounded-[15px]",
+      avatarBox: "w-10",
+      badge: "bg-white ring-1 ring-black/5 shadow-soft",
+      unread: "text-[#d9a400]",
+      dot: "bg-[#9aa5ae]",
+      form: "bg-white border-t border-kakao-line/60",
+      input: "bg-[#f4f4f4] text-kakao-ink placeholder:text-[#9a9a9a] rounded-full focus:bg-white focus:ring-1 focus:ring-[#d0d0d0]",
+      send: "rounded-full bg-kakao-yellow px-3.5 text-sm font-semibold text-kakao-ink disabled:bg-[#f4f4f4] disabled:text-[#b0b0b0]",
+      iconBtn: "text-[#5b6670] hover:bg-black/5",
+      heartBtn: "text-[#5b6670] hover:bg-black/5",
+      picker: "bg-white ring-1 ring-black/5 text-kakao-ink",
+      pickerLabel: "text-[#7a7a7a]",
+      call: "bg-white/70 text-[#3a4550]",
+      mediaRing: "ring-1 ring-black/5",
+      text: "text-[15px] leading-relaxed",
+    };
+  }
+  return {
+    scroll:
+      "fade-top-mask max-h-[54dvh] overflow-y-auto px-3 pb-2 pt-16 wide:no-mask wide:max-h-none wide:flex-1 wide:px-6 wide:pt-6",
+    ai: "bg-white/90 text-ink shadow-soft backdrop-blur-md wide:bg-white wide:backdrop-blur-none",
+    user: "bg-gradient-to-br from-brand-500 to-brand-400 text-white shadow-[0_4px_14px_-6px_rgba(244,63,110,.6)]",
+    aiShape: "rounded-[20px] rounded-tl-md",
+    userShape: "rounded-[20px] rounded-tr-md",
+    meta: "text-white/85 [text-shadow:0_1px_2px_rgba(0,0,0,.55)] wide:text-ink-mute wide:[text-shadow:none]",
+    name: "font-medium text-white/90 [text-shadow:0_1px_2px_rgba(0,0,0,.55)] wide:text-ink-soft wide:[text-shadow:none]",
+    chip: "bg-white/75 text-ink-soft shadow-soft backdrop-blur wide:bg-white wide:ring-1 wide:ring-ink-line wide:shadow-none",
+    avatar: "h-9 w-9 overflow-hidden rounded-2xl ring-2 ring-white/80 shadow-soft",
+    avatarBox: "w-9",
+    badge: "bg-white ring-1 ring-ink-line shadow-soft",
+    unread: "text-amber-400 wide:text-brand-500",
+    dot: "bg-ink-mute/70",
+    form: "border-t border-white/50 bg-white/80 backdrop-blur-xl wide:border-ink-line wide:bg-white wide:backdrop-blur-none",
+    input: "bg-ink/[0.05] text-ink placeholder:text-ink-mute rounded-full focus:bg-white focus:ring-2 focus:ring-brand-200",
+    send: "flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-brand-400 text-white shadow-glow disabled:bg-none disabled:bg-ink/10 disabled:text-ink-mute disabled:shadow-none",
+    iconBtn: "text-ink-soft hover:bg-ink/5",
+    heartBtn: "text-brand-500 hover:bg-brand-50",
+    picker: "bg-white ring-1 ring-ink-line text-ink",
+    pickerLabel: "text-ink-mute",
+    call: "bg-white/75 text-brand-600 shadow-soft backdrop-blur wide:bg-brand-50 wide:shadow-none",
+    mediaRing: "ring-1 ring-black/5 shadow-soft",
+    text: "text-[15px] leading-relaxed wide:text-[14.5px]",
+  };
+}
+type Styles = ReturnType<typeof stylesOf>;
 
 /** 유저가 올린 파일(IndexedDB)의 화면용 주소 — 저장된 기록을 다시 열 때 복원 */
 function useLocalSrc(md: ChatMessage["media"] | undefined): string {
@@ -32,13 +93,13 @@ function UserMediaBubble({
   m,
   badge,
   onOpen,
-  metaText,
+  S,
   timeLabel,
 }: {
   m: ChatMessage;
   badge?: HeartReactionId;
   onOpen: (md: NonNullable<ChatMessage["media"]>) => void;
-  metaText: string;
+  S: Styles;
   timeLabel: string;
 }) {
   const md = m.media!;
@@ -53,7 +114,7 @@ function UserMediaBubble({
                 type="button"
                 onClick={() => onOpen({ ...md, src })}
                 aria-label={md.type === "video" ? "내 영상 크게 보기" : "내 사진 크게 보기"}
-                className="relative block overflow-hidden rounded-2xl rounded-tr-md ring-1 ring-indigo-300/40"
+                className={`relative block overflow-hidden rounded-2xl rounded-tr-md ${S.mediaRing}`}
               >
                 {md.type === "video" ? (
                   <>
@@ -68,13 +129,13 @@ function UserMediaBubble({
                 )}
               </button>
             ) : (
-              <span className="block rounded-2xl rounded-tr-md bg-indigo-600/70 px-3.5 py-2 text-xs text-white/80">
+              <span className={`block rounded-2xl rounded-tr-md px-3.5 py-2 text-xs opacity-80 ${S.user}`}>
                 {md.type === "video" ? "🎬 영상" : "🖼 사진"} (이 기기에 없음)
               </span>
             )}
             {badge && (
               <span
-                className="absolute -bottom-3 left-1 rounded-full bg-slate-900/95 px-1.5 py-0.5 text-sm leading-none ring-1 ring-white/20"
+                className={`absolute -bottom-3 left-1 rounded-full px-1.5 py-0.5 text-sm leading-none ${S.badge}`}
                 data-badge={badge}
                 title={HEART_REACTIONS[badge].label}
               >
@@ -83,17 +144,33 @@ function UserMediaBubble({
             )}
           </div>
           <div className="flex shrink-0 flex-col items-end pb-0.5">
-            {m.read === false && <span className="text-[10px] font-bold text-amber-300">1</span>}
-            <span className={`text-[10px] ${metaText}`}>{timeLabel}</span>
+            {m.read === false && <span className={`text-[10px] font-bold ${S.unread}`}>1</span>}
+            <span className={`text-[10px] ${S.meta}`}>{timeLabel}</span>
           </div>
         </div>
         {m.text && (
-          <span className={`${badge ? "mt-4" : "mt-1"} whitespace-pre-wrap break-words rounded-2xl rounded-tr-md bg-indigo-600/90 px-3.5 py-2 text-[15px] text-white wide:text-sm`}>
+          <span className={`${badge ? "mt-4" : "mt-1"} whitespace-pre-wrap break-words px-3.5 py-2 ${S.userShape} ${S.user} ${S.text}`}>
             {m.text}
           </span>
         )}
       </div>
     </div>
+  );
+}
+
+/** 대화 속 프로필 사진 (누르면 프로필) */
+function Avatar({ persona, S, onOpen }: { persona: Persona; S: Styles; onOpen?: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      disabled={!onOpen}
+      aria-label={`${persona.name} 프로필 보기`}
+      data-open-profile
+      className="block transition active:scale-95"
+    >
+      <PersonaPortrait persona={persona} size="sm" className={S.avatar} />
+    </button>
   );
 }
 
@@ -114,6 +191,10 @@ interface ChatPanelProps {
   onAttach?: (file: File) => void;
   /** 파일 처리 중 */
   uploading?: boolean;
+  /** 화면 모드 (기본 / 카톡 모드) */
+  variant?: ChatVariant;
+  /** 프로필 사진을 누르면 프로필 열기 */
+  onOpenProfile?: () => void;
 }
 
 const timeFmt = new Intl.DateTimeFormat("ko-KR", { hour: "numeric", minute: "2-digit" });
@@ -121,10 +202,10 @@ const dateFmt = new Intl.DateTimeFormat("ko-KR", { dateStyle: "full" });
 const dayKey = (t: number) => new Date(t).toDateString();
 const minuteKey = (t: number) => Math.floor(t / 60000);
 
-function HeartPicker({ onPick, className = "" }: { onPick: (h: HeartReactionId) => void; className?: string }) {
+function HeartPicker({ onPick, className = "", S }: { onPick: (h: HeartReactionId) => void; className?: string; S: Styles }) {
   return (
     <div
-      className={`flex flex-wrap gap-1 rounded-2xl bg-slate-900/95 p-1.5 shadow-xl ring-1 ring-white/10 ${className}`}
+      className={`flex flex-wrap gap-1 rounded-2xl p-1.5 shadow-lift ${S.picker} ${className}`}
       role="menu"
       aria-label="마음 리액션"
     >
@@ -136,10 +217,10 @@ function HeartPicker({ onPick, className = "" }: { onPick: (h: HeartReactionId) 
           data-heart={id}
           title={HEART_REACTIONS[id].label}
           onClick={() => onPick(id)}
-          className="flex w-12 flex-col items-center rounded-xl py-1 transition hover:bg-white/10 active:scale-90"
+          className="flex w-12 flex-col items-center rounded-xl py-1 transition hover:bg-black/5 active:scale-90"
         >
           <span className="text-xl leading-none">{HEART_REACTIONS[id].emoji}</span>
-          <span className="mt-0.5 text-[9px] text-slate-300">{HEART_REACTIONS[id].label}</span>
+          <span className={`mt-0.5 text-[9px] ${S.pickerLabel}`}>{HEART_REACTIONS[id].label}</span>
         </button>
       ))}
     </div>
@@ -157,7 +238,11 @@ export default function ChatPanel({
   onReact,
   onAttach,
   uploading = false,
+  variant = "default",
+  onOpenProfile,
 }: ChatPanelProps) {
+  const S = stylesOf(variant);
+  const kakao = variant === "kakao";
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
@@ -200,15 +285,10 @@ export default function ChatPanel({
     onReact(targetId, h);
   };
 
-  const aiBubble =
-    "bg-black/45 text-white ring-1 ring-white/10 backdrop-blur-md wide:bg-slate-800 wide:text-slate-100 wide:ring-0 wide:backdrop-blur-none";
-  const userBubble = "bg-indigo-600/90 text-white wide:bg-indigo-600";
-  const metaText = "text-white/75 [text-shadow:0_1px_2px_rgba(0,0,0,.6)] wide:text-slate-500 wide:[text-shadow:none]";
-
   return (
     <div className="flex h-full flex-col">
       <div className="flex min-h-0 flex-1 flex-col justify-end">
-        <div className="fade-top-mask pointer-events-auto max-h-[54dvh] overflow-y-auto px-3 pb-2 pt-16 wide:no-mask wide:max-h-none wide:flex-1 wide:px-4 wide:pt-4">
+        <div className={`pointer-events-auto ${S.scroll}`} data-chat-variant={variant}>
           {bubbles.map((m, i) => {
             const prev = bubbles[i - 1];
             const next = bubbles[i + 1];
@@ -219,7 +299,7 @@ export default function ChatPanel({
             if (m.kind === "notice") {
               return (
                 <div key={m.id} className="my-3 flex justify-center" data-notice>
-                  <span className="rounded-full bg-black/40 px-3 py-1 text-[11px] text-white/75 backdrop-blur wide:bg-slate-800/80 wide:text-slate-400">
+                  <span className={`rounded-full px-3 py-1 text-[11px] ${S.chip}`}>
                     {m.text}
                   </span>
                 </div>
@@ -228,7 +308,7 @@ export default function ChatPanel({
             if (m.kind === "gift") {
               return (
                 <div key={m.id} className="my-3 flex justify-center" data-gift>
-                  <span className="rounded-2xl bg-gradient-to-r from-pink-500/80 to-rose-500/80 px-4 py-2 text-xs font-semibold text-white shadow ring-1 ring-white/25">
+                  <span className={`rounded-2xl px-4 py-2 text-xs font-semibold shadow-soft ${kakao ? "bg-white text-kakao-ink" : "bg-gradient-to-r from-brand-500 to-brand-400 text-white"}`}>
                     🎁 {m.text} 을(를) 선물했어요 · {timeFmt.format(m.at)}
                   </span>
                 </div>
@@ -241,7 +321,7 @@ export default function ChatPanel({
                   m={m}
                   badge={badges.get(m.id)?.ai}
                   onOpen={(md) => setViewer(md)}
-                  metaText={metaText}
+                  S={S}
                   timeLabel={timeFmt.format(m.at)}
                 />
               );
@@ -251,9 +331,9 @@ export default function ChatPanel({
               const first = !prev || prev.role !== "ai" || minuteKey(prev.at) !== minuteKey(m.at);
               return (
                 <div key={m.id} className={`flex gap-2 ${first ? "mt-3" : "mt-1"}`} data-media={md.type}>
-                  <div className="w-9 shrink-0">
+                  <div className={`${S.avatarBox} shrink-0`}>
                     {first && (
-                      <PersonaPortrait persona={persona} size="sm" className="h-9 w-9 overflow-hidden rounded-2xl ring-1 ring-white/20" />
+                      <Avatar persona={persona} S={S} onOpen={onOpenProfile} />
                     )}
                   </div>
                   <div className="flex items-end gap-1.5">
@@ -262,7 +342,7 @@ export default function ChatPanel({
                         type="button"
                         onClick={() => setViewer(md)}
                         aria-label={md.type === "video" ? "영상 크게 보기" : "사진 크게 보기"}
-                        className="relative block overflow-hidden rounded-2xl rounded-tl-md ring-1 ring-white/15"
+                        className={`relative block overflow-hidden rounded-2xl rounded-tl-md ${S.mediaRing}`}
                       >
                         {md.type === "video" ? (
                           <>
@@ -280,9 +360,9 @@ export default function ChatPanel({
                         )}
                       </button>
                     ) : (
-                      <span className={`rounded-2xl px-3.5 py-2 text-xs ${aiBubble}`}>사진은 이 기기에 저장되지 않았어요</span>
+                      <span className={`rounded-2xl px-3.5 py-2 text-xs ${S.ai}`}>사진은 이 기기에 저장되지 않았어요</span>
                     )}
-                    <span className={`pb-0.5 text-[10px] ${metaText}`}>{timeFmt.format(m.at)}</span>
+                    <span className={`pb-0.5 text-[10px] ${S.meta}`}>{timeFmt.format(m.at)}</span>
                   </div>
                 </div>
               );
@@ -291,7 +371,7 @@ export default function ChatPanel({
               const sec = Number(m.text) || 0;
               return (
                 <div key={m.id} className="my-3 flex justify-center" data-call-log>
-                  <span className="rounded-full bg-pink-500/25 px-3 py-1 text-[11px] text-pink-100 ring-1 ring-pink-300/30 backdrop-blur wide:text-pink-200">
+                  <span className={`rounded-full px-3 py-1 text-[11px] font-medium ${S.call}`}>
                     📞 보이스톡 {Math.floor(sec / 60)}:{String(sec % 60).padStart(2, "0")} · {timeFmt.format(m.at)}
                   </span>
                 </div>
@@ -306,21 +386,21 @@ export default function ChatPanel({
               <div key={m.id} data-msg-role={m.role}>
                 {newDay && (
                   <div className="my-4 flex justify-center">
-                    <span className="rounded-full bg-black/40 px-3 py-1 text-[11px] text-white/80 backdrop-blur wide:bg-slate-800/80 wide:text-slate-400">
+                    <span className={`rounded-full px-3 py-1 text-[11px] ${S.chip}`}>
                       {dateFmt.format(m.at)}
                     </span>
                   </div>
                 )}
                 <div className={`flex gap-2 ${isUser ? "justify-end" : "justify-start"} ${startsGroup ? "mt-3" : "mt-1"}`}>
                   {!isUser && (
-                    <div className="w-9 shrink-0">
+                    <div className={`${S.avatarBox} shrink-0`}>
                       {startsGroup && (
-                        <PersonaPortrait persona={persona} size="sm" className="h-9 w-9 overflow-hidden rounded-2xl ring-1 ring-white/20" />
+                        <Avatar persona={persona} S={S} onOpen={onOpenProfile} />
                       )}
                     </div>
                   )}
                   <div className={`flex max-w-[78%] flex-col ${isUser ? "items-end" : "items-start"}`}>
-                    {!isUser && startsGroup && <span className={`mb-1 text-xs ${metaText}`}>{persona.name}</span>}
+                    {!isUser && startsGroup && <span className={`mb-1 text-xs ${S.name}`}>{persona.name}</span>}
                     <div className={`flex items-end gap-1.5 ${isUser ? "flex-row-reverse" : ""}`}>
                       <button
                         type="button"
@@ -328,8 +408,8 @@ export default function ChatPanel({
                         onClick={() => setPickerFor((p) => (p === m.id ? null : m.id))}
                         aria-label={canPick ? "마음 리액션 달기" : undefined}
                         data-bubble
-                        className={`relative whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2 text-left text-[15px] leading-relaxed wide:text-sm ${
-                          isUser ? `rounded-tr-md ${userBubble}` : `rounded-tl-md ${aiBubble}`
+                        className={`relative whitespace-pre-wrap break-words px-3.5 py-2 text-left ${S.text} ${
+                          isUser ? `${S.userShape} ${S.user}` : `${S.aiShape} ${S.ai}`
                         } ${shownBadge ? "mb-3" : ""} ${canPick ? "cursor-pointer active:scale-[0.98]" : "cursor-default"}`}
                       >
                         {m.via === "voice" && (
@@ -340,7 +420,7 @@ export default function ChatPanel({
                         {m.text}
                         {shownBadge && (
                           <span
-                            className={`absolute -bottom-3 ${isUser ? "left-1" : "right-1"} rounded-full bg-slate-900/95 px-1.5 py-0.5 text-sm leading-none ring-1 ring-white/20`}
+                            className={`absolute -bottom-3 ${isUser ? "left-1" : "right-1"} rounded-full px-1.5 py-0.5 text-sm leading-none ${S.badge}`}
                             data-badge={shownBadge}
                             title={HEART_REACTIONS[shownBadge].label}
                           >
@@ -350,16 +430,16 @@ export default function ChatPanel({
                       </button>
                       <div className={`flex shrink-0 flex-col pb-0.5 ${isUser ? "items-end" : "items-start"}`}>
                         {isUser && m.read === false && (
-                          <span className="text-[10px] font-bold text-amber-300" data-unread>
+                          <span className={`text-[10px] font-bold ${S.unread}`} data-unread>
                             1
                           </span>
                         )}
-                        {endsGroup && <span className={`text-[10px] ${metaText}`}>{timeFmt.format(m.at)}</span>}
+                        {endsGroup && <span className={`text-[10px] ${S.meta}`}>{timeFmt.format(m.at)}</span>}
                       </div>
                     </div>
                     {pickerFor === m.id && canPick && (
                       <div ref={pickerRef} className="mt-2">
-                        <HeartPicker className="max-w-[19rem]" onPick={(h) => react(m.id, h)} />
+                        <HeartPicker S={S} className="max-w-[19rem]" onPick={(h) => react(m.id, h)} />
                       </div>
                     )}
                   </div>
@@ -370,12 +450,12 @@ export default function ChatPanel({
 
           {typing && (
             <div className="mt-3 flex items-center gap-2" aria-live="polite" aria-label={`${persona.name} 입력 중`}>
-              <div className="w-9 shrink-0">
-                <PersonaPortrait persona={persona} size="sm" className="h-9 w-9 overflow-hidden rounded-2xl ring-1 ring-white/20" />
+              <div className={`${S.avatarBox} shrink-0`}>
+                <Avatar persona={persona} S={S} onOpen={onOpenProfile} />
               </div>
-              <div className={`flex items-center gap-1 rounded-2xl rounded-tl-md px-4 py-3 ${aiBubble}`} data-typing>
+              <div className={`flex items-center gap-1 px-4 py-3 ${S.aiShape} ${S.ai}`} data-typing>
                 {[0, 150, 300].map((d) => (
-                  <span key={d} className="h-1.5 w-1.5 animate-bounce rounded-full bg-white/70" style={{ animationDelay: `${d}ms` }} />
+                  <span key={d} className={`h-1.5 w-1.5 animate-bounce rounded-full ${S.dot}`} style={{ animationDelay: `${d}ms` }} />
                 ))}
               </div>
             </div>
@@ -407,11 +487,11 @@ export default function ChatPanel({
       <div className="pointer-events-auto relative">
         {paletteOpen && lastAiId !== null && (
           <div className="absolute bottom-full left-3 z-10 mb-2">
-            <HeartPicker className="max-w-[19rem]" onPick={(h) => react(lastAiId, h)} />
+            <HeartPicker S={S} className="max-w-[19rem]" onPick={(h) => react(lastAiId, h)} />
           </div>
         )}
         <form
-          className="flex items-center gap-2 bg-black/35 px-3 pt-3 backdrop-blur-md pb-[max(0.75rem,env(safe-area-inset-bottom))] wide:border-t wide:border-slate-800 wide:bg-transparent wide:backdrop-blur-none"
+          className={`flex items-center gap-1.5 px-3 pt-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] ${S.form}`}
           onSubmit={(e) => {
             e.preventDefault();
             setPaletteOpen(false);
@@ -424,9 +504,9 @@ export default function ChatPanel({
             disabled={busy || lastAiId === null}
             aria-label="마음 리액션 보내기"
             data-heart-button
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-xl text-pink-400 transition hover:bg-white/10 disabled:opacity-40"
+            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition disabled:opacity-40 ${S.heartBtn}`}
           >
-            ♥
+            <IconHeart className="h-[22px] w-[22px]" />
           </button>
           {onAttach && (
             <>
@@ -437,9 +517,9 @@ export default function ChatPanel({
                 aria-label="사진·영상 보내기"
                 title="사진·영상 보내기"
                 data-attach-button
-                className="flex h-10 w-9 shrink-0 items-center justify-center rounded-full text-lg text-white/85 transition hover:bg-white/10 disabled:opacity-40"
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition disabled:opacity-40 ${S.iconBtn}`}
               >
-                {uploading ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" /> : "🖼"}
+                {uploading ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-ink-mute/40 border-t-ink-soft" /> : <IconImage className="h-[22px] w-[22px]" />}
               </button>
               <input
                 ref={fileRef}
@@ -462,14 +542,16 @@ export default function ChatPanel({
             placeholder="메시지를 입력하세요"
             maxLength={1000}
             enterKeyHint="send"
-            className="min-w-0 flex-1 rounded-full border border-white/20 bg-black/40 px-4 py-2 text-base text-white outline-none placeholder:text-white/50 focus:border-indigo-400 wide:border-slate-700 wide:bg-slate-900 wide:text-sm"
+            className={`h-10 min-w-0 flex-1 px-4 text-base outline-none transition wide:text-[14.5px] ${S.input}`}
           />
           <button
             type="submit"
             disabled={busy || !input.trim()}
-            className="shrink-0 rounded-full bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+            aria-label="전송"
+            data-send
+            className={`h-10 shrink-0 transition disabled:cursor-not-allowed ${S.send}`}
           >
-            전송
+            {kakao ? "전송" : <IconSend className="h-5 w-5" />}
           </button>
         </form>
       </div>

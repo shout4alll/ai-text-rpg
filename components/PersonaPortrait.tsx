@@ -30,7 +30,7 @@ export default function PersonaPortrait({
   if (index >= sources.length) {
     return (
       <div
-        className={`flex flex-col items-center justify-center gap-2 bg-slate-900 text-center ${className}`}
+        className={`flex flex-col items-center justify-center gap-2 bg-paper text-center text-ink ${className}`}
         style={{ backgroundImage: `radial-gradient(circle at 50% 35%, ${persona.accent}33, transparent 70%)` }}
         aria-label={persona.name}
       >
@@ -45,7 +45,7 @@ export default function PersonaPortrait({
         {size === "lg" && (
           <>
             <span className="text-lg font-semibold">{persona.name}</span>
-            <span className="text-xs text-slate-400">이미지 준비 중</span>
+            <span className="text-xs text-ink-mute">이미지 준비 중</span>
           </>
         )}
       </div>

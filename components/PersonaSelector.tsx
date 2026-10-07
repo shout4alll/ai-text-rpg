@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import PersonaPortrait from "@/components/PersonaPortrait";
+import { IconBackup, IconChats, IconClose } from "@/components/icons";
 import type { Persona, PersonaId } from "@/lib/personas/types";
 
 type Filter = "all" | "female" | "male";
@@ -38,44 +39,56 @@ export default function PersonaSelector({
 
   return (
     <div
-      className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/95 backdrop-blur-sm"
+      className="fade-in fixed inset-0 z-50 overflow-y-auto bg-paper"
       role="dialog"
       aria-modal="true"
       aria-labelledby="persona-selector-title"
     >
-      <div className="mx-auto flex min-h-full max-w-6xl flex-col px-4 py-8 sm:px-6">
-        <div className="mb-6 flex items-start justify-between gap-4">
-          <div>
-            <h1 id="persona-selector-title" className="text-2xl font-bold">
-              누구와 이야기해 볼까요?
-            </h1>
-            <p className="mt-1 text-sm text-slate-400">
-              메시지로 천천히 알아 가는 사람들이에요. 대화는 사람마다 따로 저장돼서 언제든 이어서 할 수 있어요.
-            </p>
+      {/* 상단 바 */}
+      <div className="sticky top-0 z-10 border-b border-ink-line/70 bg-paper/85 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-6">
+          <div className="flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-400 text-white shadow-glow">
+              <IconChats className="h-[18px] w-[18px]" />
+            </span>
+            <span className="text-[17px] font-extrabold tracking-tight">캐릭톡</span>
           </div>
           <div className="flex shrink-0 gap-2">
-          {onBackup && (
-            <button
-              type="button"
-              onClick={onBackup}
-              data-selector-backup
-              className="shrink-0 rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
-            >
-              💾 백업
-            </button>
-          )}
-          {onClose && (
-            <button
-              onClick={onClose}
-              className="shrink-0 rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
-            >
-              닫기
-            </button>
-          )}
+            {onBackup && (
+              <button
+                type="button"
+                onClick={onBackup}
+                data-selector-backup
+                className="flex items-center gap-1 rounded-full bg-white px-3 py-1.5 text-sm text-ink-soft shadow-soft ring-1 ring-ink-line transition hover:text-ink"
+              >
+                <IconBackup className="h-4 w-4" /> 백업
+              </button>
+            )}
+            {onClose && (
+              <button
+                onClick={onClose}
+                aria-label="닫기"
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-ink-soft shadow-soft ring-1 ring-ink-line transition hover:text-ink"
+              >
+                <IconClose className="h-[18px] w-[18px]" />
+              </button>
+            )}
           </div>
         </div>
+      </div>
 
-        <div className="mb-5 flex gap-2" role="tablist" aria-label="캐릭터 필터">
+      <div className="mx-auto flex max-w-6xl flex-col px-4 pb-12 pt-7 sm:px-6">
+        <div className="mb-6">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand-500">Messenger</p>
+          <h1 id="persona-selector-title" className="mt-1.5 text-[26px] font-extrabold leading-tight tracking-tight sm:text-3xl">
+            누구와 이야기해 볼까요?
+          </h1>
+          <p className="mt-2 max-w-xl text-sm leading-relaxed text-ink-mute">
+            메시지로 천천히 알아 가는 사람들이에요. 대화는 사람마다 따로 저장돼서 언제든 이어서 할 수 있어요.
+          </p>
+        </div>
+
+        <div className="mb-6 inline-flex w-fit gap-1 rounded-full bg-white p-1 shadow-soft ring-1 ring-ink-line" role="tablist" aria-label="캐릭터 필터">
           {FILTERS.map((f) => (
             <button
               key={f.id}
@@ -84,10 +97,8 @@ export default function PersonaSelector({
               aria-selected={filter === f.id}
               data-filter={f.id}
               onClick={() => setFilter(f.id)}
-              className={`rounded-full px-3 py-1 text-sm transition ${
-                filter === f.id
-                  ? "bg-slate-100 font-medium text-slate-900"
-                  : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+              className={`rounded-full px-4 py-1.5 text-sm transition ${
+                filter === f.id ? "bg-ink font-semibold text-white" : "text-ink-soft hover:text-ink"
               }`}
             >
               {f.label} <span className="opacity-60">{count(f.id)}</span>
@@ -95,7 +106,7 @@ export default function PersonaSelector({
           ))}
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {visible.map((p) => {
             const selected = p.id === currentId;
             return (
@@ -104,51 +115,49 @@ export default function PersonaSelector({
                 type="button"
                 data-persona={p.id}
                 onClick={() => onSelect(p.id)}
-                className={`group flex flex-col overflow-hidden rounded-2xl border bg-slate-900 text-left transition hover:-translate-y-0.5 hover:shadow-xl focus:outline-none focus-visible:ring-2 ${
-                  selected ? "border-2" : "border-slate-800"
+                className={`group flex flex-col overflow-hidden rounded-[26px] bg-white text-left shadow-soft ring-1 transition duration-300 hover:-translate-y-1 hover:shadow-lift focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 ${
+                  selected ? "ring-2" : "ring-ink-line"
                 }`}
-                style={selected ? { borderColor: p.accent } : undefined}
+                style={selected ? ({ "--tw-ring-color": p.accent } as React.CSSProperties) : undefined}
               >
-                <div className="relative aspect-[4/5] w-full overflow-hidden">
+                <div className="relative aspect-[4/5] w-full overflow-hidden bg-ink-line">
                   <PersonaPortrait
                     persona={p}
-                    className="h-full w-full transition duration-300 group-hover:scale-105"
+                    className="h-full w-full transition duration-500 group-hover:scale-[1.04]"
                   />
-                  <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-3 pt-10">
-                    <p className="text-lg font-semibold text-white">{p.name}</p>
-                    <p className="truncate text-xs text-slate-300">
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent p-4 pt-16">
+                    <p className="text-xl font-bold text-white">{p.name}</p>
+                    <p className="truncate text-xs text-white/80">
                       {p.profile.age}세 · {p.profile.occupation}
-                    </p>
-                    <p className="mt-0.5 truncate text-xs" style={{ color: p.accent }}>
-                      {p.status}
                     </p>
                   </div>
                   {previews[p.id] && !selected && (
-                    <span className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-xs text-white">
-                      대화 중
+                    <span className="absolute left-3 top-3 flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-semibold text-ink shadow-soft backdrop-blur">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> 대화 중
                     </span>
                   )}
                   {selected && (
-                    <span
-                      className="absolute right-2 top-2 rounded-full px-2 py-0.5 text-xs font-medium text-slate-950"
-                      style={{ backgroundColor: p.accent }}
-                    >
-                      선택됨
+                    <span className="absolute right-3 top-3 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-semibold text-ink shadow-soft backdrop-blur">
+                      지금 대화 상대
                     </span>
                   )}
                 </div>
-                <div className="flex flex-1 flex-col gap-3 p-3">
+                <div className="flex flex-1 flex-col gap-3 p-4">
+                  <p className="flex items-center gap-1.5 truncate text-xs font-medium text-ink-soft">
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: p.accent }} />
+                    <span className="truncate">{p.status}</span>
+                  </p>
                   {previews[p.id] ? (
-                    <p className="line-clamp-2 rounded-lg bg-slate-800/70 px-2.5 py-1.5 text-sm text-slate-200" data-preview>
+                    <p className="line-clamp-2 rounded-2xl bg-paper px-3 py-2 text-sm text-ink-soft" data-preview>
                       {previews[p.id]}
                     </p>
                   ) : (
-                    <p className="text-sm text-slate-300">{p.description}</p>
+                    <p className="line-clamp-3 text-sm leading-relaxed text-ink-mute">{p.description}</p>
                   )}
                   <div className="mt-auto flex flex-wrap gap-1.5">
                     {p.tags.map((t) => (
-                      <span key={t} className="rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-300">
-                        {t}
+                      <span key={t} className="rounded-full bg-paper px-2.5 py-0.5 text-[11px] text-ink-soft ring-1 ring-ink-line">
+                        #{t}
                       </span>
                     ))}
                   </div>

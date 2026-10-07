@@ -125,6 +125,12 @@ export function toPublic(p: PersonaFile): Persona {
         }
       : {}),
     voiceName: p.voice?.name ?? (p.gender === "male" ? "Puck" : "Leda"),
+    details: {
+      likes: p.traits?.likes ?? [],
+      dislikes: p.traits?.dislikes ?? [],
+      // 하루 일과 (프롬프트의 lifestyle — 3인칭 설명이라 공개해도 되는 부분만)
+      lifestyle: p.prompt.lifestyle,
+    },
     traits: {
       gift: p.traits?.gift ?? { name: "꽃다발", emoji: "💐" },
       reactionBias: p.traits?.reactionBias ?? {},
