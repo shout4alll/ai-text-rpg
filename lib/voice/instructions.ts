@@ -1,5 +1,6 @@
 import "server-only";
 import { allureInstructions } from "@/config/allure";
+import { BALANCE } from "@/config/balance";
 import { SHARED_RULES } from "@/lib/personas/server";
 import type { PersonaFile } from "@/lib/personas/schema";
 import { affectionStage } from "@/config/reactions";
@@ -30,6 +31,8 @@ export function buildVoiceInstructions(opts: {
   recent: VoiceTurn[];
   /** 💋 매혹 모드 */
   allure?: boolean;
+  /** 기억 노트 (예전 톡·보이스톡에서) */
+  memory?: string[];
 }): string {
   const { persona, affection, recent } = opts;
   const allure = opts.allure && persona.allure ? persona.allure : null;
@@ -37,7 +40,7 @@ export function buildVoiceInstructions(opts: {
   const stage = affectionStage(affection, persona.relationshipType);
   const myNow = formatNow(persona.timezone);
   const recentText = recent
-    .slice(-16)
+    .slice(-BALANCE.cost.voiceRecentTurns)
     .map((t) => `${t.role === "user" ? "유저" : persona.name}: ${t.content.slice(0, 200)}`)
     .join("\n");
   const examples = p.examples.map((e) => `- ${e}`).join("\n");
@@ -60,7 +63,7 @@ ${allure ? `\n${allureInstructions(persona.name, allure.prompt).replace(/\n- rea
 ${myNow ? `- 너의 현지 시각(${persona.timezone}): ${myNow}` : "- 현재 시각 정보 없음"}
 - 현재 호감도 ${Math.round(affection)}/100 → "${stage.label}": ${stage.guide}
 
-[최근 톡 대화 — 이어지는 맥락으로만 참고]
+${opts.memory?.length ? `[기억 — 예전 톡·보이스톡에서 기억해 둔 것. 자연스럽게 떠올려 말해라]\n${opts.memory.map((m) => `- ${m}`).join("\n")}\n\n` : ""}[최근 톡 대화 — 이어지는 맥락으로만 참고]
 ${recentText || "(아직 나눈 톡이 없다. 처음 목소리를 듣는 순간이다.)"}
 
 [통화처럼 말하기]

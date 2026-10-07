@@ -63,6 +63,15 @@ export async function getMedia(key: string): Promise<UserMediaRecord | undefined
   }
 }
 
+/** 백업용: 보관된 파일 전부 */
+export async function listAllMedia(): Promise<UserMediaRecord[]> {
+  try {
+    return (await tx<UserMediaRecord[]>("readonly", (s) => s.getAll())) ?? [];
+  } catch {
+    return [];
+  }
+}
+
 /** 대화방 초기화 시: 그 인물의 파일을 모두 지운다 */
 export async function deleteMediaFor(personaId: string): Promise<void> {
   try {

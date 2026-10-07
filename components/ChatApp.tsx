@@ -23,6 +23,8 @@ import {
 } from "@/lib/membership";
 import MediaPurchaseModal from "@/components/MediaPurchaseModal";
 import AllureGateModal from "@/components/AllureGateModal";
+import { BackupModal, MemoryModal, ResetFlow } from "@/components/ChatManageModals";
+import { downloadBackup } from "@/lib/backup";
 import { ALLURE_STORAGE } from "@/config/allure";
 import { BALANCE, sulkLevelDef } from "@/config/balance";
 import { checkRelease, giftCost, sulkExpired, sulkStartLevel, sulkSummary, touchSulk, type SulkState } from "@/lib/sulk";
@@ -54,7 +56,7 @@ import type { ChatMessage, ChatResponse } from "@/types/game";
 const LAST_KEY = "ai-rpg.personaId";
 const chatKey = (id: PersonaId) => `ai-rpg.chat.${id}`;
 const MAX_STORED = 300; // 대화방당 저장할 최대 기록 수
-const MAX_SEND = 40; // API로 보낼 최근 턴 수
+
 const RETURN_GAP = 3 * 60 * 60 * 1000; // 이 시간 이상 비웠다가 들어오면 상대가 먼저 말을 건다
 
 interface StoredChat {
@@ -67,6 +69,8 @@ interface StoredChat {
   sulkReleasedAt?: number;
   /** 지금까지 도달한 가장 높은 호감도 단계 (보상은 처음 도달할 때만) */
   bestStage?: number;
+  /** 🧠 기억 노트 (/api/memory) — upTo: 이 메시지 id 까지 정리함 */
+  memory?: { facts: string[]; upTo: number; at: number };
 }
 
 function readStorage(key: string): string | null {
@@ -107,6 +111,7 @@ function loadChat(id: PersonaId): StoredChat | null {
         sulk: d.sulk && typeof d.sulk.level === "number" ? d.sulk : null,
         sulkReleasedAt: typeof d.sulkReleasedAt === "number" ? d.sulkReleasedAt : undefined,
         bestStage: typeof d.bestStage === "number" ? d.bestStage : undefined,
+        memory: d.memory && Array.isArray(d.memory.facts) ? d.memory : undefined,
       };
     }
   } catch {
@@ -120,7 +125,7 @@ function saveChat(id: PersonaId, chat: Omit<StoredChat, "v">) {
   const messages = chat.messages
     .slice(-MAX_STORED)
     .map((m) => (m.media?.localKey ? { ...m, media: { ...m.media, src: "" } } : m));
-  const extra = { sulk: chat.sulk ?? null, sulkReleasedAt: chat.sulkReleasedAt, bestStage: chat.bestStage };
+  const extra = { sulk: chat.sulk ?? null, sulkReleasedAt: chat.sulkReleasedAt, bestStage: chat.bestStage, memory: chat.memory };
   if (writeStorage(chatKey(id), JSON.stringify({ v: 2, messages, affection: chat.affection, ...extra }))) return;
   // 용량 초과: 실시간 생성 사진(data URL)은 빼고 저장 (대화 기록은 지킨다)
   const slim = messages.map((m) =>
@@ -199,7 +204,12 @@ function toTurns(msgs: ChatMessage[]): Turn[] {
       turns.push({ role: "user", kind: "gift", content: m.text, at: m.at });
     }
   }
-  return turns.slice(-MAX_SEND);
+  // 💰 캐시 절약: 보내는 창을 historyStep 단위로 맞춰 앞부분이 매 턴 바뀌지 않게 한다
+  //    (historyTurns ~ historyTurns+historyStep-1 턴을 보냄. 앞의 오래된 대화는 "기억"이 대신한다)
+  const { historyTurns, historyStep } = BALANCE.cost;
+  const over = Math.max(0, turns.length - historyTurns);
+  const start = Math.floor(over / historyStep) * historyStep;
+  return turns.slice(start);
 }
 
 function userTimeZone(): string | undefined {
@@ -338,6 +348,20 @@ export default function ChatApp({
   const sulkReleasedAt = useRef<number | undefined>(undefined);
   /** 지금까지 도달한 최고 단계 (단계 보상은 처음 도달할 때만) */
   const bestStage = useRef(0);
+
+  // 🧠 기억 노트 (톡 + 보이스톡) — /api/memory
+  const [memory, setMemory] = useState<{ facts: string[]; upTo: number; at: number } | null>(null);
+  const memoryRef = useRef(memory);
+  memoryRef.current = memory;
+  const [memoryBusy, setMemoryBusy] = useState(false);
+  const memoryForce = useRef(false);
+  /** 💰 마음 리액션: 마지막으로 AI 답장을 부른 시각 */
+  const lastHeartLlm = useRef(0);
+  // 관리 화면
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [memoryOpen, setMemoryOpen] = useState(false);
+  const [backupOpen, setBackupOpen] = useState(false);
   const sulking = !!sulk;
   const setSulk = useCallback((s: SulkState | null) => {
     sulkRef.current = s;
@@ -603,6 +627,11 @@ export default function ChatApp({
         msgs = [...msgs, { id: nextId.current++, role: "ai", kind: "notice", text: "시간이 지나 기분이 풀렸어요", at: Date.now(), local: true }];
       }
       setSulk(restored);
+      setMemory(saved?.memory ?? null);
+      memoryForce.current = false;
+      setMenuOpen(false);
+      setResetOpen(false);
+      setMemoryOpen(false);
       setMessages(msgs);
       setPersonaId(id);
       writeStorage(LAST_KEY, id);
@@ -650,8 +679,15 @@ export default function ChatApp({
   // 대화·호감도가 바뀔 때마다 저장
   useEffect(() => {
     if (!personaId || messages.length === 0) return;
-    saveChat(personaId, { messages, affection, sulk, sulkReleasedAt: sulkReleasedAt.current, bestStage: bestStage.current });
-  }, [personaId, messages, affection, sulk]);
+    saveChat(personaId, {
+      messages,
+      affection,
+      sulk,
+      sulkReleasedAt: sulkReleasedAt.current,
+      bestStage: bestStage.current,
+      memory: memory ?? undefined,
+    });
+  }, [personaId, messages, affection, sulk, memory]);
 
   /** 다른 대화방으로 옮긴 뒤 도착한 답장을 원래 대화방 저장소에 기록 (다음에 열면 보임) */
   const persistToRoom = useCallback(
@@ -672,10 +708,60 @@ export default function ChatApp({
         sulk: stored.sulk,
         sulkReleasedAt: stored.sulkReleasedAt,
         bestStage: stored.bestStage,
+        memory: stored.memory,
       });
     },
     []
   );
+
+  /* ── 🧠 기억 정리 (톡 + 보이스톡) ───────────────────────────────────────── */
+  const updateMemory = useCallback(
+    async (msgs: ChatMessage[], pid: PersonaId) => {
+      if (memoryBusy) return;
+      const cur = memoryRef.current;
+      const upTo = cur?.upTo ?? -1;
+      const turns = msgs
+        .filter((m) => m.id > upTo && !m.local && (m.kind ?? "text") === "text" && !m.text.startsWith("⚠️"))
+        .map((m) => ({ role: m.role === "user" ? ("user" as const) : ("assistant" as const), content: m.text.slice(0, 1000), voice: m.via === "voice", at: m.at }))
+        .slice(-BALANCE.memory.maxTurnsPerUpdate);
+      if (turns.length < 2) return;
+      setMemoryBusy(true);
+      try {
+        const res = await fetch("/api/memory", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ personaId: pid, facts: cur?.facts ?? [], turns, timeZone: userTimeZone() }),
+        });
+        const data = (await res.json().catch(() => ({}))) as { facts?: string[] };
+        if (!res.ok || !Array.isArray(data.facts)) return;
+        const last = msgs[msgs.length - 1]?.id ?? upTo;
+        const next = { facts: data.facts, upTo: last, at: Date.now() };
+        if (pid === personaIdRef.current) setMemory(next);
+        else {
+          const stored = loadChat(pid);
+          if (stored) saveChat(pid, { ...stored, memory: next });
+        }
+      } catch {
+        /* 다음 기회에 다시 */
+      } finally {
+        setMemoryBusy(false);
+      }
+    },
+    [memoryBusy]
+  );
+
+  const personaIdRef = useRef(personaId);
+  personaIdRef.current = personaId;
+  // 🧠 대화가 일정량 쌓이거나 보이스톡이 끝나면 기억을 정리 (답장을 기다리는 중엔 하지 않음)
+  useEffect(() => {
+    if (!personaId || busy || memoryBusy) return;
+    const upTo = memory?.upTo ?? -1;
+    const fresh = messages.filter((m) => m.id > upTo && m.role === "user" && (m.kind ?? "text") === "text" && !m.local).length;
+    if (memoryForce.current || fresh >= BALANCE.memory.everyUserTurns) {
+      memoryForce.current = false;
+      void updateMemory(messages, personaId);
+    }
+  }, [messages, busy, personaId, memory, memoryBusy, updateMemory]);
 
   /* ── 답장 받기 (공통) ──────────────────────────────────────────────────── */
   const requestReply = useCallback(
@@ -707,6 +793,7 @@ export default function ChatApp({
           sentAlbumIds: msgs.flatMap((m) => (m.media?.albumId ? [m.media.albumId] : [])),
           allure: allureActive,
           sulk: sulkSummary(sulkRef.current),
+          memory: memoryRef.current?.facts ?? [],
         }),
       }).then(async (res) => {
         if (!res.ok) {
@@ -881,9 +968,21 @@ export default function ChatApp({
       setMessages(msgs);
       spawnBurst(HEART_REACTIONS[heart].emoji);
       spawnParticles([HEART_REACTIONS[heart].emoji], 4);
+      // 💰 마음 리액션을 연달아 보내면 AI 호출 없이 표정으로만 답한다 (balance.json cost.heartLlmGapSec)
+      // 단, 삐져 있을 땐 하트가 달래기가 될 수 있으므로 항상 AI 에게 보낸다
+      const gap = BALANCE.cost.heartLlmGapSec * 1000;
+      if (!sulkRef.current && gap > 0 && Date.now() - lastHeartLlm.current < gap) {
+        const local: Record<string, AvatarReactionId> = {
+          love: "shy", like: "smile", joy: "laugh", shy: "shy", pout: "pout", touched: "touched",
+          haha: "laugh", hug: "touched", wow: "surprised", sad: "sad",
+        };
+        playReaction(local[heart] ?? "smile", { kind: "reaction", heart });
+        return;
+      }
+      lastHeartLlm.current = Date.now();
       requestReply(msgs, "reaction", null, heart);
     },
-    [busy, personaId, messages, requestReply, spawnBurst, spawnParticles]
+    [busy, personaId, messages, requestReply, spawnBurst, spawnParticles, playReaction]
   );
 
   /* ── 유료 실시간 사진 ─────────────────────────────────────────────────── */
@@ -1152,6 +1251,8 @@ export default function ChatApp({
       }));
       const log: ChatMessage = { id: nextId.current++, role: "ai", kind: "call", text: String(seconds), at: Date.now() };
       setMessages((prev) => [...prev, ...lines, log]);
+      // 통화 내용도 기억에 남긴다
+      if (BALANCE.memory.afterVoiceCall && lines.length >= 2) memoryForce.current = true;
     },
     [voiceBilling, refreshMembership]
   );
@@ -1162,7 +1263,8 @@ export default function ChatApp({
   if (!persona) {
     return (
       <main className="h-[100dvh] w-full bg-slate-950">
-        <PersonaSelector personas={personas} currentId={null} onSelect={handleSelect} previews={previews()} />
+        <PersonaSelector personas={personas} currentId={null} onSelect={handleSelect} previews={previews()} onBackup={() => setBackupOpen(true)} />
+        {backupOpen && <BackupModal onClose={() => setBackupOpen(false)} onRestored={() => window.location.reload()} />}
       </main>
     );
   }
@@ -1382,25 +1484,40 @@ export default function ChatApp({
               PRO
             </span>
           </button>
-          {hasConversation &&
-            (confirmReset ? (
-              <button
-                onClick={() => resetChat(persona.id)}
-                className="shrink-0 rounded-lg bg-rose-600/90 px-3 py-1.5 text-xs text-white hover:bg-rose-600"
-              >
-                대화 지우기 확인
-              </button>
-            ) : (
-              <button
-                onClick={() => setConfirmReset(true)}
-                aria-label="처음부터"
-                title="처음부터"
-                className="shrink-0 rounded-lg px-2.5 py-1.5 text-xs text-white/80 hover:bg-white/10 wide:text-slate-400"
-              >
-                <span className="wide:hidden" aria-hidden>↺</span>
-                <span className="hidden wide:inline">처음부터</span>
-              </button>
-            ))}
+          {/* 관리 메뉴: 기억 보기 · 백업 · 대화 초기화 */}
+          <div className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => setMenuOpen((o) => !o)}
+              aria-label="대화 관리"
+              aria-expanded={menuOpen}
+              data-chat-menu
+              className="rounded-lg px-2.5 py-1.5 text-base leading-none text-white/85 hover:bg-white/10 wide:text-slate-300"
+            >
+              ⋯
+            </button>
+            {menuOpen && <div className="fixed inset-0 z-20" onClick={() => setMenuOpen(false)} aria-hidden />}
+            {menuOpen && (
+              <div className="absolute right-0 top-full z-30 mt-1 w-44 overflow-hidden rounded-2xl bg-slate-900/95 py-1 text-sm text-white shadow-xl ring-1 ring-white/10" role="menu">
+                <button type="button" role="menuitem" data-menu-memory onClick={() => { setMenuOpen(false); setMemoryOpen(true); }} className="block w-full px-4 py-2 text-left hover:bg-white/10">
+                  🧠 기억 보기 {memory?.facts.length ? <span className="text-xs text-white/50">({memory.facts.length})</span> : null}
+                </button>
+                <button type="button" role="menuitem" data-menu-backup onClick={() => { setMenuOpen(false); setBackupOpen(true); }} className="block w-full px-4 py-2 text-left hover:bg-white/10">
+                  💾 대화 기록 백업
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-menu-reset
+                  disabled={!hasConversation}
+                  onClick={() => { setMenuOpen(false); setResetOpen(true); }}
+                  className="block w-full px-4 py-2 text-left text-rose-300 hover:bg-white/10 disabled:opacity-40"
+                >
+                  🗑 대화 초기화
+                </button>
+              </div>
+            )}
+          </div>
           <button
             onClick={() => {
               setConfirmReset(false);
@@ -1436,6 +1553,7 @@ export default function ChatApp({
               .filter((t) => t.kind === "text")
               .map((t) => ({ role: t.role, content: t.content }))}
             allure={allureActive}
+            memory={memory?.facts ?? []}
             onEnd={endVoice}
             onSpeakingChange={setVoiceSpeaking}
             onReaction={playVoiceReaction}
@@ -1465,6 +1583,41 @@ export default function ChatApp({
             setCash(getCash() + DEMO_TOPUP);
             setCashState(getCash());
           }}
+        />
+      )}
+
+      {resetOpen && (
+        <ResetFlow
+          persona={persona}
+          affection={affection}
+          memoryCount={memory?.facts.length ?? 0}
+          messageCount={messages.filter((m) => !m.local && (m.kind ?? "text") === "text").length}
+          onBackup={async () => {
+            await downloadBackup({ includeMedia: true });
+          }}
+          onConfirm={() => {
+            setResetOpen(false);
+            resetChat(persona.id);
+          }}
+          onCancel={() => setResetOpen(false)}
+        />
+      )}
+      {memoryOpen && (
+        <MemoryModal
+          persona={persona}
+          facts={memory?.facts ?? []}
+          updating={memoryBusy}
+          onRefresh={() => void updateMemory(messages, persona.id)}
+          onDelete={(i) =>
+            setMemory((m) => (m ? { ...m, facts: m.facts.filter((_, j) => j !== i) } : m))
+          }
+          onClose={() => setMemoryOpen(false)}
+        />
+      )}
+      {backupOpen && (
+        <BackupModal
+          onClose={() => setBackupOpen(false)}
+          onRestored={() => window.location.reload()}
         />
       )}
 
@@ -1508,6 +1661,7 @@ export default function ChatApp({
           currentId={persona.id}
           onSelect={handleSelect}
           onClose={() => setSelectorOpen(false)}
+          onBackup={() => setBackupOpen(true)}
           previews={previews()}
         />
       )}

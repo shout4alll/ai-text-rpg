@@ -38,6 +38,10 @@ interface ProviderEntry {
   model: string;
   /** 모델 인스턴스 생성 */
   create: (modelId: string) => LanguageModel;
+  /** 💰 하이브리드 라우팅: 가벼운 대화(인사·맞장구·짧은 말)용 모델 (없으면 model) */
+  lightModel?: string;
+  /** 💰 기억 요약 같은 보조 작업에 쓸 가장 저렴한 모델 (없으면 lightModel) */
+  cheapModel?: string;
   /** (선택) 모델별 추가 옵션 — 예: Claude 의 생각(thinking) 끄기 */
   options?: (modelId: string) => ProviderOptions | undefined;
 }
@@ -60,7 +64,12 @@ function bedrockClaudeOptions(modelId: string): ProviderOptions | undefined {
 
 const PROVIDERS = {
   /* ------------------------------------------------------------------------ */
-  /*  Amazon Bedrock  (활성)                                                   */
+  /*  Amazon Bedrock  (✅ 활성 — Bedrock 안의 모델을 자유롭게 골라 쓴다)           */
+  /*    역할별 모델 (하이브리드 라우팅, lib/modelRouter.ts):                       */
+  /*      model      = 메인 (감정·고민·긴 대화·사진 보기)   ← AI_MODEL 로 덮어쓰기   */
+  /*      lightModel = 가벼운 대화 (인사·맞장구·짧은 말)    ← AI_MODEL_LIGHT       */
+  /*      cheapModel = 보조 작업 (기억 정리)               ← AI_CHEAP_MODEL       */
+  /*    모델 ID 는 AWS 콘솔 → Bedrock → Model catalog 에서 확인 (교차 리전은 us./global. 접두사) */
   /*    인증: AWS_BEDROCK_API_KEY (Bedrock API 키)                              */
   /*          IAM 키를 쓰려면 BEDROCK_USE_IAM=true + AWS_ACCESS_KEY_ID/SECRET     */
   /*          (Vercel 은 쓸 수 없는 AWS_* 값을 자동 주입할 수 있어 명시적으로만 사용) */
@@ -92,22 +101,30 @@ const PROVIDERS = {
         baseURL: process.env.BEDROCK_BASE_URL || undefined, // (선택) 프록시/테스트용
       })(modelId);
     },
+    lightModel: "us.anthropic.claude-haiku-4-5-20251001-v1:0", // Claude Haiku 4.5 — 빠르고 저렴, 말투 유지 좋음
+    // lightModel: "us.amazon.nova-2-lite-v1:0",                // Amazon Nova 2 Lite — 더 저렴
+    cheapModel: "us.amazon.nova-2-lite-v1:0", // Amazon Nova 2 Lite — 기억 정리용
     options: bedrockClaudeOptions,
   },
 
   /* ------------------------------------------------------------------------ */
-  /*  Google Gemini  (대기 — AI_PROVIDER=google 로 바로 전환 가능)               */
+  /*  Google Gemini  (대기 — AI_PROVIDER=google 로 전환. 보이스톡은 항상 Gemini Live) */
   /*    인증: GOOGLE_GENERATIVE_AI_API_KEY                                     */
   /* ------------------------------------------------------------------------ */
   google: {
     label: "Google Gemini",
-    model: "gemini-flash-latest",
-    // model: "gemini-2.5-flash",
-    // model: "gemini-2.5-pro",
+    // 보이스톡(gemini-3.8-live)과 같은 Gemini 3.8 세대 — 텍스트·음성 모두 구글 키 하나로
+    model: "gemini-3.8-flash", // ✅ Gemini 3.8 Flash (정식) — 빠르고 똑똑함
+    // model: "gemini-3.1-pro-preview", // Gemini 3.1 Pro (미리보기) — 가장 똑똑하지만 느리고 비쌈
+    // model: "gemini-3.5-flash-lite",  // 가장 저렴
     create: (modelId) =>
       createGoogleGenerativeAI({
         baseURL: process.env.GOOGLE_GENERATIVE_AI_BASE_URL || undefined,
       })(modelId),
+    lightModel: "gemini-3.5-flash-lite",
+    cheapModel: "gemini-3.5-flash-lite",
+    // 메신저 답장은 깊은 생각이 필요 없어 생각 단계를 낮게 (빠른 답장)
+    options: (modelId) => (/gemini-3/.test(modelId) ? { google: { thinkingConfig: { thinkingLevel: "low" } } } : undefined),
   },
 
   /* ------------------------------------------------------------------------ */
@@ -151,19 +168,37 @@ export interface ResolvedModel {
 }
 
 /** 지금 어떤 프로바이더/모델을 쓰는지 (키 없이 설정만 읽음 — /api/status 표시용) */
-export function describeModel(): { provider: string; label: string; modelId: string; region?: string } {
+export function describeModel(): {
+  provider: string;
+  label: string;
+  modelId: string;
+  lightModelId: string;
+  cheapModelId: string;
+  routing: boolean;
+  region?: string;
+} {
   const requested = process.env.AI_PROVIDER?.trim() || ACTIVE_PROVIDER;
   const entry: ProviderEntry | undefined = isProviderId(requested) ? PROVIDERS[requested] : undefined;
+  const main = process.env.AI_MODEL?.trim() || entry?.model || "";
+  const light = process.env.AI_MODEL_LIGHT?.trim() || entry?.lightModel || main;
   return {
     provider: requested,
     label: entry?.label ?? "(알 수 없음)",
-    modelId: process.env.AI_MODEL?.trim() || entry?.model || "",
+    modelId: main,
+    lightModelId: light,
+    cheapModelId: process.env.AI_CHEAP_MODEL?.trim() || entry?.cheapModel || light,
+    routing: process.env.AI_ROUTING?.trim() !== "off",
     ...(requested === "bedrock" ? { region: process.env.BEDROCK_REGION || process.env.AWS_REGION || "us-east-1" } : {}),
   };
 }
 
-/** 환경변수 > 설정 파일 순으로 프로바이더/모델을 결정해 모델 인스턴스를 만든다. */
-export function resolveModel(): ResolvedModel {
+/**
+ * 환경변수 > 설정 파일 순으로 프로바이더/모델을 결정해 모델 인스턴스를 만든다.
+ * @param purpose "cheap" 이면 보조 작업용 저렴한 모델 (AI_CHEAP_MODEL > cheapModel)
+ */
+export type ModelTier = "chat" | "light" | "cheap";
+
+export function resolveModel(purpose: ModelTier = "chat"): ResolvedModel {
   const requested = process.env.AI_PROVIDER?.trim() || ACTIVE_PROVIDER;
   if (!isProviderId(requested)) {
     throw new Error(
@@ -172,7 +207,13 @@ export function resolveModel(): ResolvedModel {
     );
   }
   const entry: ProviderEntry = PROVIDERS[requested];
-  const modelId = process.env.AI_MODEL?.trim() || entry.model;
+  let modelId = process.env.AI_MODEL?.trim() || entry.model;
+  // 프로바이더와 맞지 않는 모델 이름이면(예: google 인데 Claude 이름) 설정 파일 기본값으로
+  if (requested === "google" && !/^gemini|^models\//.test(modelId)) modelId = entry.model;
+  if (requested === "bedrock" && /^gemini/.test(modelId)) modelId = entry.model;
+  const light = process.env.AI_MODEL_LIGHT?.trim() || entry.lightModel || modelId;
+  if (purpose === "light") modelId = light;
+  if (purpose === "cheap") modelId = process.env.AI_CHEAP_MODEL?.trim() || entry.cheapModel || light;
   return {
     provider: requested,
     label: entry.label,

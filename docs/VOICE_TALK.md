@@ -25,12 +25,12 @@ Google **Gemini Live API**를 씁니다. 사람처럼 말을 끊고 끼어들 �
 | 변수 | 설명 | 기본값 |
 | --- | --- | --- |
 | `GOOGLE_GENERATIVE_AI_API_KEY` | **필수.** Gemini API 키 (텍스트 톡의 Google 키와 같음) | — |
-| `GEMINI_LIVE_MODEL` | Live 모델 | `gemini-3.1-flash-live-preview` |
+| `GEMINI_LIVE_MODEL` | Live 모델 | `gemini-3.8-live` |
 | `VOICE_ACCESS` | `open`(누구나) / `paid`(이용권 필요) / `off` | 개발 서버 `open`, 배포 `paid` |
 | `VOICE_DEV_PASS` | 결제 연동 전 테스트용 암호 | — |
 | `VOICE_MAX_MINUTES` | 통화 1회 최대 길이 (분, 최대 10) | `10` |
 
-- 모델은 2026년 10월 기준 문서에 있는 `gemini-3.1-flash-live-preview`와 `gemini-3.8-live` 중에서 고르면 됩니다. 모델 이름은 자주 바뀌므로 [Live API 문서](https://ai.google.dev/gemini-api/docs/live-guide)에서 확인하세요.
+- 기본 모델은 `gemini-3.8-live`(2026-09 정식 출시)입니다. 더 깊이 생각하는 `gemini-3.8-live-extended-thinking`도 있지만 응답이 느려질 수 있어요. 텍스트 톡은 Amazon Bedrock(Claude Sonnet 5 + Haiku 4.5 라우팅)을 쓰고, 보이스톡만 Gemini Live 를 씁니다(Bedrock 의 실시간 음성 모델 Nova Sonic 은 서버와 계속 연결된 양방향 스트림이 필요해 Vercel 함수로는 운영이 어렵습니다). 모델 이름은 [모델 목록](https://ai.google.dev/gemini-api/docs/models)에서 확인하세요.
 - **배포 환경에서 테스트하기:** `VOICE_DEV_PASS=원하는암호`를 설정하세요. 그다음 브라우저 콘솔에서 `localStorage.setItem("ai-rpg.voicePass", "원하는암호")`를 실행하면 이용권 없이 통화할 수 있습니다.
 
 ## 비용 (참고, 2026년 10월 Google 가격표 기준)
@@ -75,6 +75,11 @@ Live 모델 유료 등급 기준으로 오디오 입력은 약 $0.005/분, 출�
 
 - 목소리(`name`)는 음색을 정하고, `style`은 말 빠르기·톤·감정을 지시합니다. 같은 목소리도 `style`에 따라 꽤 달라집니다.
 - 바꾸고 싶으면 [Google 음성 목록](https://ai.google.dev/gemini-api/docs/speech-generation)의 30개 목소리를 AI Studio에서 들어 보고 이름만 바꾸면 됩니다. 재배포하면 적용됩니다.
+
+## 기억 (톡 ↔ 보이스톡)
+
+- 통화가 끝나면 받아쓰기가 🎙 표시로 톡 기록에 남고, 곧바로 **기억 정리**(`/api/memory`)가 돌아 중요한 내용이 기억 노트에 들어갑니다.
+- 기억 노트는 다음 텍스트 톡과 다음 보이스톡 프롬프트에 모두 들어가서, "아까 통화에서 말한 것"을 톡에서도 이어서 말할 수 있어요. (docs/BALANCE.md §7-2)
 
 ## 목소리 맞추기 (`/voice-lab`) — 리액션 영상과 보이스톡 목소리 일치
 

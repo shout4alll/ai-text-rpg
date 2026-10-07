@@ -16,12 +16,12 @@ import { isGeminiVoice } from "@/config/voices";
  *  - 인물 프롬프트·모델·목소리는 토큰에 잠가서(lock) 브라우저가 바꿀 수 없다.
  *  - 토큰은 1회용, 1분 안에 연결해야 하고, 통화는 maxSeconds 뒤 끊긴다.
  *
- * 모델: GEMINI_LIVE_MODEL (기본 gemini-3.1-flash-live-preview) — docs/VOICE_TALK.md
+ * 모델: GEMINI_LIVE_MODEL (기본 gemini-3.8-live) — docs/VOICE_TALK.md
  */
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const DEFAULT_MODEL = "gemini-3.1-flash-live-preview";
+const DEFAULT_MODEL = "gemini-3.8-live";
 
 const bodySchema = z.object({
   personaId: z.string().max(64),
@@ -34,6 +34,8 @@ const bodySchema = z.object({
     .optional(),
   /** 과금 방식 — trial(무료 체험)은 서버에서도 통화 길이를 짧게 제한 */
   mode: z.enum(["trial", "plan", "cash"]).optional(),
+  /** 기억 노트 */
+  memory: z.array(z.string().max(300)).max(60).optional(),
   /** 목소리 맞추기(/voice-lab)에서 고른 목소리 — Gemini 기본 목소리 이름만 허용 */
   voice: z.string().max(40).optional(),
   /** 💋 매혹 모드 (인물 파일에 allure 가 있을 때만 반영) */
@@ -90,6 +92,7 @@ export async function POST(request: Request) {
               userTimeZone: body.timeZone,
               recent: body.recent ?? [],
               allure: body.allure === true,
+              memory: body.memory ?? [],
             }),
             speechConfig: {
               languageCode: "ko-KR",

@@ -20,7 +20,7 @@ export async function GET() {
     },
     voiceTalk: {
       provider: "Google Gemini Live",
-      model: process.env.GEMINI_LIVE_MODEL?.trim() || "gemini-3.1-flash-live-preview",
+      model: process.env.GEMINI_LIVE_MODEL?.trim() || "gemini-3.8-live",
       access: voiceAccessMode(),
       keyConfigured: hasGoogle,
     },

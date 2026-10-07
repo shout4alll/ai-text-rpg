@@ -213,6 +213,77 @@ AI가 주는 기준은 이렇습니다. 관심·배려·다정함은 +1~+3, 평�
 
 - AI가 사진을 보내려 해도 이 조건에 안 맞으면 서버가 막습니다. 마음 리액션·인사·"보고 싶다"에는 사진이 나가지 않습니다.
 
+## 7-2. 🧠 기억 (`memory`)
+
+톡과 보이스톡에서 나눈 이야기 중 "앞으로도 기억할 것"을 한 줄씩 정리해 두고, 다음 톡·보이스톡에 넣어 줍니다. 오래된 대화가 보내는 범위 밖으로 밀려나도 기억은 남아요.
+
+| 키 | 현재 | 설명 |
+| --- | --- | --- |
+| `everyUserTurns` | 12 | 유저 메시지가 이만큼 쌓이면 기억 정리 |
+| `afterVoiceCall` | true | 보이스톡이 끝나면 바로 정리 |
+| `maxFacts` | 30 | 기억 최대 개수 (넘으면 덜 중요한 것부터 정리) |
+| `maxTurnsPerUpdate` | 60 | 한 번에 읽는 최근 대화 수 |
+
+- 화면의 ⋯ 메뉴 → **🧠 기억 보기**에서 확인하고, 하나씩 지울 수 있어요.
+- 정리는 가장 저렴한 보조 모델로 합니다 (기본 Amazon Nova 2 Lite, `AI_CHEAP_MODEL` 로 변경).
+
+## 7-3. 💰 비용 절약 (`cost`)
+
+| 키 | 현재 | 설명 |
+| --- | --- | --- |
+| `maxOutputTokens` | 700 | 답장 최대 길이(토큰). 말풍선 3개면 충분 |
+| `historyTurns` | 40 | 보내는 최근 대화 수 (그 이전은 기억이 대신함) |
+| `historyStep` | 20 | 보내는 범위를 20턴 단위로 맞춰 앞부분이 매번 바뀌지 않게 → 캐시 적중 |
+| `heartLlmGapSec` | 30 | 마음 리액션을 이 시간 안에 또 보내면 AI 호출 없이 표정으로만 답함 (삐졌을 땐 항상 AI) |
+| `voiceRecentTurns` | 16 | 보이스톡을 걸 때 넘기는 최근 톡 수 |
+
+**자동으로 적용되는 절약**
+- **프롬프트 캐시:** 인물 설정·규칙 같은 고정 부분을 앞에, 시각·호감도 같은 바뀌는 정보를 마지막 메시지에 붙여 보냅니다. Gemini 는 같은 앞부분을 자동으로 캐시해 그만큼 싸게 계산하고, Bedrock Claude 는 캐시 지점(cachePoint)을 지정해 둡니다.
+- **생각 단계 최소화:** Claude 는 thinking 을 끄고(Sonnet 5·Haiku 4.5), Gemini 로 바꾸면 thinking 을 low 로 둡니다.
+- **하이브리드 라우팅 + 답장 풀** (§7-4).
+- **사진은 마지막 것만:** 유저가 올린 사진·영상은 가장 최근 것만 실제 이미지로 보내고, 예전 것은 한 줄 요약으로 보냅니다.
+- **AI 사진은 요청할 때만** (§7-1).
+- 캐시가 얼마나 적중하는지 보려면 서버 환경변수 `LOG_AI_USAGE=true` → 로그의 `cacheRead` 값.
+
+## 7-4. 💰 하이브리드 모델 라우팅 (`routing`) · 뻔한 대화 답장 풀 (`replyPool`)
+
+텍스트 톡은 **Amazon Bedrock 안의 모델을 역할별로** 씁니다. 모델은 `config/ai.ts` 또는 환경변수로 자유롭게 바꿀 수 있어요.
+
+| 역할 | 기본 모델 | 바꾸는 환경변수 | 언제 |
+| --- | --- | --- | --- |
+| 메인 | Claude Sonnet 5 `us.anthropic.claude-sonnet-5` | `AI_MODEL` | 감정·고민·질문·긴 말, 사진 보기, 선물, 삐짐, 재접속, 대화 초반 |
+| 가벼움 | Claude Haiku 4.5 `us.anthropic.claude-haiku-4-5-20251001-v1:0` | `AI_MODEL_LIGHT` | 인사·맞장구·"ㅋㅋ"·짧은 말, 마음 리액션 |
+| 보조 | Amazon Nova 2 Lite `us.amazon.nova-2-lite-v1:0` | `AI_CHEAP_MODEL` | 기억 정리 |
+
+라우팅은 추가 AI 호출 없이 규칙으로 정합니다. 가벼운 모델이 실패하면 자동으로 메인 모델로 다시 보내요. `AI_ROUTING=off`이면 항상 메인 모델이에요.
+
+| 키 | 현재 | 설명 |
+| --- | --- | --- |
+| `enabled` | true | 라우팅 켜기 |
+| `lightMaxChars` | 25 | 이 글자 수 이하의 짧은 말만 가벼운 모델 후보 |
+| `firstTurnsMain` | 4 | 첫 대화 몇 번은 항상 메인 (첫인상) |
+| `mainEveryLight` | 6 | 가벼운 답장이 이만큼 이어지면 한 번은 메인 (말투 품질 유지) |
+| `lightKinds` | reaction | 항상 가벼운 모델로 보낼 종류 (마음 리액션) |
+| `mainKinds` | user_media, gift, return, call | 항상 메인으로 보낼 종류 |
+| `mainWhenSulking` / `mainWhenAllure` | true / false | 삐졌을 때·매혹 모드일 때 메인 |
+| `mainKeywords` | ?, 왜, 고민, 힘들, 사랑해, 보고 싶 … | 이 말이 들어 있으면 메인 |
+| `lightPatterns` | ㅋㅋ/ㅎㅎ만, 응·그래·헐·대박, 안녕·잘 자·고마워 | 이 패턴(정규식)이면 가벼운 모델 |
+
+**뻔한 대화 답장 풀** — "안녕", "잘 자", "고마워"처럼 맥락이 거의 필요 없는 말은 예전에 만든 답장을 다시 씁니다(AI 호출 0).
+
+| 키 | 현재 | 설명 |
+| --- | --- | --- |
+| `enabled` | true | 답장 풀 켜기 |
+| `minVariants` | 3 | 같은 인물·같은 관계 단계·같은 종류 답장이 이만큼 모이면 재사용 시작 |
+| `maxVariants` | 8 | 종류별로 보관할 답장 수 |
+| `useChance` | 0.6 | 모였을 때 재사용할 확률 (나머지는 새로 만들어 풀을 넓힘) |
+| `ttlMin` | 720 | 보관 시간(분) |
+| `categories` | greeting · morning · goodnight · thanks | 종류별 시작 단어 |
+
+- 삐져 있을 때, 질문(?)이 있을 때, 20자 넘는 말은 풀을 쓰지 않아요. 같은 답장을 바로 연달아 쓰지도 않아요.
+- 풀은 서버 메모리에 있어서 재배포·서버 재시작 때 비워지고 다시 모여요.
+- 어떤 모델이 답했는지는 응답 헤더 `x-ai-model`에 나와요. `LOG_AI_USAGE=true`이면 서버 로그에도 남아요(예: `light(small-talk) … cacheRead=2600`).
+
 ## 8. 보이스톡 · 캐시 · 멤버십 (`voice`, `cash`, `plans`)
 
 | 키 | 현재 | 설명 |
@@ -262,6 +333,13 @@ AI가 주는 기준은 이렇습니다. 관심·배려·다정함은 +1~+3, 평�
 | 뽀뽀 호감도 `director.kissAffection` | 75 | |
 | 하루 사진·영상 수 `userMedia.maxPerDay` | 30 | |
 | AI 사진은 요청할 때만 `aiMedia.requireUserRequest` | true | |
+| 기억 정리 주기 `memory.everyUserTurns` | 12 | |
+| 기억 최대 개수 `memory.maxFacts` | 30 | |
+| 보내는 대화 수 `cost.historyTurns` | 40 | |
+| 연속 하트 AI 생략 `cost.heartLlmGapSec` | 30초 | |
+| 하이브리드 라우팅 `routing.enabled` | true | |
+| 가벼운 모델 글자 수 `routing.lightMaxChars` | 25 | |
+| 뻔한 대화 재사용 확률 `replyPool.useChance` | 0.6 | |
 | 사진 요청으로 볼 단어 `aiMedia.requestKeywords` | 사진, 셀카, 모습, 영상 … | |
 | 무료 보이스톡 주고받기 `voice.freeExchanges` | 5 | |
 | 보이스톡 1분 💎 `cash.voicePerMinute` | 5 | |

@@ -70,6 +70,8 @@ interface VoiceCallProps {
   onTick?: (seconds: number) => void;
   /** 💋 매혹 모드 (통화 시작 시점 기준으로 목소리·말투에 반영) */
   allure?: boolean;
+  /** 기억 노트 (예전 톡·보이스톡) */
+  memory?: string[];
 }
 
 type Phase = "connecting" | "live" | "ending" | "error" | "paywall";
@@ -156,6 +158,7 @@ export default function VoiceCall({
   onExchange,
   onTick,
   allure = false,
+  memory = [],
 }: VoiceCallProps) {
   const [phase, setPhase] = useState<Phase>("connecting");
   const [error, setError] = useState<string | null>(null);
@@ -198,8 +201,8 @@ export default function VoiceCall({
     reason: "user" as VoiceEndReason,
   });
 
-  const cb = useRef({ onEnd, onSpeakingChange, onReaction, onExchange, onTick, billing, allure });
-  cb.current = { onEnd, onSpeakingChange, onReaction, onExchange, onTick, billing, allure };
+  const cb = useRef({ onEnd, onSpeakingChange, onReaction, onExchange, onTick, billing, allure, memory });
+  cb.current = { onEnd, onSpeakingChange, onReaction, onExchange, onTick, billing, allure, memory };
 
   const setSpeakingBoth = useCallback((v: boolean) => {
     if (r.current.speaking === v) return;
@@ -335,6 +338,7 @@ export default function VoiceCall({
             mode: cb.current.billing.mode,
             allure: cb.current.allure,
             voice: readVoiceOverride(persona.id) ?? undefined,
+            memory: cb.current.memory,
           }),
         });
         const info = (await res.json().catch(() => ({}))) as {

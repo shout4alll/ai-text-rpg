@@ -17,6 +17,8 @@ interface PersonaSelectorProps {
   onSelect: (id: PersonaId) => void;
   /** 지정하면 닫기 버튼 표시 (게임 진행 중 교체할 때) */
   onClose?: () => void;
+  /** 💾 대화 기록 백업 열기 */
+  onBackup?: () => void;
   /** 대화방별 마지막 메시지 (대화한 적 있는 사람만) */
   previews?: Record<string, string>;
 }
@@ -26,6 +28,7 @@ export default function PersonaSelector({
   currentId,
   onSelect,
   onClose,
+  onBackup,
   previews = {},
 }: PersonaSelectorProps) {
   const [filter, setFilter] = useState<Filter>("all");
@@ -50,6 +53,17 @@ export default function PersonaSelector({
               메시지로 천천히 알아 가는 사람들이에요. 대화는 사람마다 따로 저장돼서 언제든 이어서 할 수 있어요.
             </p>
           </div>
+          <div className="flex shrink-0 gap-2">
+          {onBackup && (
+            <button
+              type="button"
+              onClick={onBackup}
+              data-selector-backup
+              className="shrink-0 rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-300 hover:bg-slate-800"
+            >
+              💾 백업
+            </button>
+          )}
           {onClose && (
             <button
               onClick={onClose}
@@ -58,6 +72,7 @@ export default function PersonaSelector({
               닫기
             </button>
           )}
+          </div>
         </div>
 
         <div className="mb-5 flex gap-2" role="tablist" aria-label="캐릭터 필터">

@@ -125,6 +125,48 @@
     "requestKeywords": ["사진", "셀카", "셀피", "얼굴 보", "얼굴 좀", "모습", "영상", "동영상", "찍어", "인증샷", "pic", "photo", "selfie", "video"]
   },
 
+  "memory": {
+    "everyUserTurns": 12,
+    "afterVoiceCall": true,
+    "maxFacts": 30,
+    "maxTurnsPerUpdate": 60
+  },
+
+  "cost": {
+    "maxOutputTokens": 700,
+    "historyTurns": 40,
+    "historyStep": 20,
+    "heartLlmGapSec": 30,
+    "voiceRecentTurns": 16
+  },
+
+  "routing": {
+    "enabled": true,
+    "lightMaxChars": 25,
+    "firstTurnsMain": 4,
+    "mainEveryLight": 6,
+    "lightKinds": ["reaction"],
+    "mainKinds": ["user_media", "gift", "return", "call"],
+    "mainWhenSulking": true,
+    "mainWhenAllure": false,
+    "mainKeywords": ["?", "？", "왜", "어떻게", "고민", "힘들", "슬퍼", "우울", "외로", "불안", "무서", "아파", "죽고", "사랑해", "좋아해", "보고 싶", "미안", "헤어", "싸웠", "회사", "시험", "취업", "약속", "기억나", "비밀"],
+    "lightPatterns": ["^[ㅋㅎㄱㅇㅠㅜ~!.?\\s]+$", "^((응|웅|엉|어|ㅇㅇ|그래|그렇구나|그치|맞아|좋아|오케이|ok|okay|굿|헐|대박|와|오|아하|넹|네|넵|예|흐음|음)[~!.ㅋㅎ\\s]*)+$", "^(안녕|하이|hi|hello|좋은 ?아침|굿모닝|잘 ?자|굿밤|잘자요|잘 ?있었|고마워|고마워요|감사|땡큐|ㄱㅅ)"]
+  },
+
+  "replyPool": {
+    "enabled": true,
+    "minVariants": 3,
+    "maxVariants": 8,
+    "useChance": 0.6,
+    "ttlMin": 720,
+    "categories": {
+      "greeting": ["안녕", "하이", "hi", "hello", "반가워"],
+      "morning": ["좋은 아침", "좋은아침", "굿모닝", "잘 잤"],
+      "goodnight": ["잘 자", "잘자", "굿밤", "좋은 꿈", "자러 갈게", "잘게"],
+      "thanks": ["고마워", "감사", "땡큐", "ㄱㅅ"]
+    }
+  },
+
   "voice": {
     "freeExchanges": 5,
     "trialMaxSeconds": 180,
