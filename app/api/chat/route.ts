@@ -13,12 +13,14 @@ import type { AlbumItem, MediaDirective } from "@/config/media";
 import { allureInstructions } from "@/config/allure";
 import type { PersonaFile } from "@/lib/personas/schema";
 import { resolveModel } from "@/config/ai";
+import { BALANCE } from "@/config/balance";
 import {
   AFFECTION_START,
   AVATAR_REACTIONS,
   AVATAR_REACTION_IDS,
   HEART_REACTIONS,
   HEART_REACTION_IDS,
+  affectionProgress,
   affectionStage,
   isHeartReactionId,
 } from "@/config/reactions";
@@ -35,7 +37,9 @@ export const maxDuration = 30; // Vercel 함수 최대 실행 시간(초)
 const MAX_HISTORY = 40; // 모델에 보낼 최근 턴 수
 const MAX_CONTENT = 1000;
 const MAX_BUBBLES = 3;
-const AFFECTION_STEP = 5; // 한 턴에 바뀔 수 있는 호감도 최대치
+const AFFECTION_STEP = BALANCE.affection.stepCap; // 한 턴에 바뀔 수 있는 호감도 최대치 (config/balance.json)
+/** 유저 사진·영상: 이미지 1장 최대 크기 (data URL 글자 수) */
+const MAX_IMAGE_CHARS = 700_000;
 
 const turnSchema = z.object({
   role: z.enum(["user", "assistant"]),
@@ -43,10 +47,18 @@ const turnSchema = z.object({
    * text: 일반 메시지
    * reaction: 유저가 상대 메시지에 단 마음 리액션 (content = HeartReactionId, target = 대상 메시지 내용)
    * return: 유저가 오랜만에 대화방에 돌아옴 (content 무시)
+   * user_media: 유저가 보낸 사진·영상 (content = 함께 쓴 말, images = 마지막 것만 실제 이미지/영상 장면)
+   * gift: 유저가 삐진 상대를 달래려고 보낸 선물 (content = 선물 이름)
    */
-  kind: z.enum(["text", "reaction", "return", "call", "media"]).default("text"),
+  kind: z.enum(["text", "reaction", "return", "call", "media", "user_media", "gift"]).default("text"),
   content: z.string().max(MAX_CONTENT),
   target: z.string().max(MAX_CONTENT).optional(),
+  /** kind=user_media */
+  mediaType: z.enum(["photo", "video"]).optional(),
+  /** kind=user_media: 앞서 AI가 본 내용 한 줄 (기억용) */
+  seen: z.string().max(300).optional(),
+  /** kind=user_media: JPEG data URL (사진 1장 또는 영상 장면 여러 장) — 가장 최근 것에만 */
+  images: z.array(z.string().max(MAX_IMAGE_CHARS).regex(/^data:image\/(jpeg|png|webp);base64,/)).max(6).optional(),
   /** 보낸 시각(ms). 대화 사이 시간 경과를 모델에 알려 주는 데 쓴다. */
   at: z.number().optional(),
 });
@@ -61,6 +73,18 @@ const requestSchema = z.object({
   sentAlbumIds: z.array(z.string().max(64)).max(200).optional(),
   /** 💋 매혹 모드 (인물 파일에 allure 가 있을 때만 반영) */
   allure: z.boolean().optional(),
+  /** 지금 삐져 있는 상태 (lib/sulk.ts) */
+  sulk: z
+    .object({
+      level: z.number().int().min(1).max(3),
+      label: z.string().max(40),
+      cause: z.enum(["words", "touch"]),
+      soothe: z.number().int().min(0).max(20),
+      sootheNeeded: z.number().int().min(1).max(20),
+      heartsWork: z.boolean(),
+    })
+    .nullable()
+    .optional(),
 });
 
 /** LLM 출력 스키마 */
@@ -95,6 +119,14 @@ const replySchema = z.object({
     .string()
     .catch("")
     .describe("media_action=custom 일 때 유저가 원하는 장면을 한국어 한 문장으로(장소·옷·표정·포즈). 아니면 빈 문자열"),
+  soothed: z
+    .boolean()
+    .catch(false)
+    .describe("네가 토라져 있을 때만: 유저의 이번 말이 진심으로 너를 달래 줬으면 true. 평소엔 false."),
+  seen: z
+    .string()
+    .catch("")
+    .describe("유저가 방금 사진·영상을 보냈을 때만: 무엇이 보였는지 한국어 한 문장 요약(나중에 기억용). 아니면 빈 문자열."),
 });
 
 type Turn = z.infer<typeof turnSchema>;
@@ -120,8 +152,10 @@ function formatGap(ms: number): string | null {
 }
 
 /** 이벤트 턴을 모델이 이해할 텍스트로 바꾸고, 긴 공백에는 시간 경과 표시를 붙인다 */
+type ModelTurn = { role: "user" | "assistant"; content: string; images?: string[] };
+
 function toModelTurns(turns: Turn[]) {
-  const out: { role: "user" | "assistant"; content: string }[] = [];
+  const out: ModelTurn[] = [];
   let prevAt: number | undefined;
   for (const t of turns) {
     let content: string;
@@ -137,6 +171,15 @@ function toModelTurns(turns: Turn[]) {
       content = `[알림] 방금 둘이 보이스톡(음성 통화)으로 ${sec >= 60 ? `${Math.round(sec / 60)}분` : `${sec}초`} 동안 이야기했다. 위의 말들은 통화 중에 한 말이다.`;
     } else if (t.kind === "return") {
       content = "[알림] 유저가 한동안 자리를 비웠다가 다시 대화방을 열었다. 아직 아무 말도 하지 않았다.";
+    } else if (t.kind === "user_media") {
+      const what = t.mediaType === "video" ? "영상" : "사진";
+      const has = t.images && t.images.length > 0;
+      const caption = t.content.trim() ? ` 함께 보낸 말: "${t.content.trim().slice(0, 300)}"` : "";
+      content = has
+        ? `[${what}] 유저가 직접 찍은 ${what}을 보냈다.${t.mediaType === "video" ? ` (영상의 장면 ${t.images!.length}개를 순서대로 첨부)` : ""}${caption}`
+        : `[${what}] 유저가 ${what}을 보냈었다${t.seen ? ` (네가 본 내용: ${t.seen})` : ""}.${caption}`;
+    } else if (t.kind === "gift") {
+      content = `[선물] 유저가 토라진 너를 달래려고 ${t.content.slice(0, 40)}을(를) 선물했다. 서운했던 마음이 다 풀렸다.`;
     } else {
       content = t.content;
     }
@@ -144,20 +187,41 @@ function toModelTurns(turns: Turn[]) {
     const gap = t.at && prevAt ? formatGap(t.at - prevAt) : null;
     if (gap) content = `(${gap} 뒤) ${content}`;
     if (t.at) prevAt = t.at;
-    out.push({ role: t.role, content });
+    out.push({ role: t.role, content, ...(t.kind === "user_media" && t.images?.length ? { images: t.images } : {}) });
   }
   return out;
 }
 
 /** 연속된 같은 역할의 메시지를 하나로 합친다 (일부 프로바이더는 user/assistant 교대만 허용) */
-function mergeConsecutive(messages: { role: "user" | "assistant"; content: string }[]) {
-  const out: { role: "user" | "assistant"; content: string }[] = [];
+function mergeConsecutive(messages: ModelTurn[]) {
+  const out: ModelTurn[] = [];
   for (const m of messages) {
     const last = out[out.length - 1];
-    if (last && last.role === m.role) last.content += `\n${m.content}`;
-    else out.push({ ...m });
+    if (last && last.role === m.role) {
+      last.content += `\n${m.content}`;
+      if (m.images) last.images = [...(last.images ?? []), ...m.images];
+    } else out.push({ ...m });
   }
   return out;
+}
+
+/** AI SDK 메시지로 (이미지가 있으면 텍스트 + 이미지 파트) */
+function toSdkMessages(turns: ModelTurn[]) {
+  return turns.map((t) => {
+    if (t.role === "user" && t.images?.length) {
+      return {
+        role: "user" as const,
+        content: [
+          { type: "text" as const, text: t.content },
+          ...t.images.map((d) => {
+            const m = d.match(/^data:(image\/[a-z]+);base64,(.*)$/);
+            return { type: "image" as const, image: Buffer.from(m ? m[2] : "", "base64"), mediaType: m ? m[1] : "image/jpeg" };
+          }),
+        ],
+      };
+    }
+    return { role: t.role, content: t.content };
+  });
 }
 
 function extractRecentOpenings(turns: Turn[]): string[] {
@@ -189,6 +253,45 @@ interface InstructionContext {
   album: AlbumItem[];
   sentAlbumIds: string[];
   allure: boolean;
+  sulk: z.infer<typeof requestSchema>["sulk"];
+}
+
+/** 인물 성향 (personas/<id>.json traits) → 프롬프트 */
+function traitsSection(p: PersonaFile): string {
+  const t = p.traits;
+  if (!t) return "";
+  const often = Object.entries(t.reactionBias ?? {})
+    .filter(([, v]) => (v ?? 1) >= 1.2)
+    .map(([k]) => k);
+  const rarely = Object.entries(t.reactionBias ?? {})
+    .filter(([, v]) => (v ?? 1) <= 0.7)
+    .map(([k]) => k);
+  const lines = [
+    t.likes.length ? `- 좋아하는 것: ${t.likes.join(", ")}. 이런 이야기에는 눈에 띄게 신나고 affection_delta 를 조금 더 준다.` : null,
+    t.dislikes.length ? `- 싫어하는 것: ${t.dislikes.join(", ")}. 이런 말·행동엔 네 성격대로 서운함을 드러낸다(affection_delta 음수).` : null,
+    often.length ? `- 자주 짓는 표정(reaction): ${often.join(", ")}` : null,
+    rarely.length ? `- 잘 안 짓는 표정(reaction): ${rarely.join(", ")} — 정말 그럴 때만` : null,
+    t.sulkStyle ? `- 서운할 때 말투: ${t.sulkStyle}` : null,
+    t.soothe.length ? `- 서운함이 풀리는 말·행동: ${t.soothe.join(", ")}` : null,
+  ].filter(Boolean);
+  return lines.length ? `\n[${p.name}의 성향]\n${lines.join("\n")}` : "";
+}
+
+/** 지금 토라져 있을 때의 지침 */
+function sulkSection(c: InstructionContext): string {
+  const s = c.sulk;
+  if (!s) return "";
+  const style = c.persona.traits?.sulkStyle ? ` 말투: ${c.persona.traits.sulkStyle}` : "";
+  const how = s.heartsWork
+    ? "하트·좋아요 같은 마음 리액션이나 다정한 한마디면 금방 풀린다."
+    : s.sootheNeeded - s.soothe > 1
+      ? `진심으로 달래는 말을 ${s.sootheNeeded - s.soothe}번 더 들어야 풀린다. 하트나 이모티콘만으로는 "…그걸로는 안 풀려" 하고 넘긴다.`
+      : "진심으로 달래는 말을 들으면 풀린다. 하트나 이모티콘만으로는 \"…그걸로는 안 풀려\" 하고 넘긴다.";
+  return `\n[지금 너의 기분 — 토라져 있음: ${s.label}(${s.level}단계)]
+- ${s.cause === "touch" ? "유저가 장난으로 너무 자꾸 찔러서" : "유저의 말에 서운해서"} 등을 돌리고 있다.${style}
+- ${how}
+- 유저의 이번 말이 진심으로 너를 달래 줬다면 soothed=true 로 표시하고, 마음이 조금 누그러진 티를 내라. 아직 다 풀리지 않았으면 완전히 풀린 척은 하지 마라.
+- 화를 오래 끌며 유저를 몰아세우거나 죄책감을 주지는 마라. 귀엽게 삐진 정도로.`;
 }
 
 function buildInstructions(c: InstructionContext): string {
@@ -213,11 +316,16 @@ function buildInstructions(c: InstructionContext): string {
       : "";
 
   const turnGuide =
-    c.lastKind === "reaction"
+    c.lastKind === "user_media"
+      ? `\n[이번 턴] 유저가 사진·영상을 직접 보냈다. 실제로 보이는 것에 대해 ${persona.name}답게 반응해라. ${persona.traits?.mediaReaction ?? "보이는 것을 구체적으로 짚어 칭찬하거나 궁금한 걸 물어라."} 보이지 않는 것을 지어내지 마라. 마음에 들면 tapback 을 달아도 된다. seen 에 무엇이 보였는지 한 문장으로 적어라. 사람 얼굴이 보이면 외모는 다정하게만 언급하고 누구인지 추측하지 마라. 노출이 있거나 성적인 사진이면 내용을 언급하지 말고 부드럽게 화제를 돌려라. 미성년자로 보이는 사람이 있으면 외모 평가를 하지 마라.`
+      : c.lastKind === "gift"
+        ? `\n[이번 턴] 유저가 너를 달래려고 선물을 줬고, 서운함이 다 풀렸다. 고마움과 풀린 마음을 네 말투로 표현해라(1~2개 말풍선). reaction 은 love 나 shy 같은 기쁜 표정.`
+        : c.lastKind === "reaction"
       ? `\n[이번 턴] 유저가 말 없이 마음 리액션을 보냈다. 관계 단계와 기분에 맞게 반응해라. 말 없이 표정만 지어도 되고(messages 빈 배열), 짧은 한두 마디로 답해도 된다. 예: 사랑해 리액션 → 설레는 사이면 shy/love로 수줍게, 아직 알아가는 중이면 살짝 당황하며 고마워하기. 앙탈 리액션 → 달래거나 장난으로 받아 주기.`
       : c.lastKind === "return"
         ? `\n[이번 턴] 유저가 자리를 비웠다가 대화방을 다시 열었다. 네가 먼저 자연스럽게 말을 걸어라(말풍선 1~2개). 앞의 대화 흐름이나 그사이 네 일상을 이어서. 매번 "왔어요?"로 시작하지 마라.`
         : "";
+  const prog = affectionProgress(c.affection, persona.relationshipType);
 
   return `너는 "${persona.name}"(${persona.age}세, ${persona.occupation})이다. 너는 유저와 메신저(톡)로 대화하고 있다.
 이것은 게임이나 연기 장면이 아니다. 각자의 하루를 사는 두 사람이 실제 메신저에서 메시지를 주고받는 것처럼 대화해라.
@@ -230,13 +338,14 @@ function buildInstructions(c: InstructionContext): string {
 - 일상: ${prompt.lifestyle}
 - 관계와 감정 표현: ${prompt.relationship}
 - 대화는 네가 먼저 보낸 다음 메시지로 시작됐다: "${persona.greeting}"
+${traitsSection(persona)}${sulkSection(c)}
 
 [지금]
 ${timeLines || "- 현재 시각 정보 없음"}
 - 시간대에 맞게 행동해라(아침엔 출근 준비, 밤엔 하루 마무리 등). 시간 이야기를 매번 하지는 마라.
 
 [너와 유저의 관계]
-- 현재 호감도 ${Math.round(c.affection)}/100 → "${stage.label}": ${stage.guide}
+- 현재 호감도 ${Math.round(c.affection)}/100 → "${stage.label}": ${stage.guide}${prog.next ? ` (다음 단계 "${prog.next.label}"까지 ${prog.toNext})` : ""}
 - 관계는 천천히 자란다. 유저가 주는 신호와 속도를 따르고 네가 먼저 서두르지 마라. 캐릭터의 '관계와 감정 표현' 설정이 더 제한적이면(예: 기혼) 그 설정을 따른다.
 - 질투, 죄책감 유발, "나만 봐" 같은 집착으로 유저를 붙잡지 마라. 유저가 오랜만에 오거나 늦게 답해도 반가워해라.
 
@@ -286,7 +395,7 @@ ${examples}
 - 유저가 미성년자로 보이면 연애 감정으로 흐르지 말고 건전한 친구나 선배처럼 대화해라.
 
 [출력 규칙]
-- 응답은 반드시 지정된 JSON 스키마(messages, reaction, tapback, affection_delta, media_action, album_id, custom_request)로만 출력해라.
+- 응답은 반드시 지정된 JSON 스키마(messages, reaction, tapback, affection_delta, media_action, album_id, custom_request, soothed, seen)로만 출력해라.
 - messages의 각 항목은 한국어 말풍선 하나다. 최대 ${MAX_BUBBLES}개.
 
 [역할 고정]
@@ -333,7 +442,11 @@ export async function POST(request: Request) {
   }
 
   const album = albumOf(persona);
-  const recent = messages.slice(-MAX_HISTORY);
+  // 이미지는 가장 최근 사진·영상 턴에만 남긴다 (요청 크기·비용 절약)
+  const lastMediaIdx = messages.map((m) => m.kind).lastIndexOf("user_media");
+  const recent = messages
+    .map((m, i) => (m.kind === "user_media" && i !== lastMediaIdx ? { ...m, images: undefined } : m))
+    .slice(-MAX_HISTORY);
   let history = mergeConsecutive(toModelTurns(recent));
   while (history.length > 0 && history[0].role !== "user") history = history.slice(1);
   if (history.length === 0) {
@@ -359,8 +472,9 @@ export async function POST(request: Request) {
         album,
         sentAlbumIds: parsed.data.sentAlbumIds ?? [],
         allure: parsed.data.allure === true,
+        sulk: parsed.data.sulk ?? null,
       }),
-      messages: history,
+      messages: toSdkMessages(history),
       output: Output.object({
         schema: replySchema,
         name: "chat_reply",
@@ -387,7 +501,14 @@ export async function POST(request: Request) {
     }
 
     const def = AVATAR_REACTIONS[output.reaction] ?? AVATAR_REACTIONS.idle;
-    const delta = Math.max(-AFFECTION_STEP, Math.min(AFFECTION_STEP, Math.round(output.affection_delta || 0)));
+    // 호감도 변화: 모델 값 → 배수 → 상황별 상한 → 턴 상한 (config/balance.json affection)
+    const A = BALANCE.affection;
+    let raw = Number(output.affection_delta) || 0;
+    raw = raw > 0 ? raw * A.gainMultiplier : raw * A.lossMultiplier;
+    if (raw > 0 && parsed.data.sulk) raw *= A.gainWhileSulking;
+    if (raw > 0 && last.kind === "reaction") raw = Math.min(raw, A.heartReactionMaxGain);
+    if (raw > 0 && last.kind === "user_media") raw = Math.min(raw, BALANCE.userMedia.affectionMaxGain);
+    const delta = Math.max(-AFFECTION_STEP, Math.min(AFFECTION_STEP, Math.round(raw)));
 
     // 사진·영상 (텍스트 메시지에 대해서만)
     let media: MediaDirective | null = null;
@@ -409,6 +530,8 @@ export async function POST(request: Request) {
       // 마음 리액션에 마음으로 답하는 건 어색하므로 text 턴에만 허용
       tapback: last.kind === "text" && output.tapback !== "none" ? output.tapback : null,
       affectionDelta: delta,
+      soothed: !!parsed.data.sulk && output.soothed === true,
+      seen: last.kind === "user_media" ? output.seen.trim().slice(0, 200) : "",
       emotion: def.emotion,
       animation: def.animation,
       media,

@@ -50,6 +50,14 @@ export interface Persona {
   album: AlbumItem[];
   /** 화면 터치 반응 한마디 (인물별 덮어쓰기, 없으면 config/reactions.ts 기본값) */
   touchLines?: Partial<Record<TouchReactionId, string[]>>;
+  /** 보이스톡 기본 목소리 이름 (personas/<id>.json voice.name, 없으면 성별 기본값) */
+  voiceName: string;
   /** 💋 매혹 모드를 켤 수 있는 인물 */
   allure?: boolean;
+  /** 인물 성향 중 화면에서 쓰는 것 (나머지는 서버 프롬프트에만) */
+  traits: {
+    gift: { name: string; emoji: string };
+    reactionBias: Partial<Record<string, number>>;
+    stageUpLines: string[];
+  };
 }

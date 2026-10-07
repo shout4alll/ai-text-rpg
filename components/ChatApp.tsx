@@ -24,6 +24,9 @@ import {
 import MediaPurchaseModal from "@/components/MediaPurchaseModal";
 import AllureGateModal from "@/components/AllureGateModal";
 import { ALLURE_STORAGE } from "@/config/allure";
+import { BALANCE, sulkLevelDef } from "@/config/balance";
+import { checkRelease, giftCost, sulkExpired, sulkStartLevel, sulkSummary, touchSulk, type SulkState } from "@/lib/sulk";
+import { deleteMediaFor, getMedia, importFile, mediaUrl, UserMediaError } from "@/lib/userMedia";
 import { DEMO_TOPUP, MEDIA_COST } from "@/config/media";
 import { getCash, refundCash, setCash, spendCash } from "@/lib/wallet";
 import {
@@ -31,7 +34,9 @@ import {
   AVATAR_REACTIONS,
   HEART_REACTIONS,
   TOUCH_REACTIONS,
+  affectionProgress,
   affectionStage,
+  affectionStageIndex,
   pickTouchReaction,
   touchZoneOf,
   type AvatarReactionId,
@@ -56,6 +61,12 @@ interface StoredChat {
   v: 2;
   messages: ChatMessage[];
   affection: number;
+  /** 삐져 있는 상태 (lib/sulk.ts) — 다시 열어도 이어진다 */
+  sulk?: SulkState | null;
+  /** 마지막으로 삐짐이 풀린 시각 (반복 삐짐 가중용) */
+  sulkReleasedAt?: number;
+  /** 지금까지 도달한 가장 높은 호감도 단계 (보상은 처음 도달할 때만) */
+  bestStage?: number;
 }
 
 function readStorage(key: string): string | null {
@@ -89,7 +100,14 @@ function loadChat(id: PersonaId): StoredChat | null {
     }
     const d = data as Partial<StoredChat>;
     if (d && d.v === 2 && valid(d.messages)) {
-      return { v: 2, messages: d.messages, affection: typeof d.affection === "number" ? d.affection : AFFECTION_START };
+      return {
+        v: 2,
+        messages: d.messages,
+        affection: typeof d.affection === "number" ? d.affection : AFFECTION_START,
+        sulk: d.sulk && typeof d.sulk.level === "number" ? d.sulk : null,
+        sulkReleasedAt: typeof d.sulkReleasedAt === "number" ? d.sulkReleasedAt : undefined,
+        bestStage: typeof d.bestStage === "number" ? d.bestStage : undefined,
+      };
     }
   } catch {
     /* 손상된 데이터는 무시 */
@@ -98,13 +116,17 @@ function loadChat(id: PersonaId): StoredChat | null {
 }
 
 function saveChat(id: PersonaId, chat: Omit<StoredChat, "v">) {
-  const messages = chat.messages.slice(-MAX_STORED);
-  if (writeStorage(chatKey(id), JSON.stringify({ v: 2, messages, affection: chat.affection }))) return;
+  // 유저가 올린 파일은 IndexedDB 에 있으므로 화면용 임시 주소(blob:)는 저장하지 않는다
+  const messages = chat.messages
+    .slice(-MAX_STORED)
+    .map((m) => (m.media?.localKey ? { ...m, media: { ...m.media, src: "" } } : m));
+  const extra = { sulk: chat.sulk ?? null, sulkReleasedAt: chat.sulkReleasedAt, bestStage: chat.bestStage };
+  if (writeStorage(chatKey(id), JSON.stringify({ v: 2, messages, affection: chat.affection, ...extra }))) return;
   // 용량 초과: 실시간 생성 사진(data URL)은 빼고 저장 (대화 기록은 지킨다)
   const slim = messages.map((m) =>
     m.media?.generated && m.media.src.startsWith("data:") ? { ...m, media: { ...m.media, src: "" } } : m
   );
-  writeStorage(chatKey(id), JSON.stringify({ v: 2, messages: slim, affection: chat.affection }));
+  writeStorage(chatKey(id), JSON.stringify({ v: 2, messages: slim, affection: chat.affection, ...extra }));
 }
 
 /** 생성 사진을 메신저용 크기(가로 720, JPEG)로 줄여 data URL 로 */
@@ -138,10 +160,15 @@ function readPass(): string | null {
 /* -------------------------------------------------------------------------- */
 interface Turn {
   role: "user" | "assistant";
-  kind: "text" | "reaction" | "return" | "call" | "media";
+  kind: "text" | "reaction" | "return" | "call" | "media" | "user_media" | "gift";
   content: string;
   target?: string;
   at?: number;
+  mediaType?: "photo" | "video";
+  seen?: string;
+  images?: string[];
+  /** 클라이언트 전용: 이미지를 붙일 파일 키 (전송 전 제거) */
+  localKey?: string;
 }
 
 function toTurns(msgs: ChatMessage[]): Turn[] {
@@ -158,6 +185,18 @@ function toTurns(msgs: ChatMessage[]): Turn[] {
       turns.push({ role: "user", kind: "call", content: m.text, at: m.at });
     } else if (m.kind === "media" && m.role === "ai") {
       turns.push({ role: "assistant", kind: "media", content: m.text, at: m.at });
+    } else if (m.kind === "media" && m.role === "user" && m.media) {
+      turns.push({
+        role: "user",
+        kind: "user_media",
+        content: m.text,
+        mediaType: m.media.type,
+        seen: m.media.seen,
+        localKey: m.media.localKey,
+        at: m.at,
+      });
+    } else if (m.kind === "gift" && m.role === "user") {
+      turns.push({ role: "user", kind: "gift", content: m.text, at: m.at });
     }
   }
   return turns.slice(-MAX_SEND);
@@ -288,11 +327,26 @@ export default function ChatApp({
 
   /* ── 리액션 연출 (lib/reactionDirector.ts 가 영상을 틀지, 움직임만 줄지 정한다) ── */
   const director = useMemo(() => createReactionDirector(), []);
-  const [sulking, setSulking] = useState(false);
   const [teaser, setTeaser] = useState<AvatarReactionId | null>(null);
   const affectionRef = useRef(affection);
   affectionRef.current = affection;
   const sulkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 삐짐 (lib/sulk.ts) — 단계·달래기·선물
+  const [sulk, setSulkState] = useState<SulkState | null>(null);
+  const sulkRef = useRef<SulkState | null>(null);
+  const sulkReleasedAt = useRef<number | undefined>(undefined);
+  /** 지금까지 도달한 최고 단계 (단계 보상은 처음 도달할 때만) */
+  const bestStage = useRef(0);
+  const sulking = !!sulk;
+  const setSulk = useCallback((s: SulkState | null) => {
+    sulkRef.current = s;
+    setSulkState(s);
+  }, []);
+
+  // 호감도 연출: 변화량 표시 · 단계 상승 배너
+  const [affDelta, setAffDelta] = useState<{ v: number; key: number } | null>(null);
+  const [stageBanner, setStageBanner] = useState<{ label: string; key: number } | null>(null);
 
   /** 유료 리액션 영상: 서버 설정(PREMIUM_ACCESS=open) 또는 PRIME 이상 구독 */
   const premiumUnlocked = premiumReactions || (membership ? PLANS[membership.plan].premiumReactions : false);
@@ -312,6 +366,8 @@ export default function ChatApp({
         hasClip: (n: string) => n in free || (premiumUnlocked && n in paid),
         hasPremiumClip: (n: string) => n in paid,
         allureClips: allureActive ? Object.keys(persona?.assets.allureClips ?? {}) : [],
+        sulking: !!sulkRef.current,
+        reactionBias: persona?.traits.reactionBias ?? {},
       } as const;
     },
     [persona, premiumUnlocked, allureActive]
@@ -326,39 +382,118 @@ export default function ChatApp({
         setReactionKey((k) => k + 1);
       }
       if (!particlesAt) spawnParticles(d.particles);
-      if (d.sulk?.state === "start") {
-        setSulking(true);
+      if (d.touchSulk && !sulkRef.current) {
+        // 터치 연타로 삐짐: 일정 시간 뒤 저절로 풀림 (balance.json sulk.touch)
+        const s = touchSulk();
+        setSulk(s);
         if (sulkTimer.current) clearTimeout(sulkTimer.current);
-        if (d.sulk.autoReleaseMs) {
+        const ms = BALANCE.sulk.touch.autoReleaseSec * 1000;
+        if (ms > 0) {
           sulkTimer.current = setTimeout(() => {
-            if (director.releaseTouchSulk()) {
-              setSulking(false);
+            if (sulkRef.current?.cause === "touch") {
+              setSulk(null);
+              sulkReleasedAt.current = Date.now();
               setReaction("idle");
               setCue(null); // 멈춰 있던 등 돌린 장면을 풀고 기본 화면으로
               setReactionKey((k) => k + 1);
             }
-          }, d.sulk.autoReleaseMs);
+          }, ms);
         }
-      } else if (d.sulk?.state === "end") {
-        setSulking(false);
-        if (sulkTimer.current) clearTimeout(sulkTimer.current);
       }
       if (d.teaser) {
         setTeaser(d.teaser);
         setTimeout(() => setTeaser(null), 4500);
       }
     },
-    [director, spawnParticles]
+    [spawnParticles, setSulk]
   );
 
+  type AiEvent = Extract<DirectorEvent, { type: "ai" }>;
   /** AI 답장·보이스톡 표정 → 연출 */
   const playReaction = useCallback(
-    (r: AvatarReactionId, opts?: { delta?: number; kind?: Extract<DirectorEvent, { type: "ai" }>["kind"]; heart?: HeartReactionId }) => {
+    (
+      r: AvatarReactionId,
+      opts?: {
+        delta?: number;
+        kind?: AiEvent["kind"];
+        heart?: HeartReactionId;
+        sulkStart?: boolean;
+        sulkRelease?: AiEvent["sulkRelease"];
+        stageUp?: number;
+      }
+    ) => {
       const delta = opts?.delta ?? 0;
-      const ev: DirectorEvent = { type: "ai", reaction: r, affectionDelta: delta, kind: opts?.kind ?? "text", heart: opts?.heart };
+      const ev: DirectorEvent = {
+        type: "ai",
+        reaction: r,
+        affectionDelta: delta,
+        kind: opts?.kind ?? "text",
+        heart: opts?.heart,
+        sulkStart: opts?.sulkStart,
+        sulkRelease: opts?.sulkRelease,
+        stageUp: opts?.stageUp,
+      };
       applyDecision(director.decide(ev, directorCtx(clampAffection(affectionRef.current + delta))));
     },
     [applyDecision, director, directorCtx]
+  );
+
+  /**
+   * 호감도 반영 + 연출 (변화량 표시, 단계 상승 배너·보너스, 단계 하락 안내)
+   * 단계 보상(배너·보너스 캐시·한마디·특별 리액션)은 그 단계에 "처음" 올라설 때만 준다.
+   * @returns 처음 올라선 단계 번호 (아니면 null)
+   */
+  const applyAffection = useCallback(
+    (delta: number): number | null => {
+      if (!persona || delta === 0) return null;
+      const before = affectionRef.current;
+      const after = clampAffection(before + delta);
+      setAffection(after);
+      setAffDelta({ v: delta, key: Date.now() });
+      setTimeout(() => setAffDelta((x) => (x && Date.now() - x.key > 1400 ? null : x)), 1600);
+      const rel = persona.relationshipType;
+      const bi = affectionStageIndex(before, rel);
+      const ai = affectionStageIndex(after, rel);
+      if (ai > bi && ai <= bestStage.current) {
+        const st = affectionProgress(after, rel).stage;
+        setMessages((prev) => [
+          ...prev,
+          { id: nextId.current++, role: "ai", kind: "notice", text: `💗 다시 "${st.label}"로 가까워졌어요`, at: Date.now(), local: true },
+        ]);
+        return null;
+      }
+      if (ai > bi) {
+        bestStage.current = ai;
+        const st = affectionProgress(after, rel).stage;
+        setStageBanner({ label: st.label, key: Date.now() });
+        setTimeout(() => setStageBanner(null), BALANCE.affection.stageUpBannerMs);
+        if (st.reward.bonusCash > 0) {
+          setCash(getCash() + st.reward.bonusCash);
+          setCashState(getCash());
+        }
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: nextId.current++,
+            role: "ai",
+            kind: "notice",
+            text: `💗 ${persona.name} 님과 "${st.label}"가 됐어요${st.reward.bonusCash ? ` · 💎 ${st.reward.bonusCash} 보너스` : ""}`,
+            at: Date.now(),
+            local: true,
+          },
+        ]);
+        return ai;
+      }
+      if (ai < bi && BALANCE.affection.stageDownNotice) {
+        const st = affectionProgress(after, rel).stage;
+        setMessages((prev) => [
+          ...prev,
+          { id: nextId.current++, role: "ai", kind: "notice", text: `💔 관계가 조금 멀어졌어요 · "${st.label}"`, at: Date.now(), local: true },
+        ]);
+      }
+      return null;
+    },
+    [persona]
   );
   const playVoiceReaction = useCallback((r: AvatarReactionId) => playReaction(r, { kind: "voice" }), [playReaction]);
 
@@ -395,12 +530,12 @@ export default function ChatApp({
       if (!persona) return null;
       const now = Date.now();
       const t = touchRef.current;
-      t.combo = now - t.lastAt < 1200 ? t.combo + 1 : 1;
+      t.combo = now - t.lastAt < BALANCE.touch.comboMs ? t.combo + 1 : 1;
       t.lastAt = now;
 
       // 물결은 매번, 반응은 너무 잦지 않게 (0.35초)
       const id = effectId.current++;
-      const firing = now - t.lastFire > 350;
+      const firing = now - t.lastFire > BALANCE.touch.fireGapMs;
       const zone = touchZoneOf(y / 100);
       const touchId = firing ? pickTouchReaction(zone, t.combo, affection, persona.relationshipType) : null;
       const def = touchId ? TOUCH_REACTIONS[touchId] : null;
@@ -424,7 +559,7 @@ export default function ChatApp({
       spawnSparks(d.particles ?? def.particles, x, y, d.video ? 8 : 6);
       if (d.reaction === "turn_away") {
         // 등 돌린 동안: 한마디도 토라진 말로
-        const sulkLine = d.sulk ? "이제 안 놀아요!" : ["…흥.", "……", "말 걸어 줘야 풀려요"][Math.floor(Math.random() * 3)];
+        const sulkLine = d.touchSulk ? "이제 안 놀아요!" : ["…흥.", "……", "달래 줘야 풀려요"][Math.floor(Math.random() * 3)];
         setMarks((m) => m.map((mk) => (mk.id === id ? { ...mk, line: sulkLine } : mk)));
       }
       voiceHandle.current?.notifyTouch(touchId);
@@ -450,19 +585,33 @@ export default function ChatApp({
         msgs = saved.messages;
         nextId.current = Math.max(...msgs.map((m) => m.id)) + 1;
         setAffection(saved.affection);
+        affectionRef.current = saved.affection;
+        bestStage.current = Math.max(saved.bestStage ?? 0, affectionStageIndex(saved.affection, p.relationshipType));
       } else {
         nextId.current = 0;
         msgs = [{ id: nextId.current++, role: "ai", kind: "text", text: p.greeting, at: Date.now(), local: true }];
         setAffection(AFFECTION_START);
+        affectionRef.current = AFFECTION_START;
+        bestStage.current = affectionStageIndex(AFFECTION_START, p.relationshipType);
       }
+      // 삐짐 이어가기: 말로 삐진 것만, 시간이 지났으면 풀림
+      if (sulkTimer.current) clearTimeout(sulkTimer.current);
+      sulkReleasedAt.current = saved?.sulkReleasedAt;
+      const restored = saved?.sulk && saved.sulk.cause === "words" && !sulkExpired(saved.sulk) ? saved.sulk : null;
+      if (saved?.sulk && !restored && saved.sulk.cause === "words") {
+        sulkReleasedAt.current = Date.now();
+        msgs = [...msgs, { id: nextId.current++, role: "ai", kind: "notice", text: "시간이 지나 기분이 풀렸어요", at: Date.now(), local: true }];
+      }
+      setSulk(restored);
       setMessages(msgs);
       setPersonaId(id);
       writeStorage(LAST_KEY, id);
-      setReaction("idle");
-      setCue(null);
+      setReaction(restored ? "turn_away" : "idle");
+      setCue(restored ? { clips: AVATAR_REACTIONS.turn_away.clips, motion: "none", hold: true } : null);
+      if (restored) setReactionKey((k) => k + 1);
       setPhotoOffer(null);
       director.reset();
-      setSulking(false);
+      setStageBanner(null);
       setTeaser(null);
       setVoiceOpen(false);
       setInput("");
@@ -478,12 +627,13 @@ export default function ChatApp({
       else if (texts.some((m) => m.role === "user") && Date.now() - lastAt > RETURN_GAP) setAutoAction("return");
       else setAutoAction(null);
     },
-    [byId, director]
+    [byId, director, setSulk]
   );
 
   const resetChat = useCallback(
     (id: PersonaId) => {
       writeStorage(chatKey(id), null);
+      void deleteMediaFor(id); // 올린 사진·영상도 함께 지운다
       openChat(id);
       setAutoAction(null);
     },
@@ -500,8 +650,8 @@ export default function ChatApp({
   // 대화·호감도가 바뀔 때마다 저장
   useEffect(() => {
     if (!personaId || messages.length === 0) return;
-    saveChat(personaId, { messages, affection });
-  }, [personaId, messages, affection]);
+    saveChat(personaId, { messages, affection, sulk, sulkReleasedAt: sulkReleasedAt.current, bestStage: bestStage.current });
+  }, [personaId, messages, affection, sulk]);
 
   /** 다른 대화방으로 옮긴 뒤 도착한 답장을 원래 대화방 저장소에 기록 (다음에 열면 보임) */
   const persistToRoom = useCallback(
@@ -516,7 +666,13 @@ export default function ChatApp({
         base = base.filter((m) => !(m.kind === "reaction" && m.role === "ai" && m.targetId === targetId));
         add.push({ id: id++, role: "ai", kind: "reaction", text: tapback, targetId, at: now });
       }
-      saveChat(pid, { messages: [...base, ...add], affection: clampAffection(stored.affection + affectionDelta) });
+      saveChat(pid, {
+        messages: [...base, ...add],
+        affection: clampAffection(stored.affection + affectionDelta),
+        sulk: stored.sulk,
+        sulkReleasedAt: stored.sulkReleasedAt,
+        bestStage: stored.bestStage,
+      });
     },
     []
   );
@@ -533,16 +689,24 @@ export default function ChatApp({
       if (kind === "return") turns.push({ role: "user", kind: "return", content: "", at: Date.now() });
 
       setBusy(true);
+      // 가장 최근에 올린 사진·영상만 실제 장면을 붙인다
+      const lastMedia = [...turns].reverse().find((t) => t.kind === "user_media");
+      if (kind === "user_media" && lastMedia?.localKey) {
+        const rec = await getMedia(lastMedia.localKey);
+        if (rec) lastMedia.images = rec.frames;
+      }
+      const sendTurns = turns.map(({ localKey: _k, ...t }) => t);
       const req = fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           personaId: pid,
-          messages: turns,
+          messages: sendTurns,
           timeZone: userTimeZone(),
-          affection,
+          affection: affectionRef.current,
           sentAlbumIds: msgs.flatMap((m) => (m.media?.albumId ? [m.media.albumId] : [])),
           allure: allureActive,
+          sulk: sulkSummary(sulkRef.current),
         }),
       }).then(async (res) => {
         if (!res.ok) {
@@ -572,7 +736,47 @@ export default function ChatApp({
         }
 
         markRead();
-        setAffection((a) => clampAffection(a + data.affectionDelta));
+
+        // 삐짐: 시작 / 달래기 진행 / 풀림 (lib/sulk.ts)
+        let sulkStart = false;
+        let sulkRelease: "heart" | "words" | undefined;
+        const cur = sulkRef.current;
+        const dKind: AiEvent["kind"] =
+          kind === "call" || kind === "media" ? "text" : kind === "user_media" ? "media" : kind;
+        if (cur && kind !== "gift" && kind !== "return") {
+          const r = checkRelease(cur, { kind, heart, delta: data.affectionDelta, soothed: data.soothed });
+          if (r.release) {
+            sulkRelease = r.release;
+            if (sulkTimer.current) clearTimeout(sulkTimer.current);
+            setSulk(null);
+            sulkReleasedAt.current = Date.now();
+          } else if (r.next && r.next.soothe !== cur.soothe) {
+            setSulk(r.next);
+            addNotice(`조금 누그러졌어요 (${r.next.soothe}/${sulkLevelDef(r.next.level).sootheNeeded})`);
+          }
+        } else if (!cur && kind !== "gift") {
+          const lvl = sulkStartLevel({
+            delta: data.affectionDelta,
+            aiTurnAway: data.reaction === "turn_away",
+            stageIndex: affectionStageIndex(affectionRef.current, persona?.relationshipType ?? "romance"),
+            lastReleaseAt: sulkReleasedAt.current,
+          });
+          if (lvl) {
+            sulkStart = true;
+            setSulk({ level: lvl, cause: "words", at: Date.now(), soothe: 0 });
+          }
+        }
+        // 호감도 (처음 올라선 단계면 보상 연출)
+        const stageUp = applyAffection(data.affectionDelta);
+        const reactOpts = { delta: data.affectionDelta, kind: dKind, heart, sulkStart, sulkRelease, stageUp: stageUp ?? undefined };
+
+        // 유저가 올린 사진·영상: AI가 본 내용을 기억해 둔다
+        if (kind === "user_media" && data.seen && tapbackTargetId !== null) {
+          setMessages((prev) =>
+            prev.map((m) => (m.id === tapbackTargetId && m.media ? { ...m, media: { ...m.media, seen: data.seen } } : m))
+          );
+        }
+
         if (data.tapback && tapbackTargetId !== null) {
           const tb = data.tapback;
           setMessages((prev) => [
@@ -582,7 +786,7 @@ export default function ChatApp({
         }
 
         if (data.messages.length === 0) {
-          playReaction(data.reaction, { delta: data.affectionDelta, kind: kind === "call" || kind === "media" ? "text" : kind, heart }); // 말 없이 표정만
+          playReaction(data.reaction, reactOpts); // 말 없이 표정만
           return;
         }
 
@@ -598,7 +802,17 @@ export default function ChatApp({
           }
           const text = data.messages[i];
           setMessages((prev) => [...prev, { id: nextId.current++, role: "ai", kind: "text", text, at: Date.now() }]);
-          if (i === 0) playReaction(data.reaction, { delta: data.affectionDelta, kind: kind === "call" || kind === "media" ? "text" : kind, heart });
+          if (i === 0) playReaction(data.reaction, reactOpts);
+        }
+
+        // 단계 상승: 인물이 그 단계에 맞는 한마디를 덧붙인다 (personas/<id>.json traits.stageUpLines)
+        const upLine = stageUp !== null ? persona?.traits.stageUpLines[stageUp - 1] : undefined;
+        if (upLine) {
+          setTyping(true);
+          await sleep(900 + typingDelay(upLine));
+          if (!same()) return;
+          setMessages((prev) => [...prev, { id: nextId.current++, role: "ai", kind: "text", text: upLine, at: Date.now() }]);
+          setTyping(false);
         }
 
         // 사진·영상: 앨범이면 "찍어 둔 거 보내 줄게요" 하고 바로 전송, 새 사진이면 유료 안내 모달
@@ -629,7 +843,7 @@ export default function ChatApp({
         }
       }
     },
-    [personaId, affection, playReaction, persistToRoom, allureActive]
+    [personaId, playReaction, persistToRoom, allureActive, persona, setSulk, applyAffection]
   );
 
   // 대화방을 연 직후 자동 동작 (한 번만)
@@ -733,6 +947,64 @@ export default function ChatApp({
       writeStorage("ai-rpg.sound", on ? "0" : "1");
       return !on;
     });
+  };
+
+  /* ── 삐짐 달래기: 💎 선물 (즉시 풀림 + 특별 리액션) ─────────────────────── */
+  const sendGift = () => {
+    const s = sulkRef.current;
+    if (!persona || !s || busy) return;
+    const cost = giftCost(s);
+    if (cost > 0 && !spendCash(cost)) {
+      setCashState(getCash());
+      addNotice(`💎 캐시가 부족해요 (필요 ${cost})`);
+      refreshMembership();
+      setPlansModal("menu");
+      return;
+    }
+    setCashState(getCash());
+    if (sulkTimer.current) clearTimeout(sulkTimer.current);
+    setSulk(null);
+    sulkReleasedAt.current = Date.now();
+    const gift = persona.traits.gift;
+    const giftMsg: ChatMessage = { id: nextId.current++, role: "user", kind: "gift", text: `${gift.emoji} ${gift.name}`, at: Date.now() };
+    const msgs = [...messages, giftMsg];
+    setMessages(msgs);
+    spawnBurst(gift.emoji);
+    spawnParticles([gift.emoji, "💗", "✨"], 10);
+    const bonus = BALANCE.sulk.gift.affectionBonus;
+    playReaction("love", { delta: bonus, kind: "gift", sulkRelease: "gift" });
+    applyAffection(bonus);
+    requestReply(msgs, "gift", null);
+  };
+
+  /* ── 사진·영상 올리기 (AI가 보고 반응) ───────────────────────────────── */
+  const [uploading, setUploading] = useState(false);
+  const handleAttach = async (file: File) => {
+    if (!persona || busy || uploading) return;
+    setUploading(true);
+    try {
+      const rec = await importFile(file, persona.id);
+      const src = (await mediaUrl(rec.key)) ?? "";
+      const caption = input.trim();
+      const msg: ChatMessage = {
+        id: nextId.current++,
+        role: "user",
+        kind: "media",
+        text: caption,
+        at: Date.now(),
+        read: false,
+        media: { type: rec.type, src, localKey: rec.key, duration: rec.duration },
+      };
+      const msgs = [...messages, msg];
+      setMessages(msgs);
+      setInput("");
+      setConfirmReset(false);
+      requestReply(msgs, "user_media", msg.id);
+    } catch (err) {
+      addNotice(`⚠️ ${err instanceof UserMediaError ? err.message : "파일을 보낼 수 없어요."}`);
+    } finally {
+      setUploading(false);
+    }
   };
 
   /** 💋 매혹 모드 켜기/끄기 */
@@ -897,6 +1169,9 @@ export default function ChatApp({
 
   const hasConversation = messages.some((m) => !m.local && visibleText(m));
   const stage = affectionStage(affection, persona.relationshipType);
+  const prog = affectionProgress(affection, persona.relationshipType);
+  const lastAiTextId =
+    [...messages].reverse().find((m) => m.role === "ai" && (m.kind ?? "text") === "text" && !m.text.startsWith("⚠️"))?.id ?? null;
 
   return (
     <main className="relative h-[100dvh] w-full overflow-hidden bg-slate-950 wide:flex">
@@ -952,11 +1227,64 @@ export default function ChatApp({
           </button>
         )}
         {/* 등 돌린(삐진) 상태 안내 — 말로 풀어 주면 다시 돌아본다 */}
-        {sulking && (
-          <div className="pointer-events-none absolute inset-x-0 top-[38%] flex justify-center" data-sulking>
-            <span className="rounded-full bg-black/55 px-3 py-1.5 text-xs text-white/90 backdrop-blur">
-              💢 {persona.name} 님이 토라졌어요 · 다정하게 말을 걸어 보세요
-            </span>
+        {sulk && (
+          <div
+            className="absolute inset-x-0 top-[34%] z-10 flex justify-center px-4"
+            data-sulking={sulk.level}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <div className="w-full max-w-xs rounded-2xl bg-black/60 px-3.5 py-2.5 text-center text-white shadow-lg ring-1 ring-white/15 backdrop-blur">
+              <p className="text-xs font-semibold">
+                💢 {persona.name} 님이 {sulkLevelDef(sulk.level).label}
+                <span className="ml-1 text-[10px] font-normal text-white/60">({sulk.level}단계)</span>
+              </p>
+              <p className="mt-0.5 text-[11px] text-white/75">
+                {sulk.cause === "touch" ? "잠시 뒤 풀려요 · 하트로 달래도 돼요" : sulkLevelDef(sulk.level).hint}
+                {sulkLevelDef(sulk.level).sootheNeeded > 1 && sulk.cause === "words" && (
+                  <span className="ml-1 text-pink-200">
+                    ({sulk.soothe}/{sulkLevelDef(sulk.level).sootheNeeded})
+                  </span>
+                )}
+              </p>
+              <div className="mt-2 flex justify-center gap-1.5">
+                {sulkLevelDef(sulk.level).freeHearts.length > 0 && lastAiTextId !== null && (
+                  <>
+                    {(["love", "like"] as const)
+                      .filter((h) => (sulkLevelDef(sulk.level).freeHearts as string[]).includes(h))
+                      .map((h) => (
+                        <button
+                          key={h}
+                          type="button"
+                          disabled={busy}
+                          onClick={() => handleReact(lastAiTextId, h)}
+                          data-sulk-heart={h}
+                          className="rounded-full bg-white/15 px-2.5 py-1 text-sm hover:bg-white/25 disabled:opacity-50"
+                        >
+                          {HEART_REACTIONS[h].emoji}
+                        </button>
+                      ))}
+                  </>
+                )}
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={sendGift}
+                  data-sulk-gift={giftCost(sulk)}
+                  className="rounded-full bg-gradient-to-r from-pink-500 to-rose-500 px-3 py-1 text-xs font-bold text-white shadow disabled:opacity-50"
+                >
+                  {persona.traits.gift.emoji} {persona.traits.gift.name} 선물 · 💎{giftCost(sulk)}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* 호감도 단계 상승 배너 */}
+        {stageBanner && (
+          <div key={stageBanner.key} className="pointer-events-none absolute inset-x-0 top-[22%] z-10 flex justify-center" data-stage-up={stageBanner.label}>
+            <div className="stage-up-pop rounded-3xl bg-gradient-to-r from-pink-500/90 to-rose-500/90 px-5 py-3 text-center text-white shadow-2xl ring-1 ring-white/30">
+              <p className="text-[11px] opacity-85">관계가 한 단계 가까워졌어요</p>
+              <p className="text-lg font-extrabold">💗 {stageBanner.label}</p>
+            </div>
           </div>
         )}
         {/* 유료 리액션 잠금 안내 (가끔만) */}
@@ -1002,14 +1330,30 @@ export default function ChatApp({
             <p className="truncate text-xs text-white/80 [text-shadow:0_1px_2px_rgba(0,0,0,.6)] wide:text-slate-400 wide:[text-shadow:none]">
               {photoBusy ? "사진 찍는 중…" : typing ? "입력 중…" : persona.status}
             </p>
-            <div className="mt-1 flex items-center gap-1.5" title={`호감도 ${Math.round(affection)}`} data-affection={Math.round(affection)}>
-              <span className="text-[11px] text-pink-300">♥</span>
-              <div className="h-1 w-12 shrink-0 overflow-hidden rounded-full bg-white/20">
-                <div className="h-full rounded-full bg-pink-400 transition-all duration-700" style={{ width: `${affection}%` }} />
+            <div
+              className="relative mt-1 flex items-center gap-1.5"
+              title={prog.next ? `호감도 ${Math.round(affection)} · 다음 "${prog.next.label}"까지 ${prog.toNext}` : `호감도 ${Math.round(affection)} · 최고 단계`}
+              data-affection={Math.round(affection)}
+            >
+              <span className="whitespace-nowrap text-[10px] font-semibold tabular-nums text-pink-300" data-affection-num>
+                ♥ {Math.round(affection)}
+              </span>
+              <div className="h-1 w-10 shrink-0 overflow-hidden rounded-full bg-white/20" data-stage-progress={Math.round(prog.ratio * 100)}>
+                <div className="h-full rounded-full bg-pink-400 transition-all duration-700" style={{ width: `${Math.round(prog.ratio * 100)}%` }} />
               </div>
               <span className="whitespace-nowrap text-[10px] text-white/80 wide:text-slate-400" data-stage>
                 {stage.label}
+                {prog.next && <span className="ml-0.5 text-[9px] text-white/50">({prog.toNext})</span>}
               </span>
+              {affDelta && (
+                <span
+                  key={affDelta.key}
+                  className={`aff-float absolute -top-3 left-6 text-[11px] font-bold ${affDelta.v > 0 ? "text-pink-300" : "text-sky-300"}`}
+                  data-affection-delta={affDelta.v}
+                >
+                  {affDelta.v > 0 ? `+${affDelta.v}` : affDelta.v}
+                </span>
+              )}
               {/* 멤버십 배지 → 구독 안내 */}
               <button
                 type="button"
@@ -1077,6 +1421,8 @@ export default function ChatApp({
             onInputChange={setInput}
             onSubmit={handleSubmit}
             onReact={handleReact}
+            onAttach={handleAttach}
+            uploading={uploading}
           />
         </div>
       </section>

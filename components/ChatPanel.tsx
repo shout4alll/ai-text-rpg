@@ -5,6 +5,97 @@ import PersonaPortrait from "@/components/PersonaPortrait";
 import { HEART_REACTIONS, HEART_REACTION_IDS, isHeartReactionId, type HeartReactionId } from "@/config/reactions";
 import type { Persona } from "@/lib/personas/types";
 import type { ChatMessage } from "@/types/game";
+import { mediaUrl } from "@/lib/userMedia";
+
+/** 유저가 올린 파일(IndexedDB)의 화면용 주소 — 저장된 기록을 다시 열 때 복원 */
+function useLocalSrc(md: ChatMessage["media"] | undefined): string {
+  const [src, setSrc] = useState(md?.src ?? "");
+  useEffect(() => {
+    if (md?.src) {
+      setSrc(md.src);
+      return;
+    }
+    if (!md?.localKey) return;
+    let alive = true;
+    mediaUrl(md.localKey).then((u) => {
+      if (alive && u) setSrc(u);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [md?.src, md?.localKey]);
+  return src;
+}
+
+/** 유저가 보낸 사진·영상 말풍선 */
+function UserMediaBubble({
+  m,
+  badge,
+  onOpen,
+  metaText,
+  timeLabel,
+}: {
+  m: ChatMessage;
+  badge?: HeartReactionId;
+  onOpen: (md: NonNullable<ChatMessage["media"]>) => void;
+  metaText: string;
+  timeLabel: string;
+}) {
+  const md = m.media!;
+  const src = useLocalSrc(md);
+  return (
+    <div className="mt-3 flex justify-end gap-2" data-user-media={md.type}>
+      <div className="flex max-w-[78%] flex-col items-end">
+        <div className="flex flex-row-reverse items-end gap-1.5">
+          <div className="relative">
+            {src ? (
+              <button
+                type="button"
+                onClick={() => onOpen({ ...md, src })}
+                aria-label={md.type === "video" ? "내 영상 크게 보기" : "내 사진 크게 보기"}
+                className="relative block overflow-hidden rounded-2xl rounded-tr-md ring-1 ring-indigo-300/40"
+              >
+                {md.type === "video" ? (
+                  <>
+                    <video src={src} muted playsInline preload="metadata" className="block max-h-72 w-40 object-cover wide:w-44" />
+                    <span className="absolute inset-0 flex items-center justify-center text-3xl text-white/90 [text-shadow:0_1px_6px_rgba(0,0,0,.6)]">
+                      ▶
+                    </span>
+                  </>
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={src} alt="내가 보낸 사진" loading="lazy" className="block max-h-72 w-40 object-cover wide:w-44" />
+                )}
+              </button>
+            ) : (
+              <span className="block rounded-2xl rounded-tr-md bg-indigo-600/70 px-3.5 py-2 text-xs text-white/80">
+                {md.type === "video" ? "🎬 영상" : "🖼 사진"} (이 기기에 없음)
+              </span>
+            )}
+            {badge && (
+              <span
+                className="absolute -bottom-3 left-1 rounded-full bg-slate-900/95 px-1.5 py-0.5 text-sm leading-none ring-1 ring-white/20"
+                data-badge={badge}
+                title={HEART_REACTIONS[badge].label}
+              >
+                {HEART_REACTIONS[badge].emoji}
+              </span>
+            )}
+          </div>
+          <div className="flex shrink-0 flex-col items-end pb-0.5">
+            {m.read === false && <span className="text-[10px] font-bold text-amber-300">1</span>}
+            <span className={`text-[10px] ${metaText}`}>{timeLabel}</span>
+          </div>
+        </div>
+        {m.text && (
+          <span className={`${badge ? "mt-4" : "mt-1"} whitespace-pre-wrap break-words rounded-2xl rounded-tr-md bg-indigo-600/90 px-3.5 py-2 text-[15px] text-white wide:text-sm`}>
+            {m.text}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
 
 interface ChatPanelProps {
   persona: Persona;
@@ -19,6 +110,10 @@ interface ChatPanelProps {
   onSubmit: () => void;
   /** 상대 메시지에 마음 리액션 달기 */
   onReact: (targetId: number, heart: HeartReactionId) => void;
+  /** 사진·영상 보내기 */
+  onAttach?: (file: File) => void;
+  /** 파일 처리 중 */
+  uploading?: boolean;
 }
 
 const timeFmt = new Intl.DateTimeFormat("ko-KR", { hour: "numeric", minute: "2-digit" });
@@ -60,8 +155,11 @@ export default function ChatPanel({
   onInputChange,
   onSubmit,
   onReact,
+  onAttach,
+  uploading = false,
 }: ChatPanelProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
   const [pickerFor, setPickerFor] = useState<number | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -71,7 +169,7 @@ export default function ChatPanel({
   // 말풍선만 표시하고, 마음 리액션은 대상 말풍선의 배지로 붙인다 (역할별 최신 1개)
   const { bubbles, badges, lastAiId } = useMemo(() => {
     const bubbles = messages.filter(
-      (m) => (m.kind ?? "text") === "text" || m.kind === "call" || m.kind === "media" || m.kind === "notice"
+      (m) => (m.kind ?? "text") === "text" || m.kind === "call" || m.kind === "media" || m.kind === "notice" || m.kind === "gift"
     );
     const badges = new Map<number, { user?: HeartReactionId; ai?: HeartReactionId }>();
     for (const m of messages) {
@@ -125,6 +223,27 @@ export default function ChatPanel({
                     {m.text}
                   </span>
                 </div>
+              );
+            }
+            if (m.kind === "gift") {
+              return (
+                <div key={m.id} className="my-3 flex justify-center" data-gift>
+                  <span className="rounded-2xl bg-gradient-to-r from-pink-500/80 to-rose-500/80 px-4 py-2 text-xs font-semibold text-white shadow ring-1 ring-white/25">
+                    🎁 {m.text} 을(를) 선물했어요 · {timeFmt.format(m.at)}
+                  </span>
+                </div>
+              );
+            }
+            if (m.kind === "media" && m.media && m.role === "user") {
+              return (
+                <UserMediaBubble
+                  key={m.id}
+                  m={m}
+                  badge={badges.get(m.id)?.ai}
+                  onOpen={(md) => setViewer(md)}
+                  metaText={metaText}
+                  timeLabel={timeFmt.format(m.at)}
+                />
               );
             }
             if (m.kind === "media" && m.media) {
@@ -309,6 +428,33 @@ export default function ChatPanel({
           >
             ♥
           </button>
+          {onAttach && (
+            <>
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                disabled={busy || uploading}
+                aria-label="사진·영상 보내기"
+                title="사진·영상 보내기"
+                data-attach-button
+                className="flex h-10 w-9 shrink-0 items-center justify-center rounded-full text-lg text-white/85 transition hover:bg-white/10 disabled:opacity-40"
+              >
+                {uploading ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" /> : "🖼"}
+              </button>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*,video/*"
+                className="hidden"
+                data-attach-input
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  e.target.value = "";
+                  if (f) onAttach(f);
+                }}
+              />
+            </>
+          )}
           <input
             value={input}
             onChange={(e) => onInputChange(e.target.value)}

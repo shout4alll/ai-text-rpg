@@ -9,17 +9,20 @@
  * 원가 참고 (2026-10 Google 가격 기준, 환율 1,400원 가정)
  *   보이스톡 1분 ≈ $0.023 ≈ 32원 / 실시간 사진 1장 ≈ $0.045~0.07 ≈ 60~100원
  *   앱스토어 결제 수수료(최대 30%)를 빼고도 남도록 잡은 기본값이다. docs/MEMBERSHIP.md
+ *
+ * ★ 숫자는 config/balance.json (voice · cash · plans) 에서 바꾼다. 설명: docs/BALANCE.md
  */
+import { BALANCE } from "@/config/balance";
 
 /** 보이스톡 무료 체험: 주고받기 횟수 (상대가 말을 마친 횟수 기준, 평생 1회 제공) */
-export const FREE_VOICE_EXCHANGES = 5;
+export const FREE_VOICE_EXCHANGES = BALANCE.voice.freeExchanges;
 
 /** 캐시 가격 */
 export const CASH_PRICE = {
   /** 보이스톡 1분 (시작할 때 첫 1분, 이후 1분마다) */
-  voicePerMinute: 5,
+  voicePerMinute: BALANCE.cash.voicePerMinute,
   /** 실시간 사진 1장 */
-  photo: 10,
+  photo: BALANCE.cash.photo,
 } as const;
 
 export type PlanId = "free" | "best" | "prime" | "vip";
@@ -45,40 +48,10 @@ export interface PlanDef {
 }
 
 export const PLANS: Record<PlanId, PlanDef> = {
-  free: { id: "free", name: "무료", priceKrw: 0, voiceMinutes: 0, photos: 0, premiumReactions: false, bonusCash: 0, color: "#64748b", tagline: "" },
-  best: {
-    id: "best",
-    name: "BEST",
-    priceKrw: 9900,
-    voiceMinutes: 30,
-    photos: 10,
-    premiumReactions: false,
-    bonusCash: 0,
-    color: "#38bdf8",
-    tagline: "가볍게 목소리 듣기",
-  },
-  prime: {
-    id: "prime",
-    name: "PRIME",
-    priceKrw: 19900,
-    voiceMinutes: 120,
-    photos: 40,
-    premiumReactions: true,
-    bonusCash: 50,
-    color: "#f472b6",
-    tagline: "매일 통화하는 사이",
-  },
-  vip: {
-    id: "vip",
-    name: "VIP",
-    priceKrw: 39900,
-    voiceMinutes: 300,
-    photos: 100,
-    premiumReactions: true,
-    bonusCash: 150,
-    color: "#fbbf24",
-    tagline: "가장 특별한 사이",
-  },
+  free: { id: "free", ...BALANCE.plans.free },
+  best: { id: "best", ...BALANCE.plans.best },
+  prime: { id: "prime", ...BALANCE.plans.prime },
+  vip: { id: "vip", ...BALANCE.plans.vip },
 };
 
 /** 구독 단계 순서 (낮음 → 높음) */

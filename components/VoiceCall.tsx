@@ -1,5 +1,7 @@
 "use client";
 
+import { BALANCE } from "@/config/balance";
+import { readVoiceOverride } from "@/config/voices";
 import { useCallback, useEffect, useRef, useState } from "react";
 import PersonaPortrait from "@/components/PersonaPortrait";
 import type { Persona } from "@/lib/personas/types";
@@ -332,6 +334,7 @@ export default function VoiceCall({
             recent,
             mode: cb.current.billing.mode,
             allure: cb.current.allure,
+            voice: readVoiceOverride(persona.id) ?? undefined,
           }),
         });
         const info = (await res.json().catch(() => ({}))) as {
@@ -455,7 +458,7 @@ export default function VoiceCall({
         registerHandle({
           notifyTouch: (id) => {
             const now = Date.now();
-            if (!s.session || s.ended || s.speaking || now - s.lastTouchNotify < 8000) return;
+            if (!s.session || s.ended || s.speaking || now - s.lastTouchNotify < BALANCE.voice.touchNotifyGapMs) return;
             s.lastTouchNotify = now;
             s.session.sendRealtimeInput({ text: `[터치] 유저가 화면 속 너를 건드렸다 (${TOUCH_REACTIONS[id].label} 반응).` });
           },

@@ -3,6 +3,17 @@
 정해진 인물들과 메신저로 대화하며 교감하고 관계를 키워 가는 AI 채팅 앱입니다. 화면 속 인물을 **터치하면 부끄러워하거나 앙탈을 부리며 반응**하고, **📞 보이스톡**으로 목소리 대화도 할 수 있습니다(유료 기능). Next.js 14 (App Router) + Tailwind + Vercel AI SDK로 만들었습니다.
 좌측에는 답장에 맞춰 반응하는 인물 사진·영상, 우측에는 메신저가 있고, 캐릭터는 `personas/*.json` 파일로 관리합니다.
 
+**밸런스(호감도·삐짐·보상·가격 등)는 `config/balance.json` 한 곳에서 조절합니다 → [docs/BALANCE.md](docs/BALANCE.md)**
+
+| 기능 | 문서 |
+| --- | --- |
+| 호감도 단계·보상, 삐짐 단계·달래기·선물, 인물별 성향 | `docs/BALANCE.md` |
+| 리액션 영상 연출 · 무료/유료 영상 | `docs/REACTION_VIDEOS.md` |
+| 보이스톡 · 목소리 맞추기(`/voice-lab`) | `docs/VOICE_TALK.md` |
+| 사진·영상 보내기(앨범·실시간 사진) · 유저 사진·영상에 반응 | `docs/MEDIA.md` |
+| 💋 매혹 모드 | `docs/ALLURE_MODE.md` |
+| 멤버십·캐시 | `docs/MEMBERSHIP.md` |
+
 ## 실행
 
 ```bash

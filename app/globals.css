@@ -99,3 +99,22 @@ body {
   100% { opacity: 0; }
 }
 .touch-line-static { animation: touch-line-static 4.5s ease-out forwards; }
+
+/* 호감도 변화량 (+2 / -1) 떠오르기 */
+@keyframes aff-float {
+  0% { opacity: 0; transform: translateY(4px) scale(0.9); }
+  15% { opacity: 1; transform: translateY(0) scale(1.1); }
+  80% { opacity: 1; transform: translateY(-6px) scale(1); }
+  100% { opacity: 0; transform: translateY(-10px); }
+}
+.aff-float { animation: aff-float 1.5s ease-out forwards; }
+
+/* 호감도 단계 상승 배너 */
+@keyframes stage-up-pop {
+  0% { opacity: 0; transform: scale(0.7) translateY(10px); }
+  12% { opacity: 1; transform: scale(1.08) translateY(0); }
+  20% { transform: scale(1); }
+  85% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-8px); }
+}
+.stage-up-pop { animation: stage-up-pop 4s ease-out forwards; }

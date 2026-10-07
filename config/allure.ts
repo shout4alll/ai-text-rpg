@@ -5,6 +5,7 @@
  *  - 영상: public/avatar/personas/<id>/clips/allure/*.mp4 (자동 인식, 이름 앞에 allure_ 가 붙는다)
  *  - 수위: 옷을 입은 채 눈빛·표정·분위기까지. 노출·성적 묘사는 모드와 상관없이 금지 (docs/ALLURE_MODE.md)
  */
+import { BALANCE } from "@/config/balance";
 
 export const ALLURE_STORAGE = {
   /** 켜 둔 인물 id 목록 (기기에 기억) */
@@ -13,18 +14,8 @@ export const ALLURE_STORAGE = {
   adult: "ai-rpg.adultConfirmed",
 } as const;
 
-export const ALLURE_TUNING = {
-  /** 매혹 영상 사이 최소 간격 */
-  gapMs: 25_000,
-  /** 같은 매혹 영상 다시 보기까지 */
-  sameClipGapMs: 90_000,
-  /** 어울리는 감정일 때 매혹 영상을 틀 확률 (AI 답장) */
-  aiChance: 0.5,
-  /** 마음 리액션(❤️ 등)에 대한 반응일 때 */
-  heartChance: 0.8,
-  /** 머리 쓰다듬기·볼 터치 첫 터치일 때 */
-  touchChance: 0.45,
-} as const;
+/** 값은 config/balance.json 의 allure */
+export const ALLURE_TUNING = BALANCE.allure;
 
 /** 매혹 영상을 틀 만한 감정 (AI 답장 reaction) */
 export const ALLURE_TRIGGERS = ["love", "shy", "smile", "kiss", "excited", "touched"] as const;

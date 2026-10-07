@@ -15,6 +15,7 @@
  * 리액션을 추가하려면 항목을 추가하면 된다. (AI 프롬프트·스키마에 자동 반영)
  */
 import type { AvatarAnimation, Emotion } from "@/types/game";
+import { BALANCE } from "@/config/balance";
 
 export type Motion =
   | "none"
@@ -137,39 +138,61 @@ export function isHeartReactionId(v: unknown): v is HeartReactionId {
   return typeof v === "string" && v in HEART_REACTIONS;
 }
 
-/* ── 호감도 단계 (0~100) ─────────────────────────────────────────────── */
-export const AFFECTION_START = 10;
+/* ── 호감도 단계 (0~100) — 값은 config/balance.json 의 affection ─────────── */
+export const AFFECTION_START = BALANCE.affection.start;
 
 export interface AffectionStage {
   min: number;
   label: string;
   /** AI에게 주는 태도 지침 */
   guide: string;
+  /** 이 단계에 올라섰을 때의 보상 (특별 리액션, 보너스 캐시) */
+  reward: { reaction: string; bonusCash: number };
 }
 
-export const AFFECTION_STAGES: AffectionStage[] = [
-  { min: 0, label: "알아가는 중", guide: "막 알게 된 사이. 예의와 적당한 거리를 지키며 서로를 알아 간다." },
-  { min: 20, label: "편한 사이", guide: "편한 친구 사이. 장난과 근황 공유가 자연스럽고, 허락을 받으면 말을 편하게 해도 된다." },
-  { min: 45, label: "설레는 사이", guide: "서로 설레는 사이. 관심과 보고 싶은 마음을 은근히, 돌려서 표현한다. 아직 고백은 서두르지 않는다." },
-  { min: 75, label: "특별한 사이", guide: "아주 가까운 사이. 다정한 애정 표현이 자연스럽다. 연인 관계는 대화에서 서로 마음을 확인했을 때만 연인처럼 대한다." },
-];
+export const AFFECTION_STAGES: AffectionStage[] = BALANCE.affection.stages.romance;
 
 /** relationshipType = "friendship" 인 인물용 (연애로 발전하지 않음) */
-export const FRIEND_STAGES: AffectionStage[] = [
-  { min: 0, label: "알아가는 중", guide: "막 알게 된 사이. 예의와 적당한 거리를 지키며 서로를 알아 간다." },
-  { min: 20, label: "편한 사이", guide: "편한 친구 사이. 장난과 근황 공유가 자연스럽다." },
-  { min: 45, label: "친한 친구", guide: "속 얘기를 나누는 친구. 고민을 털어놓고 진심으로 응원한다. 연애 감정은 아니다." },
-  { min: 75, label: "절친", guide: "무엇이든 말할 수 있는 절친. 깊이 신뢰하고 챙긴다. 연애 감정으로는 발전하지 않는다." },
-];
+export const FRIEND_STAGES: AffectionStage[] = BALANCE.affection.stages.friendship;
+
+export function stagesOf(type: "romance" | "friendship" = "romance"): AffectionStage[] {
+  return type === "friendship" ? FRIEND_STAGES : AFFECTION_STAGES;
+}
+
+/** 몇 번째 단계인지 (0부터) */
+export function affectionStageIndex(value: number, type: "romance" | "friendship" = "romance"): number {
+  const stages = stagesOf(type);
+  let idx = 0;
+  stages.forEach((s, i) => {
+    if (value >= s.min) idx = i;
+  });
+  return idx;
+}
 
 export function affectionStage(
   value: number,
   type: "romance" | "friendship" = "romance"
 ): AffectionStage {
-  const stages = type === "friendship" ? FRIEND_STAGES : AFFECTION_STAGES;
-  let stage = stages[0];
-  for (const s of stages) if (value >= s.min) stage = s;
-  return stage;
+  return stagesOf(type)[affectionStageIndex(value, type)];
+}
+
+/** 다음 단계까지의 진행 (화면 표시용) */
+export function affectionProgress(value: number, type: "romance" | "friendship" = "romance") {
+  const stages = stagesOf(type);
+  const idx = affectionStageIndex(value, type);
+  const cur = stages[idx];
+  const next = stages[idx + 1];
+  const ceil = next ? next.min : BALANCE.affection.max;
+  const span = Math.max(1, ceil - cur.min);
+  return {
+    index: idx,
+    stage: cur,
+    next: next ?? null,
+    /** 이 단계 안에서의 진행률 0~1 */
+    ratio: Math.max(0, Math.min(1, (value - cur.min) / span)),
+    /** 다음 단계까지 남은 점수 (마지막 단계면 0) */
+    toNext: next ? Math.max(0, Math.ceil(next.min - value)) : 0,
+  };
 }
 
 /* ── 3) TOUCH_REACTIONS : 유저가 화면(인물)을 터치했을 때의 반응 ──────────────
@@ -269,18 +292,19 @@ export function pickTouchReaction(
   relationship: "romance" | "friendship" = "romance",
   rand: number = Math.random()
 ): TouchReactionId {
+  const T = BALANCE.touch;
   // 연타하면 앙탈
-  if (combo >= 5) return "pout";
-  if (combo >= 3 && rand < 0.6) return "pout";
+  if (combo >= T.poutCombo) return "pout";
+  if (combo >= T.poutComboMaybe && rand < T.poutComboMaybeChance) return "pout";
 
   // 아직 어색한 사이: 놀라거나 부끄러워한다
-  if (affection < 20) {
+  if (affection < T.shyUntil) {
     if (zone === "body") return rand < 0.6 ? "surprised" : "pout";
     return rand < 0.55 ? "shy" : "surprised";
   }
 
   // 친구형은 설렘(lovely) 대신 즐거움 위주
-  const close = affection >= 45;
+  const close = affection >= T.closeFrom;
   const lovelyOk = relationship === "romance" && close;
 
   if (zone === "head") {

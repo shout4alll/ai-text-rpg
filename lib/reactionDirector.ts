@@ -5,58 +5,40 @@
  * 그래서 AI가 고른 리액션이나 터치를 그대로 재생하지 않고, 여기서 한 번 걸러서 연출한다.
  *
  *  ▸ 평소: 강한 감정(웃음·부끄러움·설렘·삐짐)일 때만 확률적으로 영상, 나머지는 화면 움직임 + 이모지
+ *      인물 성향(traits.reactionBias)에 따라 확률이 달라진다 (예: 잘 웃는 사람은 웃음 영상이 더 자주)
  *  ▸ 쿨다운: 영상 사이 최소 간격, 같은 영상 반복 금지
  *  ▸ 특별한 순간(쿨다운 무시하고 반드시 영상):
- *      - 호감도 단계가 오를 때 (특별한 사이 진입 시 뽀뽀 — 유료)
+ *      - 호감도 단계가 오를 때 → 단계별 보상 리액션 (config/balance.json affection.stages[].reward)
  *      - 오랜만에 돌아왔을 때
- *      - 삐져서 등 돌린 상태가 풀릴 때 (화해 장면)
- *  ▸ 등 돌림(turn_away): 상처 주는 말(호감도 하락)이나 터치 연타가 심할 때 → 등 돌린 채 멈춤.
- *      말로 풀어 주면(호감도 상승) 다시 돌아본다.
+ *      - 삐짐이 풀릴 때 (화해 장면 / 선물이면 더 특별한 반응)
+ *  ▸ 삐짐(등 돌림): 시작·해제 "판단"은 lib/sulk.ts + ChatApp 이 하고, 여기서는 영상만 정한다.
  *  ▸ 💋 매혹 모드(성인·멤버십): 설렘·부끄러움 순간과 쓰다듬기 터치에 가끔 clips/allure/ 영상 (config/allure.ts)
- *  ▸ 뽀뽀(kiss, 유료): 연애형 + 호감도 75 이상 + 10분에 한 번 이하. 이용권이 없으면 설렘 영상 + 잠금 안내.
+ *  ▸ 뽀뽀(kiss, 유료): 연애형 + 호감도 kissAffection 이상 + kissGapMs 에 한 번 이하. 이용권이 없으면 설렘 영상 + 잠금 안내.
  *
- * 나중에 실시간 AI 영상이 되면: decide() 가 돌려주는 cue 를 "생성 요청"으로 바꿔 끼우면 된다.
- * (cue.clips 대신 프롬프트/감정 값을 실시간 영상 엔진에 넘기는 식) — docs/REACTION_VIDEOS.md
+ * 수치는 모두 config/balance.json 의 director · allure 에 있다. (docs/BALANCE.md)
  */
 import {
   AVATAR_REACTIONS,
   TOUCH_REACTIONS,
-  affectionStage,
+  stagesOf,
+  isAvatarReactionId,
   type AvatarReactionId,
   type HeartReactionId,
   type ReactionCue,
   type TouchReactionId,
 } from "@/config/reactions";
 import { ALLURE_TINT, ALLURE_TOUCH_TRIGGERS, ALLURE_TRIGGERS, ALLURE_TUNING } from "@/config/allure";
+import { BALANCE } from "@/config/balance";
 
-/* ── 연출 수치 (여기만 바꾸면 빈도 조절) ─────────────────────────────────── */
-export const DIRECTOR_TUNING = {
-  /** AI 답장 리액션: 영상 사이 최소 간격 */
-  aiVideoGapMs: 12_000,
-  /** 같은 영상 다시 보기까지 */
-  sameClipGapMs: 45_000,
-  /** 강한 감정이어도 영상으로 보여 줄 확률 (나머지는 움직임+이모지) */
-  aiVideoChance: 0.65,
-  /** 터치: 영상 사이 최소 간격 */
-  touchVideoGapMs: 7_000,
-  /** 터치: 같은 영상 다시 보기까지 */
-  touchSameClipGapMs: 18_000,
-  /** 터치 연타로 등 돌리는 횟수 */
-  touchTurnAwayCombo: 9,
-  /** 터치로 삐졌을 때 저절로 풀리는 시간 */
-  touchSulkMs: 20_000,
-  /** 뽀뽀 최소 간격 */
-  kissGapMs: 10 * 60_000,
-  /** 뽀뽀 가능 호감도 */
-  kissAffection: 75,
-  /** 잠금 안내(유료 유도) 최소 간격 */
-  teaserGapMs: 10 * 60_000,
-};
+/** 연출 수치 — config/balance.json 의 director */
+export const DIRECTOR_TUNING = BALANCE.director;
 
 /** 평소에도 영상으로 보여 줄 만한 "강한" 감정 */
 const STRONG: ReadonlySet<AvatarReactionId> = new Set(["laugh", "shy", "love", "pout", "excited", "surprised", "touched", "sad"]);
-/** 등 돌린 상태를 풀어 주는 긍정 반응 */
+/** 화해 장면에 쓸 수 있는 긍정 반응 */
 const POSITIVE: ReadonlySet<AvatarReactionId> = new Set(["smile", "laugh", "shy", "love", "touched", "excited", "comfort", "kiss"]);
+
+export type SulkRelease = "heart" | "words" | "gift" | "time";
 
 export type DirectorEvent =
   | {
@@ -64,9 +46,15 @@ export type DirectorEvent =
       reaction: AvatarReactionId;
       affectionDelta: number;
       /** 이번 답장이 무엇에 대한 것인지 */
-      kind: "text" | "reaction" | "return" | "voice";
+      kind: "text" | "reaction" | "return" | "voice" | "media" | "gift";
       /** kind=reaction: 유저가 보낸 마음 */
       heart?: HeartReactionId;
+      /** 이번 답장으로 삐짐이 시작됨 (lib/sulk.ts 가 판단) */
+      sulkStart?: boolean;
+      /** 이번 답장/행동으로 삐짐이 풀림 */
+      sulkRelease?: SulkRelease;
+      /** 호감도가 "처음으로" 이 단계(번호)에 올라섬 → 단계 보상 리액션 */
+      stageUp?: number;
     }
   | { type: "touch"; touch: TouchReactionId; combo: number };
 
@@ -84,6 +72,10 @@ export interface DirectorContext {
   hasPremiumClip: (name: string) => boolean;
   /** 💋 매혹 모드가 켜져 있을 때 쓸 수 있는 매혹 영상 이름 (꺼져 있으면 빈 배열) */
   allureClips?: string[];
+  /** 지금 삐져 있는지 (등 돌린 상태) */
+  sulking?: boolean;
+  /** 인물 성향: 리액션별 영상 확률 배수 (personas/<id>.json traits.reactionBias) */
+  reactionBias?: Partial<Record<string, number>>;
 }
 
 export interface DirectorDecision {
@@ -93,10 +85,12 @@ export interface DirectorDecision {
   cue: ReactionCue | null;
   /** 떠오르는 이모지 */
   particles?: string[];
-  /** 등 돌림 상태 변화 */
-  sulk?: { state: "start"; autoReleaseMs?: number } | { state: "end" };
+  /** 터치 연타로 삐짐 시작 (ChatApp 이 단계·자동 해제를 정한다) */
+  touchSulk?: boolean;
   /** 유료 리액션 잠금 안내 */
   teaser?: AvatarReactionId;
+  /** 단계 상승 연출이었는지 */
+  stageUp?: boolean;
   /** 영상으로 재생했는지 (디버그) */
   video: boolean;
 }
@@ -108,11 +102,14 @@ export function createReactionDirector() {
   const lastClip = new Map<string, number>();
   let lastKiss = 0;
   let lastTeaser = 0;
-  let sulking: null | "ai" | "touch" = null;
   let lastAllure = 0;
 
   const now = () => Date.now();
   const firstClip = (clips: string[], ctx: DirectorContext) => clips.find((c) => c !== "idle" && ctx.hasClip(c));
+  const bias = (id: string, ctx: DirectorContext) => {
+    const b = ctx.reactionBias?.[id];
+    return typeof b === "number" && Number.isFinite(b) ? Math.max(0, b) : 1;
+  };
 
   /** 영상 cue (실제 영상이 없으면 움직임으로 자동 대체되므로 그대로 넘겨도 안전) */
   const videoCue = (id: AvatarReactionId): ReactionCue => {
@@ -133,10 +130,10 @@ export function createReactionDirector() {
   };
 
   /** 뽀뽀 가능? (불가하면 이유) */
-  const kissCheck = (ctx: DirectorContext): "ok" | "locked" | "no" => {
+  const kissCheck = (ctx: DirectorContext, ignoreGap = false): "ok" | "locked" | "no" => {
     if (ctx.relationship !== "romance") return "no";
     if (ctx.nextAffection < T.kissAffection) return "no";
-    if (now() - lastKiss < T.kissGapMs) return "no";
+    if (!ignoreGap && now() - lastKiss < T.kissGapMs) return "no";
     if (!ctx.premium) return ctx.hasPremiumClip("kiss") ? "locked" : "no";
     return ctx.hasClip("kiss") ? "ok" : "no";
   };
@@ -180,52 +177,59 @@ export function createReactionDirector() {
     return { reaction: id, cue: videoCue(id), particles: d.particles, video: true, ...extra };
   };
 
+  /** 보상 리액션 (kiss 는 조건이 맞을 때만, 아니면 설렘/잠금 안내) */
+  const reward = (want: AvatarReactionId, ctx: DirectorContext, extra?: Partial<DirectorDecision>): DirectorDecision => {
+    if (want === "kiss") {
+      const k = kissCheck(ctx, true);
+      if (k === "ok") return special("kiss", ctx, extra);
+      if (k === "locked") return special("love", ctx, { teaser: maybeTeaser(), ...extra });
+      return special(ctx.relationship === "romance" ? "love" : "laugh", ctx, extra);
+    }
+    return special(want, ctx, extra);
+  };
+
   function decideAi(ev: Extract<DirectorEvent, { type: "ai" }>, ctx: DirectorContext): DirectorDecision {
     let id = ev.reaction;
     const t = now();
     const romance = ctx.relationship === "romance";
 
-    // 0) 등 돌린 상태
-    if (sulking) {
-      const makeUp = ev.affectionDelta > 0 || (ev.affectionDelta >= 0 && POSITIVE.has(id));
-      if (!makeUp) {
-        // 아직 안 풀림: 등 돌린 채 그대로 (말풍선만 나온다)
-        return { reaction: "turn_away", cue: null, particles: ["💢"], video: false };
+    // 0) 삐짐이 풀림 → 화해 장면 (선물이면 더 특별하게)
+    if (ev.sulkRelease) {
+      if (ev.sulkRelease === "gift") {
+        const g = BALANCE.sulk.gift;
+        const want = (isAvatarReactionId(g.reaction) ? g.reaction : "love") as AvatarReactionId;
+        if (g.kissIfPossible && kissCheck(ctx, true) === "ok") return special("kiss", ctx);
+        return special(want, ctx);
       }
-      sulking = null;
-      // 화해 장면: 수줍게 돌아보기 (쿨다운 무시)
       const back: AvatarReactionId = romance && ctx.nextAffection >= 45 ? "love" : "shy";
-      return special(POSITIVE.has(id) && id !== "kiss" && ctx.hasClip(id) ? id : back, ctx, { sulk: { state: "end" } });
+      return special(POSITIVE.has(id) && id !== "kiss" && ctx.hasClip(id) ? id : back, ctx);
     }
 
-    // 1) 상처 주는 말 → 등 돌림 (AI가 골랐거나, 호감도가 크게 떨어졌을 때)
-    if ((id === "turn_away" && ev.affectionDelta < 0) || ev.affectionDelta <= -3) {
-      if (ctx.hasClip("turn_away") || id === "turn_away") {
-        sulking = "ai";
-        return special("turn_away", ctx, { sulk: { state: "start" } });
-      }
-      id = "pout";
-    } else if (id === "turn_away") {
-      id = "pout"; // 호감도가 안 떨어졌는데 등 돌리는 건 과함 → 삐짐으로
+    // 1) 삐짐 시작 → 등 돌림 (등 돌린 채 멈춤)
+    if (ev.sulkStart) {
+      if (ctx.hasClip("turn_away")) return special("turn_away", ctx);
+      return { reaction: "pout", cue: { ...motionCue("pout"), hold: false }, particles: ["💢"], video: false };
     }
 
-    // 2) 호감도 단계가 오름 → 특별한 순간
-    const before = affectionStage(ctx.affection, ctx.relationship);
-    const after = affectionStage(ctx.nextAffection, ctx.relationship);
-    if (after.min > before.min) {
-      if (romance && after.min >= T.kissAffection) {
-        const k = kissCheck(ctx);
-        if (k === "ok") return special("kiss", ctx);
-        if (k === "locked") return special("love", ctx, { teaser: maybeTeaser() });
-      }
-      return special(romance ? "love" : "laugh", ctx);
+    // 2) 아직 삐져 있음: 등 돌린 채 그대로 (말풍선만 나온다)
+    if (ctx.sulking) return { reaction: "turn_away", cue: null, particles: ["💢"], video: false };
+
+    if (id === "turn_away") id = "pout"; // 삐짐 판단은 lib/sulk.ts 가 한다 → 여기선 삐침 표정으로
+
+    // 3) 호감도 단계에 처음 올라섬 → 단계별 보상 리액션 (다시 올라온 건 보상 없음)
+    const stages = stagesOf(ctx.relationship);
+    if (ev.stageUp !== undefined && stages[ev.stageUp]) {
+      const want = stages[ev.stageUp].reward.reaction;
+      return reward((isAvatarReactionId(want) ? want : romance ? "love" : "laugh") as AvatarReactionId, ctx, { stageUp: true });
     }
 
-    // 3) 오랜만에 돌아옴 → 반가운 눈빛
+    // 4) 오랜만에 돌아옴 → 반가운 눈빛
     if (ev.kind === "return") return special(romance ? "love" : "laugh", ctx);
 
-    // 4) 뽀뽀: AI가 골랐거나, 특별한 사이에서 ❤️ 를 받았을 때 가끔
-    const kissWanted = id === "kiss" || (ev.kind === "reaction" && ev.heart === "love" && (id === "love" || id === "shy") && Math.random() < 0.35);
+    // 5) 뽀뽀: AI가 골랐거나, 특별한 사이에서 ❤️ 를 받았을 때 가끔
+    const kissWanted =
+      id === "kiss" ||
+      (ev.kind === "reaction" && ev.heart === "love" && (id === "love" || id === "shy") && Math.random() < T.kissFromHeartChance);
     if (kissWanted) {
       const k = kissCheck(ctx);
       if (k === "ok") return special("kiss", ctx);
@@ -239,21 +243,21 @@ export function createReactionDirector() {
     const def = AVATAR_REACTIONS[id] ?? AVATAR_REACTIONS.idle;
     if (id === "idle") return { reaction: id, cue: null, video: false };
 
-    // 4.5) 💋 매혹 모드: 설렘·부끄러움 같은 순간엔 매혹 영상
+    // 5.5) 💋 매혹 모드: 설렘·부끄러움 같은 순간엔 매혹 영상
     if ((ALLURE_TRIGGERS as readonly string[]).includes(id) && ev.affectionDelta >= 0) {
       const a = pickAllure(ctx, ev.kind === "reaction" ? ALLURE_TUNING.heartChance : ALLURE_TUNING.aiChance);
       if (a) return allureDecision(a, "ai");
     }
 
-    // 5) 평소: 강한 감정 + 쿨다운 + 확률
+    // 6) 평소: 강한 감정 + 쿨다운 + 확률 (인물 성향 배수 적용)
     const clip = firstClip(def.clips, ctx);
+    const baseChance = ev.kind === "reaction" || ev.kind === "media" ? T.heartVideoChance : T.aiVideoChance;
     const canVideo =
       !!clip &&
       STRONG.has(id) &&
       t - lastAiVideo > T.aiVideoGapMs &&
       t - (lastClip.get(clip) ?? 0) > T.sameClipGapMs &&
-      // 마음 리액션에 대한 반응은 영상 확률을 조금 높인다 (말 없이 표정으로 답하는 순간)
-      Math.random() < (ev.kind === "reaction" ? 0.85 : T.aiVideoChance);
+      Math.random() < Math.min(1, baseChance * bias(id, ctx));
 
     if (canVideo) {
       markVideo(clip, "ai");
@@ -267,20 +271,13 @@ export function createReactionDirector() {
     const def = TOUCH_REACTIONS[ev.touch];
 
     // 삐져 있는 동안엔 영상 없이 💢 만
-    if (sulking) return { reaction: "turn_away", cue: null, particles: ["💢"], video: false };
+    if (ctx.sulking) return { reaction: "turn_away", cue: null, particles: ["💢"], video: false };
 
     // 너무 심한 연타 → 등 돌림 (일정 시간 뒤 저절로 풀림)
     if (ev.combo >= T.touchTurnAwayCombo && ctx.hasClip("turn_away")) {
-      sulking = "touch";
       const d = AVATAR_REACTIONS.turn_away;
       markVideo("turn_away", "touch");
-      return {
-        reaction: "turn_away",
-        cue: videoCue("turn_away"),
-        particles: d.particles,
-        sulk: { state: "start", autoReleaseMs: T.touchSulkMs },
-        video: true,
-      };
+      return { reaction: "turn_away", cue: videoCue("turn_away"), particles: d.particles, touchSulk: true, video: true };
     }
 
     // 💋 매혹 모드: 머리 쓰다듬기·볼 터치 첫 터치엔 가끔 매혹 영상
@@ -290,7 +287,7 @@ export function createReactionDirector() {
     }
 
     // 특별한 사이에서 머리를 쓰다듬으면 아주 가끔 뽀뽀
-    if (ev.touch === "lovely" && ev.combo === 1 && Math.random() < 0.12) {
+    if (ev.touch === "lovely" && ev.combo === 1 && Math.random() < T.kissFromHeadPatChance) {
       const k = kissCheck(ctx);
       if (k === "ok") {
         lastKiss = t;
@@ -305,7 +302,8 @@ export function createReactionDirector() {
       t - lastTouchVideo > T.touchVideoGapMs &&
       t - (lastClip.get(clip) ?? 0) > T.touchSameClipGapMs &&
       // 첫 터치는 바로 영상, 연타 중엔 앙탈(pout) 영상만
-      (ev.combo === 1 || ev.touch === "pout");
+      (ev.combo === 1 || ev.touch === "pout") &&
+      Math.random() < Math.min(1, bias(def.avatar, ctx));
 
     if (canVideo) {
       markVideo(clip, "touch");
@@ -320,21 +318,11 @@ export function createReactionDirector() {
     },
     /** 💋 매혹 모드를 켠 순간: 매혹 영상 하나를 바로 보여 준다 (등 돌린 중이면 없음) */
     allureIntro(ctx: DirectorContext): DirectorDecision | null {
-      if (sulking) return null;
+      if (ctx.sulking) return null;
       const a = pickAllure(ctx, 1, true);
       return a ? allureDecision(a, "ai") : null;
     },
-    /** 터치로 삐진 상태가 시간이 지나 풀림 */
-    releaseTouchSulk(): boolean {
-      if (sulking !== "touch") return false;
-      sulking = null;
-      return true;
-    },
-    get sulking() {
-      return sulking;
-    },
     reset() {
-      sulking = null;
       lastAiVideo = lastTouchVideo = lastAllure = 0;
       lastClip.clear();
     },

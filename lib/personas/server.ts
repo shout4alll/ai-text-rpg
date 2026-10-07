@@ -6,6 +6,14 @@ import { PERSONA_FILES, SHARED_FILE } from "@/personas";
 import { personaFileSchema, sharedFileSchema, type PersonaFile } from "@/lib/personas/schema";
 import type { Persona } from "@/lib/personas/types";
 import type { AlbumItem } from "@/config/media";
+import { balanceSchema } from "@/config/balanceSchema";
+import balanceJson from "@/config/balance.json";
+
+// config/balance.json 형식 검사 (빌드·서버 시작 시) — 틀리면 어느 항목인지 알려 준다
+{
+  const b = balanceSchema.safeParse(balanceJson);
+  if (!b.success) throw new Error(`[balance] config/balance.json 형식 오류:\n${z.prettifyError(b.error)}`);
+}
 
 /**
  * 페르소나 파일 로더 (서버 전용).
@@ -108,6 +116,12 @@ export function toPublic(p: PersonaFile): Persona {
     accent: p.accent,
     ...(p.touchLines ? { touchLines: p.touchLines } : {}),
     ...(p.allure ? { allure: true } : {}),
+    voiceName: p.voice?.name ?? (p.gender === "male" ? "Puck" : "Leda"),
+    traits: {
+      gift: p.traits?.gift ?? { name: "꽃다발", emoji: "💐" },
+      reactionBias: p.traits?.reactionBias ?? {},
+      stageUpLines: p.traits?.stageUpLines ?? [],
+    },
     album: albumOf(p),
     assets: {
       poster: `${base}/${p.image.portrait}`,

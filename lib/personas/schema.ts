@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { TOUCH_REACTION_IDS } from "@/config/reactions";
+import { AVATAR_REACTION_IDS, TOUCH_REACTION_IDS } from "@/config/reactions";
 
 /**
  * personas/<id>.json 파일 형식.
@@ -72,6 +72,29 @@ export const personaFileSchema = z.object({
       name: z.string().min(1).optional(),
       /** 말하는 방식 지시 (예: "차분하고 낮은 톤, 천천히") */
       style: z.string().min(1).optional(),
+    })
+    .optional(),
+  /**
+   * (선택) 인물 성향 — 대화·리액션·삐짐·선물이 인물마다 달라진다. (docs/BALANCE.md "인물별 성향")
+   */
+  traits: z
+    .object({
+      /** 좋아하는 것 (이 이야기가 나오면 호감도가 잘 오른다) */
+      likes: z.array(z.string().min(1)).max(8).default([]),
+      /** 싫어하는 것 (이런 말·행동엔 서운해한다) */
+      dislikes: z.array(z.string().min(1)).max(8).default([]),
+      /** 삐졌을 때 기분이 풀리는 말·행동 */
+      soothe: z.array(z.string().min(1)).max(8).default([]),
+      /** 삐졌을 때 말투 */
+      sulkStyle: z.string().min(1).optional(),
+      /** 달랠 때 주는 선물 (💎 차감) */
+      gift: z.object({ name: z.string().min(1), emoji: z.string().min(1) }).optional(),
+      /** 리액션별 영상 확률 배수 (1 = 기본, 1.5 = 더 자주, 0.5 = 덜). 예: { "laugh": 1.4, "shy": 0.6 } */
+      reactionBias: z.partialRecord(z.enum(AVATAR_REACTION_IDS), z.number().min(0).max(3)).default({}),
+      /** 호감도 단계가 오를 때 하는 말 (2번째 단계부터 순서대로) */
+      stageUpLines: z.array(z.string().min(1)).max(6).default([]),
+      /** 유저가 사진·영상을 보냈을 때의 반응 방식 */
+      mediaReaction: z.string().min(1).optional(),
     })
     .optional(),
   /**

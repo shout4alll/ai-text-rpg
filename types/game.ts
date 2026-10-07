@@ -19,6 +19,10 @@ export interface ChatResponse {
   animation: AvatarAnimation;
   /** 사진·영상 보내기 (앨범 즉시 전송 / 유료 실시간 사진 요청) */
   media: MediaDirective | null;
+  /** 토라져 있을 때: 이번 말이 진심으로 달래 줬는지 (AI 판단) */
+  soothed: boolean;
+  /** 유저가 보낸 사진·영상에서 AI가 본 것 (기억용 한 줄) */
+  seen: string;
 }
 
 export interface ChatMessage {
@@ -29,8 +33,10 @@ export interface ChatMessage {
    * call: 보이스톡 통화 기록 (가운데 알림으로 표시, text = 통화 초)
    * media: 사진·영상 (text = 설명, media = 파일)
    * notice: 앱 안내 (화면에만, AI 에게 보내지 않음)
+   * gift: 유저가 삐진 상대에게 준 선물 (text = 선물 이름)
+   * (media + role=user: 유저가 올린 사진·영상 — 파일은 이 기기의 IndexedDB 에 보관, lib/userMedia.ts)
    */
-  kind?: "text" | "reaction" | "call" | "media" | "notice";
+  kind?: "text" | "reaction" | "call" | "media" | "notice" | "gift";
   /** kind=media */
   media?: {
     type: MediaType;
@@ -40,6 +46,12 @@ export interface ChatMessage {
     albumId?: string;
     /** 실시간 생성 사진 */
     generated?: boolean;
+    /** 유저가 올린 파일: IndexedDB 키 (src 는 화면용 임시 주소라 저장하지 않는다) */
+    localKey?: string;
+    /** 유저가 올린 파일: AI가 본 내용 한 줄 (다음 대화에서 기억용) */
+    seen?: string;
+    /** 유저가 올린 영상 길이(초) */
+    duration?: number;
   };
   /** "voice" 면 보이스톡 중에 한 말 (받아쓰기) */
   via?: "voice";

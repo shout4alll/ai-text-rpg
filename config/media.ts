@@ -8,6 +8,7 @@
  * 비용·시작 캐시는 여기서 조정한다. (실제 결제 연동 전까지 캐시는 브라우저에만 저장되는 테스트용)
  */
 import { CASH_PRICE } from "@/config/plans";
+import { BALANCE } from "@/config/balance";
 
 /** 캐시 가격은 config/plans.ts 의 CASH_PRICE 한 곳에서 관리 */
 export const MEDIA_COST = {
@@ -16,9 +17,9 @@ export const MEDIA_COST = {
 } as const;
 
 /** 테스트용 시작 캐시 (결제 연동 전) */
-export const DEMO_START_CASH = 100;
+export const DEMO_START_CASH = BALANCE.cash.demoStart;
 /** 테스트용 충전 단위 */
-export const DEMO_TOPUP = 100;
+export const DEMO_TOPUP = BALANCE.cash.demoTopup;
 
 export type MediaType = "photo" | "video";
 

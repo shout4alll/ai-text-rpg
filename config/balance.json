@@ -1,0 +1,141 @@
+{
+  "_readme": "밸런스 데이터 한곳 모음. 각 항목 설명은 docs/BALANCE.md. 값을 바꾸고 재배포하면 적용된다. 형식이 틀리면 빌드가 어느 항목이 틀렸는지 알려 준다.",
+
+  "affection": {
+    "start": 10,
+    "max": 100,
+    "stepCap": 5,
+    "gainMultiplier": 1.0,
+    "lossMultiplier": 1.0,
+    "gainWhileSulking": 0.5,
+    "heartReactionMaxGain": 2,
+    "stages": {
+      "romance": [
+        { "min": 0, "label": "알아가는 중", "guide": "막 알게 된 사이. 예의와 적당한 거리를 지키며 서로를 알아 간다.", "reward": { "reaction": "smile", "bonusCash": 0 } },
+        { "min": 20, "label": "편한 사이", "guide": "편한 친구 사이. 장난과 근황 공유가 자연스럽고, 허락을 받으면 말을 편하게 해도 된다.", "reward": { "reaction": "laugh", "bonusCash": 0 } },
+        { "min": 45, "label": "설레는 사이", "guide": "서로 설레는 사이. 관심과 보고 싶은 마음을 은근히, 돌려서 표현한다. 아직 고백은 서두르지 않는다.", "reward": { "reaction": "love", "bonusCash": 5 } },
+        { "min": 75, "label": "특별한 사이", "guide": "아주 가까운 사이. 다정한 애정 표현이 자연스럽다. 연인 관계는 대화에서 서로 마음을 확인했을 때만 연인처럼 대한다.", "reward": { "reaction": "kiss", "bonusCash": 10 } }
+      ],
+      "friendship": [
+        { "min": 0, "label": "알아가는 중", "guide": "막 알게 된 사이. 예의와 적당한 거리를 지키며 서로를 알아 간다.", "reward": { "reaction": "smile", "bonusCash": 0 } },
+        { "min": 20, "label": "편한 사이", "guide": "편한 친구 사이. 장난과 근황 공유가 자연스럽다.", "reward": { "reaction": "laugh", "bonusCash": 0 } },
+        { "min": 45, "label": "친한 친구", "guide": "속 얘기를 나누는 친구. 고민을 털어놓고 진심으로 응원한다. 연애 감정은 아니다.", "reward": { "reaction": "laugh", "bonusCash": 5 } },
+        { "min": 75, "label": "절친", "guide": "무엇이든 말할 수 있는 절친. 깊이 신뢰하고 챙긴다. 연애 감정으로는 발전하지 않는다.", "reward": { "reaction": "touched", "bonusCash": 10 } }
+      ]
+    },
+    "stageUpBannerMs": 4000,
+    "stageDownNotice": true
+  },
+
+  "sulk": {
+    "startDrop": -3,
+    "levelByDrop": [
+      { "maxDelta": -1, "level": 1 },
+      { "maxDelta": -3, "level": 2 },
+      { "maxDelta": -5, "level": 3 }
+    ],
+    "levelBonusByStage": [0, 0, 1, 1],
+    "escalateWindowMin": 30,
+    "sootheDelta": 2,
+    "levels": [
+      {
+        "level": 1,
+        "label": "살짝 삐짐",
+        "freeHearts": ["love", "like", "hug", "touched", "shy"],
+        "sootheNeeded": 1,
+        "giftCost": 3,
+        "autoReleaseMin": 30,
+        "hint": "하트나 좋아요, 다정한 한마디로 풀려요"
+      },
+      {
+        "level": 2,
+        "label": "토라짐",
+        "freeHearts": [],
+        "sootheNeeded": 1,
+        "giftCost": 5,
+        "autoReleaseMin": 180,
+        "hint": "하트로는 안 풀려요 · 기분 풀릴 말을 해 주세요"
+      },
+      {
+        "level": 3,
+        "label": "단단히 화남",
+        "freeHearts": [],
+        "sootheNeeded": 2,
+        "giftCost": 10,
+        "autoReleaseMin": 720,
+        "hint": "진심으로 두 번 이상 달래거나 선물이 필요해요"
+      }
+    ],
+    "gift": {
+      "affectionBonus": 2,
+      "reaction": "love",
+      "kissIfPossible": true
+    },
+    "touch": {
+      "level": 1,
+      "autoReleaseSec": 20
+    }
+  },
+
+  "touch": {
+    "comboMs": 1200,
+    "fireGapMs": 350,
+    "poutCombo": 5,
+    "poutComboMaybe": 3,
+    "poutComboMaybeChance": 0.6,
+    "shyUntil": 20,
+    "closeFrom": 45
+  },
+
+  "director": {
+    "aiVideoGapMs": 12000,
+    "sameClipGapMs": 45000,
+    "aiVideoChance": 0.65,
+    "heartVideoChance": 0.85,
+    "touchVideoGapMs": 7000,
+    "touchSameClipGapMs": 18000,
+    "touchTurnAwayCombo": 9,
+    "kissGapMs": 600000,
+    "kissAffection": 75,
+    "kissFromHeartChance": 0.35,
+    "kissFromHeadPatChance": 0.12,
+    "teaserGapMs": 600000
+  },
+
+  "allure": {
+    "gapMs": 25000,
+    "sameClipGapMs": 90000,
+    "aiChance": 0.5,
+    "heartChance": 0.8,
+    "touchChance": 0.45
+  },
+
+  "userMedia": {
+    "maxImageSide": 1280,
+    "modelImageSide": 768,
+    "videoFrames": 3,
+    "maxVideoMB": 60,
+    "maxPerDay": 30,
+    "affectionMaxGain": 3
+  },
+
+  "voice": {
+    "freeExchanges": 5,
+    "trialMaxSeconds": 180,
+    "touchNotifyGapMs": 8000
+  },
+
+  "cash": {
+    "voicePerMinute": 5,
+    "photo": 10,
+    "demoStart": 100,
+    "demoTopup": 100
+  },
+
+  "plans": {
+    "free": { "name": "무료", "priceKrw": 0, "voiceMinutes": 0, "photos": 0, "premiumReactions": false, "bonusCash": 0, "color": "#64748b", "tagline": "" },
+    "best": { "name": "BEST", "priceKrw": 9900, "voiceMinutes": 30, "photos": 10, "premiumReactions": false, "bonusCash": 0, "color": "#38bdf8", "tagline": "가볍게 목소리 듣기" },
+    "prime": { "name": "PRIME", "priceKrw": 19900, "voiceMinutes": 120, "photos": 40, "premiumReactions": true, "bonusCash": 50, "color": "#f472b6", "tagline": "매일 통화하는 사이" },
+    "vip": { "name": "VIP", "priceKrw": 39900, "voiceMinutes": 300, "photos": 100, "premiumReactions": true, "bonusCash": 150, "color": "#fbbf24", "tagline": "가장 특별한 사이" }
+  }
+}

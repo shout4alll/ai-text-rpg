@@ -5,6 +5,8 @@ import { getPersonaFile, isPersonaId } from "@/lib/personas/server";
 import { AFFECTION_START } from "@/config/reactions";
 import { checkVoiceAccess, voiceMaxSeconds } from "@/lib/voice/access";
 import { buildVoiceInstructions, voiceNameFor } from "@/lib/voice/instructions";
+import { BALANCE } from "@/config/balance";
+import { isGeminiVoice } from "@/config/voices";
 
 /**
  * POST /api/voice/session — 보이스톡 시작
@@ -32,6 +34,8 @@ const bodySchema = z.object({
     .optional(),
   /** 과금 방식 — trial(무료 체험)은 서버에서도 통화 길이를 짧게 제한 */
   mode: z.enum(["trial", "plan", "cash"]).optional(),
+  /** 목소리 맞추기(/voice-lab)에서 고른 목소리 — Gemini 기본 목소리 이름만 허용 */
+  voice: z.string().max(40).optional(),
   /** 💋 매혹 모드 (인물 파일에 allure 가 있을 때만 반영) */
   allure: z.boolean().optional(),
 });
@@ -62,9 +66,9 @@ export async function POST(request: Request) {
 
   const persona = getPersonaFile(body.personaId);
   const model = process.env.GEMINI_LIVE_MODEL?.trim() || DEFAULT_MODEL;
-  const voice = voiceNameFor(persona);
+  const voice = isGeminiVoice(body.voice) ? body.voice : voiceNameFor(persona);
   // 무료 체험(주고받기 5번)은 3분이면 충분 → 토큰 자체를 짧게 (클라이언트 조작 대비)
-  const maxSeconds = body.mode === "trial" ? Math.min(180, voiceMaxSeconds()) : voiceMaxSeconds();
+  const maxSeconds = body.mode === "trial" ? Math.min(BALANCE.voice.trialMaxSeconds, voiceMaxSeconds()) : voiceMaxSeconds();
 
   try {
     const ai = new GoogleGenAI({ apiKey, httpOptions: { apiVersion: "v1alpha" } });
