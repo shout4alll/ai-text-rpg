@@ -50,21 +50,68 @@ const moves = [
   ["app/api", "api"],
   ["app/voice-lab", "voice-lab"],
 ];
+const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+/** 폴더를 옮긴다. 윈도우에서 개발 서버·VS Code 감시가 폴더를 잡고 있으면 이름 변경(rename)이 EPERM 으로 막히므로, 그땐 복사 후 삭제로 넘어간다. */
+function stashDir(src, dst) {
+  for (let i = 0; i < 3; i++) {
+    try {
+      fs.renameSync(src, dst);
+      return;
+    } catch (e) {
+      if (!["EPERM", "EBUSY", "EACCES"].includes(e.code)) throw e;
+      sleep(300);
+    }
+  }
+  fs.cpSync(src, dst, { recursive: true });
+  fs.rmSync(src, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+}
+function removeLeftover(dir) {
+  // 폴더 자체는 못 지워도 안의 파일만 없으면 빌드에는 영향이 없다
+  if (!fs.existsSync(dir)) return;
+  for (const f of fs.readdirSync(dir)) fs.rmSync(path.join(dir, f), { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+}
+
 fs.mkdirSync(stash, { recursive: true });
-const moved = [];
+const done = []; // 복원할 [원래 위치, 보관 이름]
+let restoreFailed = false;
 try {
   for (const [from, name] of moves) {
     const src = path.join(root, from);
-    if (fs.existsSync(src)) {
-      fs.renameSync(src, path.join(stash, name));
-      moved.push([from, name]);
+    if (!fs.existsSync(src)) continue;
+    const dst = path.join(stash, name);
+    try {
+      stashDir(src, dst);
+    } catch (e) {
+      // 복사는 됐는데 삭제가 막힌 경우: 안의 파일만이라도 비운다
+      if (fs.existsSync(dst)) removeLeftover(src);
+      else throw e;
     }
+    if (fs.existsSync(src) && fs.readdirSync(src).length) {
+      throw new Error(`${from} 폴더를 비우지 못했어요. 개발 서버(npm run dev)와 VS Code 의 해당 폴더 탭을 닫고 다시 실행해 주세요.`);
+    }
+    done.push([from, name]);
   }
   execSync("npx next build", { stdio: "inherit", env: { ...env, MOBILE_BUILD: "1" } });
 } finally {
-  for (const [from, name] of moved) fs.renameSync(path.join(stash, name), path.join(root, from));
-  fs.rmSync(stash, { recursive: true, force: true });
+  for (const [from, name] of done) {
+    const dst = path.join(root, from);
+    const bak = path.join(stash, name);
+    try {
+      if (!fs.existsSync(dst)) fs.renameSync(bak, dst);
+      else fs.cpSync(bak, dst, { recursive: true, force: true });
+    } catch (e) {
+      try {
+        fs.cpSync(bak, dst, { recursive: true, force: true });
+      } catch (e2) {
+        restoreFailed = true;
+        console.error(`⚠️ ${from} 를 되돌리지 못했어요. 원본은 ${bak} 에 그대로 있어요. 직접 ${from} 로 복사해 주세요. (${e2.code ?? e2.message})`);
+      }
+    }
+  }
+  if (!restoreFailed) fs.rmSync(stash, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
 }
+if (restoreFailed) process.exit(1);
 
 const ios = process.argv.includes("--ios");
 execSync(`npx cap sync ${ios ? "" : "android"}`.trim(), { stdio: "inherit", env });
