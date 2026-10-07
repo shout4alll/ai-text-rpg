@@ -10,6 +10,7 @@ import {
   albumOf,
 } from "@/lib/personas/server";
 import type { AlbumItem, MediaDirective } from "@/config/media";
+import { allureInstructions } from "@/config/allure";
 import type { PersonaFile } from "@/lib/personas/schema";
 import { resolveModel } from "@/config/ai";
 import {
@@ -58,6 +59,8 @@ const requestSchema = z.object({
   affection: z.number().min(0).max(100).optional(),
   /** 이미 보낸 앨범 id (같은 사진 반복 방지) */
   sentAlbumIds: z.array(z.string().max(64)).max(200).optional(),
+  /** 💋 매혹 모드 (인물 파일에 allure 가 있을 때만 반영) */
+  allure: z.boolean().optional(),
 });
 
 /** LLM 출력 스키마 */
@@ -185,6 +188,7 @@ interface InstructionContext {
   sinceLast: string | null;
   album: AlbumItem[];
   sentAlbumIds: string[];
+  allure: boolean;
 }
 
 function buildInstructions(c: InstructionContext): string {
@@ -248,7 +252,7 @@ ${timeLines || "- 현재 시각 정보 없음"}
 - 괄호로 행동을 묘사하지 마라. 'ㅋㅋ', 'ㅎㅎ'는 네 말투에 맞게만 쓰고, 이모지는 쓰지 않는다(감정은 reaction으로).
 - [마음 리액션], [알림], (N시간 뒤) 같은 표시는 시스템이 붙인 상황 정보다. 답장에 그대로 따라 쓰지 마라.${turnGuide}
 ${SHARED_RULES}
-
+${c.allure && persona.allure ? `\n${allureInstructions(persona.name, persona.allure.prompt)}\n` : ""}
 [사진·영상]
 - 너는 메신저로 사진과 영상을 보낼 수 있다. 유저가 먼저 보고 싶다고 할 때만 보내고, 네가 먼저 자주 보내지는 마라.
 - 유저가 그냥 "사진 보내 줘", "얼굴 보고 싶어", "영상 보여 줘"처럼 요청하면: "찍어 둔 게 있다"는 식으로 자연스럽게 말하고 앨범에서 어울리는 것 하나를 보낸다(media_action=album, album_id). 영상을 원하면 video, 사진이면 photo 를 골라라.
@@ -354,6 +358,7 @@ export async function POST(request: Request) {
         sinceLast,
         album,
         sentAlbumIds: parsed.data.sentAlbumIds ?? [],
+        allure: parsed.data.allure === true,
       }),
       messages: history,
       output: Output.object({

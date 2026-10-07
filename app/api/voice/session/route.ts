@@ -32,6 +32,8 @@ const bodySchema = z.object({
     .optional(),
   /** 과금 방식 — trial(무료 체험)은 서버에서도 통화 길이를 짧게 제한 */
   mode: z.enum(["trial", "plan", "cash"]).optional(),
+  /** 💋 매혹 모드 (인물 파일에 allure 가 있을 때만 반영) */
+  allure: z.boolean().optional(),
 });
 
 export async function POST(request: Request) {
@@ -83,6 +85,7 @@ export async function POST(request: Request) {
               affection: body.affection ?? AFFECTION_START,
               userTimeZone: body.timeZone,
               recent: body.recent ?? [],
+              allure: body.allure === true,
             }),
             speechConfig: {
               languageCode: "ko-KR",

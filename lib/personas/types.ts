@@ -27,6 +27,8 @@ export interface PersonaAssets {
   stagePosition: string;
   /** (자동) 유료 리액션 영상 — clips/premium/ 폴더. 이용권이 있을 때만 재생 */
   premiumClips: Record<string, string>;
+  /** (자동) 💋 매혹 모드 영상 — clips/allure/ 폴더. 이름 앞에 "allure_" 가 붙는다 (예: allure_gaze) */
+  allureClips: Record<string, string>;
   /** (선택) 같은 인물의 대체 이미지 */
   fallbackPoster?: string;
 }
@@ -48,4 +50,6 @@ export interface Persona {
   album: AlbumItem[];
   /** 화면 터치 반응 한마디 (인물별 덮어쓰기, 없으면 config/reactions.ts 기본값) */
   touchLines?: Partial<Record<TouchReactionId, string[]>>;
+  /** 💋 매혹 모드를 켤 수 있는 인물 */
+  allure?: boolean;
 }

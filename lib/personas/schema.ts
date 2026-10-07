@@ -74,6 +74,18 @@ export const personaFileSchema = z.object({
       style: z.string().min(1).optional(),
     })
     .optional(),
+  /**
+   * (선택) 💋 매혹 모드. 있으면 이 인물에게 매혹 모드 버튼이 생긴다. (docs/ALLURE_MODE.md)
+   * 영상은 public/avatar/personas/<id>/clips/allure/ 에 넣으면 자동 인식.
+   */
+  allure: z
+    .object({
+      /** 이 인물이 매혹 모드에서 어떻게 달라지는지 (말투·분위기). 노골적 내용 금지 */
+      prompt: z.string().min(1),
+      /** 보이스톡에서 목소리 톤 (예: "낮고 나른하게, 천천히") */
+      voiceStyle: z.string().min(1).optional(),
+    })
+    .optional(),
   prompt: z.object({
     identity: z.string().min(1),
     personality: z.string().min(1),

@@ -12,6 +12,7 @@
  *      - 삐져서 등 돌린 상태가 풀릴 때 (화해 장면)
  *  ▸ 등 돌림(turn_away): 상처 주는 말(호감도 하락)이나 터치 연타가 심할 때 → 등 돌린 채 멈춤.
  *      말로 풀어 주면(호감도 상승) 다시 돌아본다.
+ *  ▸ 💋 매혹 모드(성인·멤버십): 설렘·부끄러움 순간과 쓰다듬기 터치에 가끔 clips/allure/ 영상 (config/allure.ts)
  *  ▸ 뽀뽀(kiss, 유료): 연애형 + 호감도 75 이상 + 10분에 한 번 이하. 이용권이 없으면 설렘 영상 + 잠금 안내.
  *
  * 나중에 실시간 AI 영상이 되면: decide() 가 돌려주는 cue 를 "생성 요청"으로 바꿔 끼우면 된다.
@@ -26,6 +27,7 @@ import {
   type ReactionCue,
   type TouchReactionId,
 } from "@/config/reactions";
+import { ALLURE_TINT, ALLURE_TOUCH_TRIGGERS, ALLURE_TRIGGERS, ALLURE_TUNING } from "@/config/allure";
 
 /* ── 연출 수치 (여기만 바꾸면 빈도 조절) ─────────────────────────────────── */
 export const DIRECTOR_TUNING = {
@@ -80,6 +82,8 @@ export interface DirectorContext {
   hasClip: (name: string) => boolean;
   /** 유료 영상이 준비돼 있는지 (잠금 안내를 띄울지 판단) */
   hasPremiumClip: (name: string) => boolean;
+  /** 💋 매혹 모드가 켜져 있을 때 쓸 수 있는 매혹 영상 이름 (꺼져 있으면 빈 배열) */
+  allureClips?: string[];
 }
 
 export interface DirectorDecision {
@@ -105,6 +109,7 @@ export function createReactionDirector() {
   let lastKiss = 0;
   let lastTeaser = 0;
   let sulking: null | "ai" | "touch" = null;
+  let lastAllure = 0;
 
   const now = () => Date.now();
   const firstClip = (clips: string[], ctx: DirectorContext) => clips.find((c) => c !== "idle" && ctx.hasClip(c));
@@ -140,6 +145,31 @@ export function createReactionDirector() {
     if (now() - lastTeaser < T.teaserGapMs) return undefined;
     lastTeaser = now();
     return "kiss";
+  };
+
+  /**
+   * 💋 매혹 모드: 어울리는 순간이면 매혹 영상 하나를 고른다 (없으면 undefined).
+   * 너무 자주 나오지 않게 간격·같은 영상 반복·확률로 거른다.
+   */
+  const pickAllure = (ctx: DirectorContext, chance: number, force = false): string | undefined => {
+    const pool = ctx.allureClips ?? [];
+    if (pool.length === 0) return undefined;
+    const t = now();
+    if (!force && (t - lastAllure < ALLURE_TUNING.gapMs || Math.random() >= chance)) return undefined;
+    const fresh = pool.filter((c) => t - (lastClip.get(c) ?? 0) > ALLURE_TUNING.sameClipGapMs);
+    const from = fresh.length ? fresh : force ? pool : [];
+    if (from.length === 0) return undefined;
+    return from[Math.floor(Math.random() * from.length)];
+  };
+  const allureDecision = (clip: string, kind: "ai" | "touch"): DirectorDecision => {
+    lastAllure = now();
+    markVideo(clip, kind);
+    return {
+      reaction: "love",
+      cue: { clips: [clip], motion: "none", tint: ALLURE_TINT },
+      particles: ["💋", "✨", "💗"],
+      video: true,
+    };
   };
 
   /** 특별한 순간: 쿨다운 무시하고 영상 */
@@ -209,6 +239,12 @@ export function createReactionDirector() {
     const def = AVATAR_REACTIONS[id] ?? AVATAR_REACTIONS.idle;
     if (id === "idle") return { reaction: id, cue: null, video: false };
 
+    // 4.5) 💋 매혹 모드: 설렘·부끄러움 같은 순간엔 매혹 영상
+    if ((ALLURE_TRIGGERS as readonly string[]).includes(id) && ev.affectionDelta >= 0) {
+      const a = pickAllure(ctx, ev.kind === "reaction" ? ALLURE_TUNING.heartChance : ALLURE_TUNING.aiChance);
+      if (a) return allureDecision(a, "ai");
+    }
+
     // 5) 평소: 강한 감정 + 쿨다운 + 확률
     const clip = firstClip(def.clips, ctx);
     const canVideo =
@@ -247,6 +283,12 @@ export function createReactionDirector() {
       };
     }
 
+    // 💋 매혹 모드: 머리 쓰다듬기·볼 터치 첫 터치엔 가끔 매혹 영상
+    if (ev.combo === 1 && (ALLURE_TOUCH_TRIGGERS as readonly string[]).includes(ev.touch) && t - lastTouchVideo > T.touchVideoGapMs) {
+      const a = pickAllure(ctx, ALLURE_TUNING.touchChance);
+      if (a) return allureDecision(a, "touch");
+    }
+
     // 특별한 사이에서 머리를 쓰다듬으면 아주 가끔 뽀뽀
     if (ev.touch === "lovely" && ev.combo === 1 && Math.random() < 0.12) {
       const k = kissCheck(ctx);
@@ -276,6 +318,12 @@ export function createReactionDirector() {
     decide(ev: DirectorEvent, ctx: DirectorContext): DirectorDecision {
       return ev.type === "ai" ? decideAi(ev, ctx) : decideTouch(ev, ctx);
     },
+    /** 💋 매혹 모드를 켠 순간: 매혹 영상 하나를 바로 보여 준다 (등 돌린 중이면 없음) */
+    allureIntro(ctx: DirectorContext): DirectorDecision | null {
+      if (sulking) return null;
+      const a = pickAllure(ctx, 1, true);
+      return a ? allureDecision(a, "ai") : null;
+    },
     /** 터치로 삐진 상태가 시간이 지나 풀림 */
     releaseTouchSulk(): boolean {
       if (sulking !== "touch") return false;
@@ -287,7 +335,7 @@ export function createReactionDirector() {
     },
     reset() {
       sulking = null;
-      lastAiVideo = lastTouchVideo = 0;
+      lastAiVideo = lastTouchVideo = lastAllure = 0;
       lastClip.clear();
     },
   };

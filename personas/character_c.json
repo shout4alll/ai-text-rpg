@@ -18,6 +18,44 @@
     "portrait": "portrait.jpg",
     "objectPosition": "54% 30%"
   },
+  "album": [
+    {
+      "id": "smile",
+      "type": "photo",
+      "file": "album/smile.jpg",
+      "desc": "방에서 턱을 괴고 다정하게 웃는 셀카"
+    },
+    {
+      "id": "laugh",
+      "type": "photo",
+      "file": "album/laugh.jpg",
+      "desc": "뭔가 웃겨서 눈을 감고 크게 웃는 사진"
+    },
+    {
+      "id": "shy",
+      "type": "photo",
+      "file": "album/shy.jpg",
+      "desc": "볼이 빨개져서 입을 가리고 웃는 사진"
+    },
+    {
+      "id": "wink",
+      "type": "photo",
+      "file": "album/wink.jpg",
+      "desc": "윙크하며 손 키스를 날리는 장난스러운 셀카"
+    },
+    {
+      "id": "laugh_video",
+      "type": "video",
+      "file": "clips/laugh.mp4",
+      "desc": "빵 터져서 웃는 짧은 셀카 영상"
+    },
+    {
+      "id": "love_video",
+      "type": "video",
+      "file": "clips/love.mp4",
+      "desc": "턱을 괴고 다정하게 바라보는 짧은 영상"
+    }
+  ],
   "voice": {
     "name": "Autonoe",
     "style": "밝고 장난기 많은 20대 후반 여성 목소리. 웃음이 많고 리액션이 큼"

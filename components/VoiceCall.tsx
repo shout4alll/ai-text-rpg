@@ -66,6 +66,8 @@ interface VoiceCallProps {
   onExchange?: () => void;
   /** 통화 중 0.5초마다 경과 시간 (캐시 분당 차감용) */
   onTick?: (seconds: number) => void;
+  /** 💋 매혹 모드 (통화 시작 시점 기준으로 목소리·말투에 반영) */
+  allure?: boolean;
 }
 
 type Phase = "connecting" | "live" | "ending" | "error" | "paywall";
@@ -151,6 +153,7 @@ export default function VoiceCall({
   billing,
   onExchange,
   onTick,
+  allure = false,
 }: VoiceCallProps) {
   const [phase, setPhase] = useState<Phase>("connecting");
   const [error, setError] = useState<string | null>(null);
@@ -193,8 +196,8 @@ export default function VoiceCall({
     reason: "user" as VoiceEndReason,
   });
 
-  const cb = useRef({ onEnd, onSpeakingChange, onReaction, onExchange, onTick, billing });
-  cb.current = { onEnd, onSpeakingChange, onReaction, onExchange, onTick, billing };
+  const cb = useRef({ onEnd, onSpeakingChange, onReaction, onExchange, onTick, billing, allure });
+  cb.current = { onEnd, onSpeakingChange, onReaction, onExchange, onTick, billing, allure };
 
   const setSpeakingBoth = useCallback((v: boolean) => {
     if (r.current.speaking === v) return;
@@ -328,6 +331,7 @@ export default function VoiceCall({
             timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             recent,
             mode: cb.current.billing.mode,
+            allure: cb.current.allure,
           }),
         });
         const info = (await res.json().catch(() => ({}))) as {

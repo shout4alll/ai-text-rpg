@@ -1,4 +1,5 @@
 import "server-only";
+import { allureInstructions } from "@/config/allure";
 import { SHARED_RULES } from "@/lib/personas/server";
 import type { PersonaFile } from "@/lib/personas/schema";
 import { affectionStage } from "@/config/reactions";
@@ -27,8 +28,11 @@ export function buildVoiceInstructions(opts: {
   affection: number;
   userTimeZone?: string;
   recent: VoiceTurn[];
+  /** 💋 매혹 모드 */
+  allure?: boolean;
 }): string {
   const { persona, affection, recent } = opts;
+  const allure = opts.allure && persona.allure ? persona.allure : null;
   const p = persona.prompt;
   const stage = affectionStage(affection, persona.relationshipType);
   const myNow = formatNow(persona.timezone);
@@ -48,8 +52,8 @@ export function buildVoiceInstructions(opts: {
 - 대화 스타일: ${p.chatStyle}
 - 일상: ${p.lifestyle}
 - 관계와 감정 표현: ${p.relationship}
-${persona.voice?.style ? `- 목소리와 말하는 방식: ${persona.voice.style}` : ""}
-
+${allure?.voiceStyle ? `- 목소리와 말하는 방식: ${allure.voiceStyle}` : persona.voice?.style ? `- 목소리와 말하는 방식: ${persona.voice.style}` : ""}
+${allure ? `\n${allureInstructions(persona.name, allure.prompt).replace(/\n- reaction 은[^\n]*$/, "")}\n` : ""}
 [지금]
 ${myNow ? `- 너의 현지 시각(${persona.timezone}): ${myNow}` : "- 현재 시각 정보 없음"}
 - 현재 호감도 ${Math.round(affection)}/100 → "${stage.label}": ${stage.guide}

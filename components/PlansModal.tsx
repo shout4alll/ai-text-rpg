@@ -3,13 +3,14 @@
 import { CASH_PRICE, PLANS, PLAN_ORDER, type PlanId } from "@/config/plans";
 import { DEMO_TOPUP } from "@/config/media";
 
-export type PlansReason = "menu" | "voice" | "trial-end" | "photo";
+export type PlansReason = "menu" | "voice" | "trial-end" | "photo" | "allure";
 
 const TITLES: Record<PlansReason, { title: string; sub: string }> = {
   menu: { title: "멤버십", sub: "더 자주, 더 가까이 이야기해요" },
   voice: { title: "보이스톡을 계속하려면", sub: "구독하거나 캐시로 통화할 수 있어요" },
   "trial-end": { title: "무료 보이스톡 체험이 끝났어요", sub: "목소리로 계속 이야기하고 싶다면" },
   photo: { title: "실시간 사진", sub: "구독하면 매달 사진을 받을 수 있어요" },
+  allure: { title: "💋 매혹 모드", sub: "PRIME 이상 멤버십에서 켤 수 있어요" },
 };
 
 /**
@@ -89,7 +90,7 @@ export default function PlansModal({
                 <ul className="mt-2 grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] text-white/85">
                   <li>📞 보이스톡 {p.voiceMinutes}분</li>
                   <li>📸 실시간 사진 {p.photos}장</li>
-                  <li className={p.premiumReactions ? "" : "text-white/35 line-through"}>💋 특별 리액션 영상</li>
+                  <li className={p.premiumReactions ? "" : "text-white/35 line-through"}>💋 특별 리액션 · 매혹 모드</li>
                   <li className={p.bonusCash ? "" : "text-white/35"}>💎 보너스 {p.bonusCash}</li>
                 </ul>
                 <button

@@ -107,6 +107,7 @@ export function toPublic(p: PersonaFile): Persona {
     greeting: p.greeting,
     accent: p.accent,
     ...(p.touchLines ? { touchLines: p.touchLines } : {}),
+    ...(p.allure ? { allure: true } : {}),
     album: albumOf(p),
     assets: {
       poster: `${base}/${p.image.portrait}`,
@@ -115,6 +116,9 @@ export function toPublic(p: PersonaFile): Persona {
       ...(publicFileExists(`${base}/stage.jpg`) ? { stagePoster: `${base}/stage.jpg` } : {}),
       stagePosition: p.image.stagePosition,
       premiumClips: scanClips(`${base}/clips/premium`),
+      allureClips: p.allure
+        ? Object.fromEntries(Object.entries(scanClips(`${base}/clips/allure`)).map(([k, v]) => [`allure_${k}`, v]))
+        : {},
       ...(p.image.fallbackPoster ? { fallbackPoster: p.image.fallbackPoster } : {}),
     },
   };

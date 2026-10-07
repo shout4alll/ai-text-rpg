@@ -22,6 +22,8 @@ import {
   type MembershipState,
 } from "@/lib/membership";
 import MediaPurchaseModal from "@/components/MediaPurchaseModal";
+import AllureGateModal from "@/components/AllureGateModal";
+import { ALLURE_STORAGE } from "@/config/allure";
 import { DEMO_TOPUP, MEDIA_COST } from "@/config/media";
 import { getCash, refundCash, setCash, spendCash } from "@/lib/wallet";
 import {
@@ -240,6 +242,18 @@ export default function ChatApp({
   useEffect(() => refreshMembership(), [refreshMembership]);
   const [plansModal, setPlansModal] = useState<PlansReason | null>(null);
 
+  // 💋 매혹 모드 (인물별로 켜고 끔, 기기에 기억) — config/allure.ts
+  const [allureIds, setAllureIds] = useState<string[]>([]);
+  const [allureGate, setAllureGate] = useState(false);
+  useEffect(() => {
+    try {
+      const v = JSON.parse(readStorage(ALLURE_STORAGE.on) ?? "[]") as unknown;
+      if (Array.isArray(v)) setAllureIds(v.filter((x): x is string => typeof x === "string"));
+    } catch {
+      /* 손상된 값 무시 */
+    }
+  }, []);
+
   // 열 때 자동으로 할 일 (못 받은 답장 이어받기 / 오랜만에 돌아옴)
   const [autoAction, setAutoAction] = useState<null | "unanswered" | "return">(null);
 
@@ -282,6 +296,8 @@ export default function ChatApp({
 
   /** 유료 리액션 영상: 서버 설정(PREMIUM_ACCESS=open) 또는 PRIME 이상 구독 */
   const premiumUnlocked = premiumReactions || (membership ? PLANS[membership.plan].premiumReactions : false);
+  /** 💋 매혹 모드: 인물이 지원 + 멤버십(PRIME 이상) + 켜 둠 */
+  const allureActive = !!persona?.allure && premiumUnlocked && allureIds.includes(persona.id);
 
   /** 연출 판단에 필요한 정보 */
   const directorCtx = useCallback(
@@ -295,9 +311,10 @@ export default function ChatApp({
         premium: premiumUnlocked,
         hasClip: (n: string) => n in free || (premiumUnlocked && n in paid),
         hasPremiumClip: (n: string) => n in paid,
+        allureClips: allureActive ? Object.keys(persona?.assets.allureClips ?? {}) : [],
       } as const;
     },
-    [persona, premiumUnlocked]
+    [persona, premiumUnlocked, allureActive]
   );
 
   /** 연출 결과를 화면에 반영 */
@@ -525,6 +542,7 @@ export default function ChatApp({
           timeZone: userTimeZone(),
           affection,
           sentAlbumIds: msgs.flatMap((m) => (m.media?.albumId ? [m.media.albumId] : [])),
+          allure: allureActive,
         }),
       }).then(async (res) => {
         if (!res.ok) {
@@ -611,7 +629,7 @@ export default function ChatApp({
         }
       }
     },
-    [personaId, affection, playReaction, persistToRoom]
+    [personaId, affection, playReaction, persistToRoom, allureActive]
   );
 
   // 대화방을 연 직후 자동 동작 (한 번만)
@@ -715,6 +733,44 @@ export default function ChatApp({
       writeStorage("ai-rpg.sound", on ? "0" : "1");
       return !on;
     });
+  };
+
+  /** 💋 매혹 모드 켜기/끄기 */
+  const setAllureFor = (id: PersonaId, on: boolean) => {
+    setAllureIds((prev) => {
+      const next = on ? Array.from(new Set([...prev, id])) : prev.filter((x) => x !== id);
+      writeStorage(ALLURE_STORAGE.on, JSON.stringify(next));
+      return next;
+    });
+  };
+  const enableAllure = () => {
+    if (!persona) return;
+    setAllureFor(persona.id, true);
+    setAllureGate(false);
+    addNotice(`💋 매혹 모드를 켰어요 · ${persona.name} 님이 조금 더 대담해져요`);
+    // 켠 순간 매혹 영상 하나로 분위기 전환
+    const clips = Object.keys(persona.assets.allureClips ?? {});
+    const d = director.allureIntro({ ...directorCtx(affectionRef.current), allureClips: clips });
+    if (d) applyDecision(d);
+    else spawnParticles(["💋", "✨", "💗"]);
+  };
+  const toggleAllure = () => {
+    if (!persona?.allure) return;
+    if (allureIds.includes(persona.id) && premiumUnlocked) {
+      setAllureFor(persona.id, false);
+      addNotice("매혹 모드를 껐어요");
+      return;
+    }
+    if (!premiumUnlocked) {
+      refreshMembership();
+      setPlansModal("allure");
+      return;
+    }
+    if (readStorage(ALLURE_STORAGE.adult) !== "1") {
+      setAllureGate(true);
+      return;
+    }
+    enableAllure();
   };
 
   const handleSelect = (id: PersonaId) => {
@@ -858,8 +914,16 @@ export default function ChatApp({
           reactionKey={reactionKey}
           speaking={voiceSpeaking}
           premium={premiumUnlocked}
+          allure={allureActive}
           sound={soundOn && !voiceOpen}
         />
+        {/* 💋 매혹 모드 분위기 (가장자리 붉은 빛) */}
+        {allureActive && (
+          <div
+            className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_55%,rgba(190,24,93,0.22)_100%)]"
+            data-allure-vignette
+          />
+        )}
         {/* 리액션 영상 소리 켜기/끄기 */}
         <button
           type="button"
@@ -871,6 +935,22 @@ export default function ChatApp({
         >
           {soundOn ? "🔊" : "🔇"}
         </button>
+        {/* 💋 매혹 모드 켜기/끄기 (지원 인물만) */}
+        {persona.allure && !voiceOpen && (
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={toggleAllure}
+            aria-label={allureActive ? "매혹 모드 끄기" : "매혹 모드 켜기"}
+            aria-pressed={allureActive}
+            data-allure-toggle={allureActive ? "on" : "off"}
+            className={`absolute right-3 top-[calc(max(0.75rem,env(safe-area-inset-top))+7rem)] z-10 flex h-9 w-9 items-center justify-center rounded-full text-base ring-1 backdrop-blur transition wide:top-14 ${
+              allureActive ? "bg-rose-500/80 text-white ring-rose-200/70 shadow-[0_0_14px_rgba(244,63,94,.7)]" : "bg-black/35 text-white/90 ring-white/20 grayscale-[60%]"
+            }`}
+          >
+            💋
+          </button>
+        )}
         {/* 등 돌린(삐진) 상태 안내 — 말로 풀어 주면 다시 돌아본다 */}
         {sulking && (
           <div className="pointer-events-none absolute inset-x-0 top-[38%] flex justify-center" data-sulking>
@@ -1009,6 +1089,7 @@ export default function ChatApp({
             recent={toTurns(messages)
               .filter((t) => t.kind === "text")
               .map((t) => ({ role: t.role, content: t.content }))}
+            allure={allureActive}
             onEnd={endVoice}
             onSpeakingChange={setVoiceSpeaking}
             onReaction={playVoiceReaction}
@@ -1038,6 +1119,17 @@ export default function ChatApp({
             setCash(getCash() + DEMO_TOPUP);
             setCashState(getCash());
           }}
+        />
+      )}
+
+      {allureGate && (
+        <AllureGateModal
+          persona={persona}
+          onConfirm={() => {
+            writeStorage(ALLURE_STORAGE.adult, "1");
+            enableAllure();
+          }}
+          onCancel={() => setAllureGate(false)}
         />
       )}
 

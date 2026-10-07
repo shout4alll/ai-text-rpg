@@ -33,6 +33,8 @@ interface VideoAvatarProps {
   speaking?: boolean;
   /** 유료 리액션 영상(clips/premium) 사용 가능 */
   premium?: boolean;
+  /** 💋 매혹 모드 영상(clips/allure) 사용 */
+  allure?: boolean;
   /** 리액션 영상의 소리(목소리·웃음소리) 켜기. idle 루프는 항상 무음 */
   sound?: boolean;
 }
@@ -72,11 +74,15 @@ const LOOPS = new Set(["idle", "talk"]);
 /** 영상 전환 페이드 (ms) — 클립마다 첫 장면이 조금씩 달라도 자연스럽게 이어지도록 */
 const FADE_MS = 280;
 
-export default function VideoAvatar({ persona, cue, reactionKey, speaking = false, premium = false, sound = true }: VideoAvatarProps) {
+export default function VideoAvatar({ persona, cue, reactionKey, speaking = false, premium = false, allure = false, sound = true }: VideoAvatarProps) {
   // { 이름: URL } — 실제로 있는 영상만 (유료 영상은 이용권이 있을 때만 섞는다)
   const clips = useMemo(
-    () => ({ ...persona.assets.clips, ...(premium ? persona.assets.premiumClips : {}) }),
-    [persona, premium]
+    () => ({
+      ...persona.assets.clips,
+      ...(premium ? persona.assets.premiumClips : {}),
+      ...(allure ? persona.assets.allureClips ?? {} : {}),
+    }),
+    [persona, premium, allure]
   );
   const names = Object.keys(clips);
   const position = persona.assets.stagePoster ? persona.assets.stagePosition : persona.assets.objectPosition;
