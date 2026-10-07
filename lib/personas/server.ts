@@ -115,7 +115,15 @@ export function toPublic(p: PersonaFile): Persona {
     greeting: p.greeting,
     accent: p.accent,
     ...(p.touchLines ? { touchLines: p.touchLines } : {}),
-    ...(p.allure ? { allure: true } : {}),
+    ...(p.allure
+      ? {
+          allure: true,
+          allureUi: {
+            emoji: p.allure.emoji ?? (p.gender === "male" ? "🌙" : "💋"),
+            label: p.allure.label ?? (p.gender === "male" ? "설렘 모드" : "매혹 모드"),
+          },
+        }
+      : {}),
     voiceName: p.voice?.name ?? (p.gender === "male" ? "Puck" : "Leda"),
     traits: {
       gift: p.traits?.gift ?? { name: "꽃다발", emoji: "💐" },

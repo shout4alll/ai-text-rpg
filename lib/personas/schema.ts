@@ -105,6 +105,10 @@ export const personaFileSchema = z.object({
     .object({
       /** 이 인물이 매혹 모드에서 어떻게 달라지는지 (말투·분위기). 노골적 내용 금지 */
       prompt: z.string().min(1),
+      /** 버튼·안내에 보일 이름 (없으면 여성 "매혹 모드", 남성 "설렘 모드") */
+      label: z.string().min(1).max(12).optional(),
+      /** 버튼 아이콘 (없으면 여성 💋, 남성 🌙) */
+      emoji: z.string().min(1).max(4).optional(),
       /** 보이스톡에서 목소리 톤 (예: "낮고 나른하게, 천천히") */
       voiceStyle: z.string().min(1).optional(),
     })

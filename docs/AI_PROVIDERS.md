@@ -23,7 +23,12 @@
 
 - **모델 액세스:** AWS 콘솔 → Bedrock → Model access에서 쓰려는 모델을 계정에 활성화해야 합니다.
 - **Claude 3.5 Sonnet v1 (`anthropic.claude-3-5-sonnet-20240620-v1:0`):** 현재 AWS 리전별 가용 모델 목록에서 빠져 있어 단종된 것으로 보입니다. 그래서 기본값을 Nova Lite로 두었습니다.
-- **최신 Claude 모델:** `us.anthropic...`처럼 접두어가 붙은 **교차 리전 추론 프로파일 ID**로 호출해야 하는 경우가 많습니다. `config/ai.ts`의 주석 예시를 참고하세요.
+- **최신 Claude 모델:** 접두어가 붙은 **교차 리전 추론 프로파일 ID**로 호출합니다. 기본값은 `global.` (어느 리전에서나 호출 가능). `us.` 는 미국 리전, `apac.` 는 아시아 리전에서만 되며, 리전과 맞지 않으면 `config/ai.ts` 가 자동으로 `global.` 로 바꿉니다.
+- **이 계정에서 쓸 수 있는 주요 모델 (서울 리전 목록, 2026-10):**
+  - 메인 후보: `global.anthropic.claude-sonnet-5` (기본), `global.anthropic.claude-sonnet-5-5`, `global.anthropic.claude-opus-5`, `global.anthropic.claude-sonnet-4-6`
+  - 가벼운 대화: `global.anthropic.claude-haiku-4-5-20251001-v1:0` (기본 · Anthropic 사용 사례 양식 제출 필요), `global.amazon.nova-2-lite-v1:0`, `apac.amazon.nova-micro-v1:0`
+  - 기억 정리: `global.amazon.nova-2-lite-v1:0` (기본)
+  - 그 밖에 OpenAI GPT·xAI Grok·Kimi·GLM 도 목록에 있지만 이 앱에서는 테스트하지 않았습니다.
 - **리전:** Vercel은 `AWS_REGION`을 함수가 실행되는 리전 값으로 자동 주입할 수 있습니다. 그래서 `BEDROCK_REGION`을 먼저 읽습니다. Vercel에서는 `BEDROCK_REGION=us-east-1`을 명시하세요.
 - **인증:** 기본은 Bedrock API 키(`AWS_BEDROCK_API_KEY`)입니다. IAM 액세스 키를 쓰려면 `BEDROCK_USE_IAM=true`를 함께 설정해야 합니다. 플랫폼이 자동으로 넣은 AWS 값으로 잘못 서명하는 것을 막기 위해서입니다.
 - **JSON 응답 강제:** SDK가 Bedrock에서는 스키마를 "강제 도구 호출(json 도구)"로 보내 응답 형식을 맞춥니다. 모델이 도구 호출을 지원해야 합니다(Nova, Claude 지원).

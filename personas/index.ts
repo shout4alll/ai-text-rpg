@@ -20,6 +20,7 @@ import character_h from "./character_h.json";
 import character_i from "./character_i.json";
 import character_j from "./character_j.json";
 import character_k from "./character_k.json";
+import character_l from "./character_l.json";
 import shared from "./_shared.json";
 
 export const PERSONA_FILES: { file: string; data: unknown }[] = [
@@ -34,6 +35,7 @@ export const PERSONA_FILES: { file: string; data: unknown }[] = [
   { file: "character_i.json", data: character_i },
   { file: "character_j.json", data: character_j },
   { file: "character_k.json", data: character_k },
+  { file: "character_l.json", data: character_l },
 ];
 
 export const SHARED_FILE: unknown = shared;

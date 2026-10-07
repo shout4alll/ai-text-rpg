@@ -53,7 +53,8 @@ interface ProviderEntry {
  *  - 답장 형식(JSON)은 도구 호출 방식으로 받는다 (Sonnet 5 는 Bedrock 네이티브 structured output 미지원).
  */
 function bedrockClaudeOptions(modelId: string): ProviderOptions | undefined {
-  if (!/anthropic\.claude/.test(modelId)) return undefined;
+  // Claude 가 아닌 모델(Nova 등)도 구조화 답장은 도구 방식으로 (가장 널리 지원)
+  if (!/anthropic\.claude/.test(modelId)) return { bedrock: { structuredOutputMode: "jsonTool" } };
   const cannotDisableThinking = /claude-(sonnet|opus)-5-5|claude-fable-5-1/.test(modelId);
   return {
     bedrock: cannotDisableThinking

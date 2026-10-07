@@ -251,9 +251,9 @@ AI가 주는 기준은 이렇습니다. 관심·배려·다정함은 +1~+3, 평�
 
 | 역할 | 기본 모델 | 바꾸는 환경변수 | 언제 |
 | --- | --- | --- | --- |
-| 메인 | Claude Sonnet 5 `us.anthropic.claude-sonnet-5` | `AI_MODEL` | 감정·고민·질문·긴 말, 사진 보기, 선물, 삐짐, 재접속, 대화 초반 |
-| 가벼움 | Claude Haiku 4.5 `us.anthropic.claude-haiku-4-5-20251001-v1:0` | `AI_MODEL_LIGHT` | 인사·맞장구·"ㅋㅋ"·짧은 말, 마음 리액션 |
-| 보조 | Amazon Nova 2 Lite `us.amazon.nova-2-lite-v1:0` | `AI_CHEAP_MODEL` | 기억 정리 |
+| 메인 | Claude Sonnet 5 `global.anthropic.claude-sonnet-5` | `AI_MODEL` | 감정·고민·질문·긴 말, 사진 보기, 선물, 삐짐, 재접속, 대화 초반 |
+| 가벼움 | Claude Haiku 4.5 `global.anthropic.claude-haiku-4-5-20251001-v1:0` | `AI_MODEL_LIGHT` | 인사·맞장구·"ㅋㅋ"·짧은 말, 마음 리액션 |
+| 보조 | Amazon Nova 2 Lite `global.amazon.nova-2-lite-v1:0` | `AI_CHEAP_MODEL` | 기억 정리 |
 
 라우팅은 추가 AI 호출 없이 규칙으로 정합니다. 가벼운 모델이 실패하면 자동으로 메인 모델로 다시 보내요. `AI_ROUTING=off`이면 항상 메인 모델이에요.
 

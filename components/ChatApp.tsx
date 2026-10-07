@@ -1118,18 +1118,20 @@ export default function ChatApp({
     if (!persona) return;
     setAllureFor(persona.id, true);
     setAllureGate(false);
-    addNotice(`💋 매혹 모드를 켰어요 · ${persona.name} 님이 조금 더 대담해져요`);
+    const ui = persona.allureUi ?? { emoji: "💋", label: "매혹 모드" };
+    const male = persona.profile.gender === "male";
+    addNotice(`${ui.emoji} ${ui.label}를 켰어요 · ${persona.name} 님이 ${male ? "한 걸음 더 다가와요" : "조금 더 대담해져요"}`);
     // 켠 순간 매혹 영상 하나로 분위기 전환
     const clips = Object.keys(persona.assets.allureClips ?? {});
     const d = director.allureIntro({ ...directorCtx(affectionRef.current), allureClips: clips });
     if (d) applyDecision(d);
-    else spawnParticles(["💋", "✨", "💗"]);
+    else spawnParticles(male ? ["🌙", "✨", "💗"] : ["💋", "✨", "💗"]);
   };
   const toggleAllure = () => {
     if (!persona?.allure) return;
     if (allureIds.includes(persona.id) && premiumUnlocked) {
       setAllureFor(persona.id, false);
-      addNotice("매혹 모드를 껐어요");
+      addNotice(`${persona.allureUi?.label ?? "매혹 모드"}를 껐어요`);
       return;
     }
     if (!premiumUnlocked) {
@@ -1318,14 +1320,14 @@ export default function ChatApp({
             type="button"
             onPointerDown={(e) => e.stopPropagation()}
             onClick={toggleAllure}
-            aria-label={allureActive ? "매혹 모드 끄기" : "매혹 모드 켜기"}
+            aria-label={`${persona.allureUi?.label ?? "매혹 모드"} ${allureActive ? "끄기" : "켜기"}`}
             aria-pressed={allureActive}
             data-allure-toggle={allureActive ? "on" : "off"}
             className={`absolute right-3 top-[calc(max(0.75rem,env(safe-area-inset-top))+7rem)] z-10 flex h-9 w-9 items-center justify-center rounded-full text-base ring-1 backdrop-blur transition wide:top-14 ${
               allureActive ? "bg-rose-500/80 text-white ring-rose-200/70 shadow-[0_0_14px_rgba(244,63,94,.7)]" : "bg-black/35 text-white/90 ring-white/20 grayscale-[60%]"
             }`}
           >
-            💋
+            {persona.allureUi?.emoji ?? "💋"}
           </button>
         )}
         {/* 등 돌린(삐진) 상태 안내 — 말로 풀어 주면 다시 돌아본다 */}

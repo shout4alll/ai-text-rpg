@@ -10,6 +10,7 @@ import "server-only";
  *  수치·단어 목록: config/balance.json 의 routing · replyPool (docs/BALANCE.md §7-4)
  */
 import { BALANCE } from "@/config/balance";
+import { resolveModel, type ModelTier } from "@/config/ai";
 
 export type Tier = "chat" | "light";
 
@@ -96,4 +97,64 @@ export function addToPool(key: string, r: Omit<PooledReply, "at">) {
   list.push({ ...r, affectionDelta: Math.max(-1, Math.min(1, r.affectionDelta)), at: Date.now() });
   while (list.length > P.maxVariants) list.shift();
   pool.set(key, list);
+}
+
+/* ── 모델 사용 불가 감지 + 대체 모델 (권한·신청서 미제출 등) ─────────────────── */
+
+/** 사용할 수 없다고 확인된 모델 → 다시 시도할 시각 (서버 메모리) */
+const downUntil = new Map<string, number>();
+const DOWN_MS = 15 * 60_000;
+
+/** 계정 권한·모델 접근 문제(재시도해도 안 됨)인지 */
+export function isAccessError(err: unknown): boolean {
+  const e = err as { statusCode?: number; message?: string; responseBody?: string } | null;
+  const text = `${e?.message ?? ""} ${e?.responseBody ?? ""}`;
+  return (
+    e?.statusCode === 403 ||
+    e?.statusCode === 404 ||
+    /use case details|access ?denied|not authorized|don't have access|ResourceNotFound|model identifier is invalid|not available/i.test(text)
+  );
+}
+
+const shortMsg = (err: unknown) => {
+  const e = err as { statusCode?: number; message?: string } | null;
+  return `${e?.statusCode ?? ""} ${(e?.message ?? String(err)).slice(0, 160)}`.trim();
+};
+
+/**
+ * tiers 순서대로 모델을 시도한다. 권한 문제로 실패한 모델은 15분 동안 건너뛴다
+ * (매 턴 실패 호출로 시간·비용을 버리지 않도록). 마지막 모델의 오류는 그대로 던진다.
+ */
+export async function runWithFallback<T>(
+  tag: string,
+  tiers: ModelTier[],
+  run: (r: ReturnType<typeof resolveModel>) => Promise<T>
+): Promise<{ result: T; resolved: ReturnType<typeof resolveModel>; fellBack: boolean }> {
+  const seen = new Set<string>();
+  const candidates = tiers
+    .map((t) => resolveModel(t))
+    .filter((r) => (seen.has(r.modelId) ? false : (seen.add(r.modelId), true)));
+  const now = Date.now();
+  const usable = candidates.filter((r) => (downUntil.get(r.modelId) ?? 0) <= now);
+  const list = usable.length ? usable : candidates.slice(-1);
+  let lastErr: unknown;
+  for (let i = 0; i < list.length; i++) {
+    const r = list[i];
+    try {
+      return { result: await run(r), resolved: r, fellBack: r !== candidates[0] };
+    } catch (err) {
+      lastErr = err;
+      if (i === list.length - 1) throw err;
+      if (isAccessError(err)) {
+        downUntil.set(r.modelId, Date.now() + DOWN_MS);
+        console.warn(
+          `[${tag}] ⚠️ ${r.modelId} 사용 불가 → 15분간 건너뜀 (${shortMsg(err)}). ` +
+            `Bedrock 콘솔에서 모델 접근/Anthropic 사용 사례(use case) 양식을 확인하거나 .env.local 의 AI_MODEL_LIGHT 를 바꾸세요.`
+        );
+      } else {
+        console.warn(`[${tag}] ${r.modelId} 실패 → ${list[i + 1].modelId} (${shortMsg(err)})`);
+      }
+    }
+  }
+  throw lastErr;
 }

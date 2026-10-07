@@ -12,8 +12,8 @@ import {
 import type { AlbumItem, MediaDirective } from "@/config/media";
 import { allureInstructions } from "@/config/allure";
 import type { PersonaFile } from "@/lib/personas/schema";
-import { resolveModel, type ModelTier } from "@/config/ai";
-import { addToPool, poolCategory, poolKey, routeTier, takeFromPool } from "@/lib/modelRouter";
+import { resolveModel } from "@/config/ai";
+import { addToPool, poolCategory, poolKey, routeTier, runWithFallback, takeFromPool } from "@/lib/modelRouter";
 import { BALANCE } from "@/config/balance";
 import {
   AFFECTION_START,
@@ -343,7 +343,7 @@ ${traitsSection(persona)}
 - 괄호로 행동을 묘사하지 마라. 'ㅋㅋ', 'ㅎㅎ'는 네 말투에 맞게만 쓰고, 이모지는 쓰지 않는다(감정은 reaction으로).
 - [마음 리액션], [알림], (N시간 뒤), 🎙 같은 표시는 시스템이 붙인 상황 정보다. 답장에 그대로 따라 쓰지 마라.
 ${SHARED_RULES}
-${allure && persona.allure ? `\n${allureInstructions(persona.name, persona.allure.prompt)}\n` : ""}
+${allure && persona.allure ? `\n${allureInstructions(persona.name, persona.allure.prompt, persona.gender)}\n` : ""}
 [사진·영상]
 - 너는 메신저로 사진과 영상을 보낼 수 있다. 단, 유저가 이번 메시지에서 "사진/셀카/영상/모습을 보여 달라"고 직접 요청했을 때만 보낸다. 그 밖에는 항상 media_action=none 이다. 네가 먼저 사진을 보내거나 "사진 보내 줄까요?"라고 권하지 마라. 인사·리액션·칭찬·"보고 싶다"는 말에는 사진을 보내지 않는다.
 - 유저가 그냥 "사진 보내 줘", "얼굴 보고 싶어", "영상 보여 줘"처럼 요청하면: "찍어 둔 게 있다"는 식으로 자연스럽게 말하고 앨범에서 어울리는 것 하나를 보낸다(media_action=album, album_id). 영상을 원하면 video, 사진이면 photo 를 골라라.
@@ -505,7 +505,6 @@ export async function POST(request: Request) {
 
   let resolved: ReturnType<typeof resolveModel> | null = null;
   try {
-    resolved = resolveModel(route.tier);
     // 💰 고정 프롬프트(캐시 대상) + 이번 턴 상황(마지막 유저 메시지 앞)
     const turnContext = buildTurnContext({
       persona,
@@ -544,16 +543,10 @@ export async function POST(request: Request) {
       maxRetries: 1,
       ...(r.providerOptions ? { providerOptions: r.providerOptions as never } : {}),
     });
-    let result;
-    try {
-      result = await generate(resolved);
-    } catch (err) {
-      // 가벼운 모델이 실패하면 메인 모델로 한 번 더
-      if (route.tier !== "light") throw err;
-      console.warn(`[/api/chat] light model failed (${resolved.modelId}) → main`, err);
-      resolved = resolveModel("chat" satisfies ModelTier);
-      result = await generate(resolved);
-    }
+    // 가벼운 턴: lightModel → cheapModel → 메인 순서로 (권한 없는 모델은 자동으로 건너뜀)
+    const ran = await runWithFallback("/api/chat", route.tier === "light" ? ["light", "cheap", "chat"] : ["chat"], generate);
+    resolved = ran.resolved;
+    const result = ran.result;
     const { output, usage } = result;
 
     if (process.env.NODE_ENV !== "production" || process.env.LOG_AI_USAGE === "true") {

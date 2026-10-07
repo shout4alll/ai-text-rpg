@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { generateText, Output } from "ai";
 import { z } from "zod";
 import { getPersonaFile, isPersonaId } from "@/lib/personas/server";
-import { resolveModel } from "@/config/ai";
+import { runWithFallback } from "@/lib/modelRouter";
 import { BALANCE } from "@/config/balance";
 
 /**
@@ -45,8 +45,7 @@ export async function POST(request: Request) {
     .join("\n");
 
   try {
-    const resolved = resolveModel("cheap");
-    const { output } = await generateText({
+    const { result: { output }, resolved } = await runWithFallback("/api/memory", ["cheap", "light", "chat"], (resolved) => generateText({
       model: resolved.model,
       instructions: `너는 "${persona.name}"의 기억을 정리하는 도우미다. ${persona.name}가 유저와 나눈 대화(톡과 보이스톡)를 읽고, 앞으로 대화할 때 기억하고 있어야 할 것을 한 줄씩 정리한다.
 - 기억할 것: 유저의 이름·호칭, 직업·일상, 좋아하는 것/싫어하는 것, 기분과 고민, 중요한 사건·일정, 약속, 둘만의 농담·별명, 관계의 변화(고백, 말 놓기 등).
@@ -66,7 +65,7 @@ export async function POST(request: Request) {
       maxOutputTokens: 1200,
       maxRetries: 1,
       ...(resolved.providerOptions ? { providerOptions: resolved.providerOptions as never } : {}),
-    });
+    }));
     const facts = output.facts.map((f) => f.trim().slice(0, 200)).filter(Boolean).slice(0, max);
     // 모델이 실패해 빈 목록을 주면 기존 기억을 지키기
     return NextResponse.json({ facts: facts.length ? facts : parsed.data.facts.slice(0, max), model: resolved.modelId });

@@ -54,6 +54,8 @@ export interface Persona {
   voiceName: string;
   /** 💋 매혹 모드를 켤 수 있는 인물 */
   allure?: boolean;
+  /** 매혹 모드 버튼·안내 이름 (남성 인물은 기본 "🌙 설렘 모드") */
+  allureUi?: { emoji: string; label: string };
   /** 인물 성향 중 화면에서 쓰는 것 (나머지는 서버 프롬프트에만) */
   traits: {
     gift: { name: string; emoji: string };

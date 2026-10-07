@@ -58,7 +58,7 @@ export function buildVoiceInstructions(opts: {
 ${allure?.voiceStyle ? `- 목소리와 말하는 방식: ${allure.voiceStyle}` : persona.voice?.style ? `- 목소리와 말하는 방식: ${persona.voice.style}` : ""}
 ${persona.traits?.likes.length ? `- 좋아하는 것: ${persona.traits.likes.join(", ")}` : ""}
 ${persona.traits?.dislikes.length ? `- 싫어하는 것: ${persona.traits.dislikes.join(", ")}` : ""}
-${allure ? `\n${allureInstructions(persona.name, allure.prompt).replace(/\n- reaction 은[^\n]*$/, "")}\n` : ""}
+${allure ? `\n${allureInstructions(persona.name, allure.prompt, persona.gender).replace(/\n- reaction 은[^\n]*$/, "")}\n` : ""}
 [지금]
 ${myNow ? `- 너의 현지 시각(${persona.timezone}): ${myNow}` : "- 현재 시각 정보 없음"}
 - 현재 호감도 ${Math.round(affection)}/100 → "${stage.label}": ${stage.guide}

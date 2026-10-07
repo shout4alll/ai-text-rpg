@@ -51,6 +51,30 @@
 - 입술 깨물며 장난: `She playfully bites her lower lip, raises one eyebrow with a teasing smirk…`
 - 머리 넘기며 바라보기: `She slowly runs her fingers through her hair, glances away, then looks back at the camera over her shoulder with a knowing gaze…`
 
+## 🌙 남성 인물 — 설렘 모드 (여성향)
+
+남성 인물(`gender: "male"`)은 같은 기능이 **🌙 설렘 모드**라는 이름으로 보입니다. 대담함 대신 여성 유저가 설렐 포인트(다정한 리드, 보호하는 말, 사소한 것 기억하기, 진지한 눈 맞춤, 숨기지 못하는 질투)를 살리고, 소유욕·강압적인 말은 쓰지 않습니다. 공통 지침은 `config/allure.ts` 의 `maleAllureInstructions`.
+
+- 이름·아이콘 바꾸기: 인물 파일 `allure` 에 `"label": "설렘 모드"`, `"emoji": "🌙"` (없으면 성별 기본값)
+- 적용 인물: 박준호(e), 김도현(h), 다니엘(i), 루카스(j), 강민재(k), 서지훈(l)
+
+### 남성 영상 프롬프트 (Stardream 2.5 · 이미지 기반 · 4초 · 480p)
+
+기본 6종 (`clips/`): idle·shy·laugh·love·pout·turn_away, 특별 리액션 `clips/premium/kiss.mp4`
+
+- shy: `He looks at the camera, then glances down with a bashful smile, rubs the back of his neck, and looks back up shyly. Natural, gentle.`
+- laugh: `He laughs warmly with a genuine eye smile, head tilting back slightly, then smiles at the camera.`
+- love: `He gazes at the camera with soft, affectionate eyes and a slow warm smile, as if looking at someone he adores.`
+- pout: `He puts on a playful sulky face, looks away with a small frown, then sneaks a glance back at the camera.`
+- turn_away: `He turns his head and shoulders away from the camera with a quiet, hurt expression.`
+- kiss (premium): `He smiles softly, closes his eyes and blows a gentle kiss toward the camera, then smiles shyly.`
+
+설렘 3종 (`clips/allure/`, 옷을 입은 채 눈빛·표정만):
+
+- gaze: `He slowly leans toward the camera with a calm, confident and tender gaze, a slight smile at the corner of his lips.`
+- sleeve: `He casually rolls up his shirt sleeve while looking at the camera, then gives a relaxed, warm half-smile.`
+- hair: `He sweeps his hair back with one hand, looks down, then looks up at the camera with a soft, low laugh.`
+
 ## 서비스 전 할 일
 
 - **성인 인증:** 지금은 "만 19세 이상" 버튼(자기 확인)입니다. 실제 서비스에서는 본인인증(휴대폰·PASS 등)으로 바꾸고, 로그인 사용자 기준으로 서버에서 확인하세요.

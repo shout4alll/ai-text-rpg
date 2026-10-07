@@ -16,6 +16,8 @@ export default function AllureGateModal({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const ui = persona.allureUi ?? { emoji: "💋", label: "매혹 모드" };
+  const male = persona.profile.gender === "male";
   return (
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/65 p-4 backdrop-blur-sm sm:items-center"
@@ -35,16 +37,16 @@ export default function AllureGateModal({
           </div>
           <div className="min-w-0">
             <p id="allure-title" className="text-base font-bold">
-              💋 매혹 모드
+              {ui.emoji} {ui.label}
             </p>
-            <p className="text-xs text-white/75">{persona.name} 님이 조금 더 대담해져요</p>
+            <p className="text-xs text-white/75">{persona.name} 님이 {male ? "한 걸음 더 다가와요" : "조금 더 대담해져요"}</p>
           </div>
         </div>
 
         <div className="space-y-2.5 px-5 py-4 text-sm text-white/85">
           <ul className="space-y-1.5 text-[13px]">
-            <li>✨ 은근하고 여유로운 말투, 밀당하는 대화</li>
-            <li>🎬 그윽한 눈빛·미소 같은 전용 리액션 영상</li>
+            <li>{male ? "✨ 다정하게 리드하는 말투, 설레는 챙김" : "✨ 은근하고 여유로운 말투, 밀당하는 대화"}</li>
+            <li>{male ? "🎬 눈 맞춤·낮은 웃음 같은 전용 리액션 영상" : "🎬 그윽한 눈빛·미소 같은 전용 리액션 영상"}</li>
             <li>🔁 언제든 같은 버튼으로 끌 수 있어요</li>
           </ul>
           <p className="rounded-2xl bg-white/5 px-3.5 py-2.5 text-[11px] leading-relaxed text-white/55">
