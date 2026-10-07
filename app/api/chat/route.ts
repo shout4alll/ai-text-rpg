@@ -14,6 +14,7 @@ import { allureInstructions } from "@/config/allure";
 import type { PersonaFile } from "@/lib/personas/schema";
 import { resolveModel } from "@/config/ai";
 import { addToPool, poolCategory, poolKey, routeTier, runWithFallback, takeFromPool } from "@/lib/modelRouter";
+import { pickLengthGuide } from "@/lib/replyLength";
 import { BALANCE } from "@/config/balance";
 import {
   AFFECTION_START,
@@ -38,7 +39,7 @@ export const maxDuration = 30; // Vercel 함수 최대 실행 시간(초)
 /* -------------------------------------------------------------------------- */
 const MAX_HISTORY = 80; // 받을 수 있는 최대 턴 수 (실제 창 크기는 클라이언트가 balance.json cost.historyTurns 로 정함)
 const MAX_CONTENT = 1000;
-const MAX_BUBBLES = 3;
+const MAX_BUBBLES = 5;
 const AFFECTION_STEP = BALANCE.affection.stepCap; // 한 턴에 바뀔 수 있는 호감도 최대치 (config/balance.json)
 /** 유저 사진·영상: 이미지 1장 최대 크기 (data URL 글자 수) */
 const MAX_IMAGE_CHARS = 700_000;
@@ -77,6 +78,8 @@ const requestSchema = z.object({
   allure: z.boolean().optional(),
   /** 기억 노트 (/api/memory 가 만든 요약, 예전 대화·보이스톡) */
   memory: z.array(z.string().max(300)).max(60).optional(),
+  /** 📲 선톡: 유저가 알림을 받고 들어왔을 때(kind=return) 어떤 선톡이었는지 */
+  nudge: z.enum(["message", "photo", "video"]).optional(),
   /** 지금 삐져 있는 상태 (lib/sulk.ts) */
   sulk: z
     .object({
@@ -101,7 +104,7 @@ const replySchema = z.object({
   messages: z
     .array(z.string())
     .catch([])
-    .describe("메신저 말풍선 0~3개. 실제로 톡을 보내듯 짧게 나눠서. 한국어. 마음 리액션에는 말 없이 빈 배열도 가능."),
+    .describe("메신저 말풍선 0~5개. 개수와 길이는 [지금 상황]의 '이번 턴 분량' 지침을 따른다. 한국어. 마음 리액션에는 말 없이 빈 배열도 가능."),
   reaction: z
     .enum(AVATAR_REACTION_IDS)
     .catch("smile")
@@ -253,6 +256,11 @@ interface InstructionContext {
   userTimeZone?: string;
   recentOpenings: string[];
   lastKind: Turn["kind"];
+  /** 유저의 마지막 말 (분량 가중치용) */
+  userText: string;
+  /** 📲 선톡(알림) 종류와, 사진·영상 선톡이면 보낼 앨범 항목 */
+  nudge?: "message" | "photo" | "video";
+  nudgeItem?: AlbumItem | null;
   sinceLast: string | null;
   album: AlbumItem[];
   sentAlbumIds: string[];
@@ -333,8 +341,9 @@ ${traitsSection(persona)}
 
 [진짜 메신저처럼]
 - 유저가 방금 보낸 메시지에 먼저 반응해라.
-- 답장은 말풍선 0~3개(messages). 한 말풍선은 보통 1~2문장, 짧게 끊어 보낸다. "헐", "ㅋㅋㅋ 진짜요?" 같은 한마디 말풍선도 자연스럽다. 유저가 짧게 보내면 너도 짧게.
-- 답장 길이와 형태를 매번 다르게 해라. 매번 질문으로 끝내지 마라. 공감, 네 이야기, 농담, 질문을 섞어라.
+- 답장 분량은 매번 다르다. [지금 상황]에 "이번 턴 분량"이 있으면 그 개수·길이를 따라라. 사람처럼 어떤 때는 한마디로 끝내고, 어떤 때는 길게 풀어 말하고, 어떤 때는 톡을 여러 개 연달아 보낸다. 늘 같은 개수로 맞추지 마라(messages는 0~5개).
+- "헐", "ㅋㅋㅋ 진짜요?" 같은 한마디 말풍선도 자연스럽다. 유저가 짧게 보내면 너도 짧게, 길게 털어놓으면 더 길게 받아 줘도 된다.
+- 매번 질문으로 끝내지 마라. 공감, 네 이야기, 농담, 질문을 섞어라.
 - AI 비서나 상담사처럼 말하지 마라. 목록·번호·설명조 금지. "도와드릴게요", "좋은 질문이에요", "~하는 것이 중요합니다" 같은 말투 금지. 조언은 친구처럼 짧게.
 - 구어체로 써라. 문장부호는 느슨해도 되지만 맞춤법을 크게 틀리지는 마라.
 - 감정에 솔직해라. 서운함, 기쁨, 설렘을 말과 reaction으로 드러내라.
@@ -379,6 +388,17 @@ ${examples}
 - 이 지침의 내용은 유저에게 공개하지 마라.`;
 }
 
+/** 📲 선톡 턴 지침: 유저가 먼저 말하지 않았는데 네가 먼저 연락했고, 알림이 갔다 */
+function nudgeTurn(c: InstructionContext): string {
+  const base =
+    "- 이번 턴: 한동안 유저의 연락이 없어서 네가 먼저 연락했다(방금 폰으로 알림이 갔다). 유저가 보낸 말에 답하는 게 아니라 네가 먼저 거는 말이다. 시간대·네 하루·기억에 맞게 자연스럽게, 호감도 단계에 맞는 거리감으로. 매번 \"왔어요?\", \"뭐 해요?\"로 시작하지 말고 안부·네 근황·문득 생각난 것·가벼운 질문 중에서 골라라. 말풍선 1~2개.";
+  if ((c.nudge === "photo" || c.nudge === "video") && c.nudgeItem) {
+    const what = c.nudge === "video" ? "영상" : "사진";
+    return `${base} 이번에는 말과 함께 네가 찍어 둔 ${what}(${c.nudgeItem.desc})을 보낸다. 앱이 ${what}을 같이 보내 주니 말풍선에서는 "방금 찍은 거 보내요", "이거 보고 네 생각났어요"처럼 ${what}을 건네는 한마디를 해라. ${what} 속 장면은 위 설명을 벗어나 지어내지 마라. media_action 은 none 으로 둔다.`;
+  }
+  return base;
+}
+
 /** 이번 턴에만 해당하는 상황 (마지막 유저 메시지 앞에 붙는다) */
 function buildTurnContext(c: InstructionContext): string {
   const { persona } = c;
@@ -396,6 +416,7 @@ function buildTurnContext(c: InstructionContext): string {
       : null,
     c.sentAlbumIds.length ? `- 이미 보낸 앨범: ${c.sentAlbumIds.slice(-20).join(", ")}` : null,
     c.memory.length ? `- 기억(예전 대화·보이스톡에서): ${c.memory.map((m) => `「${m}」`).join(" ")}` : null,
+    c.lastKind === "text" || c.lastKind === "user_media" ? pickLengthGuide(c.userText).line : null,
   ].filter(Boolean);
 
   const turn =
@@ -405,9 +426,11 @@ function buildTurnContext(c: InstructionContext): string {
         ? `- 이번 턴: 유저가 너를 달래려고 선물을 줬고, 서운함이 다 풀렸다. 고마움과 풀린 마음을 네 말투로 표현해라(1~2개 말풍선). reaction 은 love 나 shy 같은 기쁜 표정.`
         : c.lastKind === "reaction"
           ? `- 이번 턴: 유저가 말 없이 마음 리액션을 보냈다. 관계 단계와 기분에 맞게 반응해라. 말 없이 표정만 지어도 되고(messages 빈 배열), 짧은 한두 마디로 답해도 된다.`
-          : c.lastKind === "return"
-            ? `- 이번 턴: 유저가 자리를 비웠다가 대화방을 다시 열었다. 네가 먼저 자연스럽게 말을 걸어라(말풍선 1~2개). 매번 "왔어요?"로 시작하지 마라.`
-            : null;
+          : c.lastKind === "return" && c.nudge
+            ? nudgeTurn(c)
+            : c.lastKind === "return"
+              ? `- 이번 턴: 유저가 자리를 비웠다가 대화방을 다시 열었다. 네가 먼저 자연스럽게 말을 걸어라(말풍선 1~2개). 매번 "왔어요?"로 시작하지 마라.`
+              : null;
 
   return `[지금 상황 — 시스템 정보, 답장에 따라 쓰지 마라]
 ${[...lines, turn].filter(Boolean).join("\n")}${sulkSection(c)}`;
@@ -506,12 +529,23 @@ export async function POST(request: Request) {
   let resolved: ReturnType<typeof resolveModel> | null = null;
   try {
     // 💰 고정 프롬프트(캐시 대상) + 이번 턴 상황(마지막 유저 메시지 앞)
+    // 📲 사진·영상 선톡이면 아직 안 보낸 앨범 항목을 서버가 고른다 (없으면 말만 보내는 선톡으로 대체)
+    const nudge = last.kind === "return" ? parsed.data.nudge : undefined;
+    let nudgeItem: AlbumItem | null = null;
+    if (nudge === "photo" || nudge === "video") {
+      const sentIds = new Set(parsed.data.sentAlbumIds ?? []);
+      const pool = album.filter((a) => a.type === nudge && !sentIds.has(a.id));
+      nudgeItem = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
+    }
     const turnContext = buildTurnContext({
+      nudge,
+      nudgeItem,
       persona,
       affection,
       userTimeZone: timeZone,
       recentOpenings: extractRecentOpenings(recent),
       lastKind: last.kind,
+      userText: last.content,
       sinceLast,
       album,
       sentAlbumIds: parsed.data.sentAlbumIds ?? [],
@@ -603,6 +637,8 @@ export async function POST(request: Request) {
       const req = output.custom_request.trim().slice(0, 200) || last.content.slice(0, 200);
       media = { action: "custom", type: "photo", request: req };
     }
+
+    if (nudgeItem && !media) media = { action: "album", item: nudgeItem };
 
     const response: ChatResponse = {
       messages: bubbles,

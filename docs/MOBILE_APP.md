@@ -24,7 +24,7 @@ API 키는 서버에만 있고 앱에는 들어가지 않는다.
 1. 개발 서버(`npm run dev`)를 끈다. (빌드하는 동안 app/api 를 잠시 옮겨 두기 때문)
 2. `npm run mobile:build` — 화면을 `out/` 에 만들고 `android/` 프로젝트에 복사.
 3. `npm run android:open` — Android Studio 가 열린다.
-4. 메뉴 **Build › Build App Bundle(s) / APK(s) › Build APK(s)**
+4. 메뉴(☰) **Build › Generate App Bundles or APKs › Generate APKs** (버전에 따라 `Build APK(s)`)
    - 결과: `android/app/build/outputs/apk/debug/app-debug.apk` → 폰에 설치해서 테스트.
 5. 스토어용은 **Build › Generate Signed App Bundle / APK** → AAB 로 서명해서 Play Console 에 올린다.
    - 서명 키(.jks)는 잃어버리면 앱을 업데이트할 수 없다. 회사 보관소에 백업.
@@ -37,6 +37,12 @@ API 키는 서버에만 있고 앱에는 들어가지 않는다.
 2. 처음 한 번: `npx cap add ios`
 3. `npm run mobile:build -- --ios` → `npm run ios:open` → Xcode 에서 회사 Apple 개발자 계정으로 서명 → Archive → App Store Connect 업로드
 
+## 🔔 선톡 알림 (앱 전용)
+
+인물이 먼저 말을 거는 알림. 자세한 동작·설정은 [`NOTIFICATIONS.md`](NOTIFICATIONS.md).
+알림 플러그인(`@capacitor/local-notifications`, `@capacitor/app`)을 쓰므로 **이 기능이 들어간 뒤 처음 빌드할 때는 `npm install` 을 먼저** 한 다음 `npm run mobile:build` 를 한다
+(`mobile:build` 가 `cap sync` 로 플러그인을 안드로이드 프로젝트에 등록해 준다).
+
 ## 앱 정보
 
 | 항목 | 값 | 위치 |
@@ -44,7 +50,7 @@ API 키는 서버에만 있고 앱에는 들어가지 않는다.
 | 앱 ID | `kr.co.takeone.charactalk` (스토어 등록 후 변경 불가) | `capacitor.config.ts` |
 | 앱 이름 | 캐릭톡 | `android/app/src/main/res/values/strings.xml` |
 | 버전 | versionCode 1 / 1.0 (스토어에 올릴 때마다 versionCode +1) | `android/app/build.gradle` |
-| 권한 | 인터넷, 마이크(보이스톡) | `android/app/src/main/AndroidManifest.xml` |
+| 권한 | 인터넷, 마이크(보이스톡), 알림(플러그인이 추가) | `android/app/src/main/AndroidManifest.xml` |
 | 앱 아이콘 | 기본 아이콘 (교체 예정) | `android/app/src/main/res/mipmap-*` |
 
 ## 보안 (단계별)

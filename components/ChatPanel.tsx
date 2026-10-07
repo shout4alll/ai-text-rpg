@@ -244,7 +244,13 @@ export default function ChatPanel({
 }: ChatPanelProps) {
   const S = stylesOf(variant);
   const kakao = variant === "kakao";
-  const bottomRef = useRef<HTMLDivElement>(null);
+  /** 대화 목록 스크롤 영역 — 맨 아래 고정은 여기서만 한다 (화면 전체가 같이 움직이지 않게) */
+  const scrollRef = useRef<HTMLDivElement>(null);
+  /** 지금 맨 아래 근처를 보고 있는가 (위로 올려 읽는 중이면 새 말풍선이 와도 끌어내리지 않는다) */
+  const stick = useRef(true);
+  /** 이미 처음 위치를 맞춘 방 */
+  const settledRoom = useRef<string | null>(null);
+  const settleTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const pickerRef = useRef<HTMLDivElement>(null);
   const [pickerFor, setPickerFor] = useState<number | null>(null);
@@ -271,9 +277,59 @@ export default function ChatPanel({
     return { bubbles, badges, lastAiId: lastAi?.id ?? null };
   }, [messages]);
 
+  /** 코드가 마지막으로 스크롤을 내린 시각 — 그 직후의 스크롤 이벤트는 "유저가 위로 올려 읽는 중"으로 세지 않는다 */
+  const autoAt = useRef(0);
+  const toBottom = (smooth: boolean) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    autoAt.current = performance.now();
+    stick.current = true;
+    el.scrollTo({ top: el.scrollHeight, behavior: smooth ? "smooth" : "instant" });
+  };
+
+  // 위로 올려 읽는 중인지 기억
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, typing]);
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      // 점프 직후 사진·글꼴이 늦게 로드되어 높이가 늘면 거리가 벌어져 보이므로, 직후 0.4초는 판단하지 않는다
+      if (performance.now() - autoAt.current < 400) return;
+      stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 140;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // 방에 들어오면 마지막 대화가 보이도록 즉시 맨 아래로. 사진·영상이 늦게 뜨며 높이가 바뀌어도 잠시 동안 다시 맞춘다.
+  // 그 뒤 새 말풍선은 맨 아래를 보고 있을 때만 부드럽게 따라 내려간다.
+  useEffect(() => {
+    if (messages.length === 0) return;
+    if (settledRoom.current !== persona.id) {
+      settledRoom.current = persona.id;
+      stick.current = true;
+      settleTimers.current.forEach(clearTimeout);
+      toBottom(false);
+      settleTimers.current = [60, 250, 700, 1500].map((ms) => setTimeout(() => stick.current && toBottom(false), ms));
+      return;
+    }
+    const mine = messages[messages.length - 1]?.role === "user";
+    if (stick.current || mine) toBottom(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [persona.id, messages, typing]);
+
+  // 키보드가 올라오거나 화면 크기가 바뀌어도 맨 아래를 보고 있었다면 그대로 유지
+  useEffect(() => {
+    const vv = window.visualViewport;
+    const onResize = () => stick.current && toBottom(false);
+    window.addEventListener("resize", onResize);
+    vv?.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      vv?.removeEventListener("resize", onResize);
+      settleTimers.current.forEach(clearTimeout);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 마음 선택창이 열리면 보이도록 스크롤
   useEffect(() => {
@@ -289,7 +345,13 @@ export default function ChatPanel({
   return (
     <div className="flex h-full flex-col">
       <div className="flex min-h-0 flex-1 flex-col justify-end">
-        <div className={`pointer-events-auto ${S.scroll}`} data-chat-variant={variant}>
+        <div
+          ref={scrollRef}
+          className={`pointer-events-auto ${S.scroll}`}
+          data-chat-variant={variant}
+          onLoadCapture={() => stick.current && toBottom(false)}
+          onLoadedMetadataCapture={() => stick.current && toBottom(false)}
+        >
           {bubbles.map((m, i) => {
             const prev = bubbles[i - 1];
             const next = bubbles[i + 1];
@@ -461,7 +523,6 @@ export default function ChatPanel({
               </div>
             </div>
           )}
-          <div ref={bottomRef} />
         </div>
       </div>
 

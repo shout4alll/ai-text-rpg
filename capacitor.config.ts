@@ -20,6 +20,13 @@ const config: CapacitorConfig = {
   server: {
     androidScheme: "https",
   },
+  plugins: {
+    // 🔔 선톡 알림 (lib/push/nudge.ts) — 알림 표시줄 아이콘은 android/app/src/main/res/drawable/ic_stat_chat.xml
+    LocalNotifications: {
+      smallIcon: "ic_stat_chat",
+      iconColor: "#E86A92",
+    },
+  },
 };
 
 export default config;

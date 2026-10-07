@@ -9,10 +9,14 @@ import PersonaPortrait from "@/components/PersonaPortrait";
 import PersonaSelector from "@/components/PersonaSelector";
 import ProfileSheet, { type ProfileStats } from "@/components/ProfileSheet";
 import ThemePicker from "@/components/ThemePicker";
+import NotifySettings from "@/components/NotifySettings";
+import { consumeNudge, dropNudges, isNativeApp, peekNudge, requestNotifyPermission, startNudgeLifecycle, type Nudge, type NudgeCandidate } from "@/lib/push/nudge";
+import { loadNotifySettings } from "@/lib/push/settings";
+import type { NudgeKind } from "@/config/notifications";
 import { DEFAULT_THEME, isThemeId, THEME_KEY, VIEW_KEY, type ThemeId } from "@/config/themes";
 import {
   IconBack, IconBackup, IconBrain, IconBubble, IconCrown, IconMore, IconPhone, IconScreen, IconSound, IconSparkle, IconTrash, IconUser,
-} from "@/components/icons";
+ IconBell, } from "@/components/icons";
 import VoiceCall, { type VoiceBilling, type VoiceCallHandle, type VoiceCallResult } from "@/components/VoiceCall";
 import PlansModal, { type PlansReason } from "@/components/PlansModal";
 import { CASH_PRICE, PLANS, type PlanId } from "@/config/plans";
@@ -321,6 +325,7 @@ export default function ChatApp({
   // 🎨 색 테마 (파스텔, 기기에 기억) — <html data-theme> 로 전체에 적용
   const [theme, setThemeState] = useState<ThemeId>(DEFAULT_THEME);
   const [themeOpen, setThemeOpen] = useState(false);
+  const [notifyOpen, setNotifyOpen] = useState(false);
   useEffect(() => {
     setKakaoMode(readStorage(KAKAO_KEY) === "1");
     const t = readStorage(THEME_KEY);
@@ -370,7 +375,9 @@ export default function ChatApp({
   }, []);
 
   // 열 때 자동으로 할 일 (못 받은 답장 이어받기 / 오랜만에 돌아옴)
-  const [autoAction, setAutoAction] = useState<null | "unanswered" | "return">(null);
+  const [autoAction, setAutoAction] = useState<null | "unanswered" | "return" | "nudge">(null);
+  /** 📲 알림으로 도착해 있는 선톡 (대화방을 열면 인물이 먼저 말을 건다) */
+  const nudgeRef = useRef<Nudge | null>(null);
 
   const nextId = useRef(0);
   // 대화방을 바꾸면 증가 → 진행 중이던 답장은 화면 대신 그 대화방 저장소에 기록한다
@@ -718,8 +725,12 @@ export default function ChatApp({
       const texts = msgs.filter((m) => visibleText(m) && !m.local && !m.text.startsWith("⚠️"));
       const lastText = texts[texts.length - 1];
       const lastAt = msgs.length ? msgs[msgs.length - 1].at : 0;
+      const pendingNudge = peekNudge(id);
       if (lastText?.role === "user") setAutoAction("unanswered");
-      else if (texts.some((m) => m.role === "user") && Date.now() - lastAt > RETURN_GAP) setAutoAction("return");
+      else if (pendingNudge && texts.some((m) => m.role === "user")) {
+        nudgeRef.current = pendingNudge;
+        setAutoAction("nudge");
+      } else if (texts.some((m) => m.role === "user") && Date.now() - lastAt > RETURN_GAP) setAutoAction("return");
       else setAutoAction(null);
     },
     [byId, director, setSulk]
@@ -729,6 +740,7 @@ export default function ChatApp({
     (id: PersonaId) => {
       writeStorage(chatKey(id), null);
       void deleteMediaFor(id); // 올린 사진·영상도 함께 지운다
+      dropNudges(id); // 알림으로 와 있던 선톡도 함께 지운다
       openChat(id);
       setAutoAction(null);
     },
@@ -831,7 +843,7 @@ export default function ChatApp({
 
   /* ── 답장 받기 (공통) ──────────────────────────────────────────────────── */
   const requestReply = useCallback(
-    async (msgs: ChatMessage[], kind: Turn["kind"], tapbackTargetId: number | null, heart?: HeartReactionId) => {
+    async (msgs: ChatMessage[], kind: Turn["kind"], tapbackTargetId: number | null, heart?: HeartReactionId, nudge?: NudgeKind) => {
       if (!personaId) return;
       const pid = personaId;
       const session = sessionRef.current;
@@ -860,6 +872,7 @@ export default function ChatApp({
           allure: allureActive,
           sulk: sulkSummary(sulkRef.current),
           memory: memoryRef.current?.facts ?? [],
+          ...(kind === "return" && nudge ? { nudge } : {}),
         }),
       }).then(async (res) => {
         if (!res.ok) {
@@ -1006,12 +1019,73 @@ export default function ChatApp({
     const t = setTimeout(() => {
       setAutoAction(null);
       const lastUser = [...messages].reverse().find((m) => m.role === "user" && visibleText(m));
+      if (action === "nudge") {
+        const n = nudgeRef.current;
+        nudgeRef.current = null;
+        if (n) {
+          consumeNudge(n.key);
+          requestReply(messages, "return", null, undefined, n.kind);
+        }
+        return;
+      }
       requestReply(messages, action === "return" ? "return" : "text", action === "unanswered" ? lastUser?.id ?? null : null);
-    }, action === "return" ? 1500 : 400);
+    }, action === "return" ? 1500 : action === "nudge" ? 900 : 400);
     return () => clearTimeout(t);
     // messages 는 연 시점의 값이면 충분 (autoAction 이 바뀔 때만 실행)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoAction, personaId]);
+
+  /* ── 📲 선톡 알림 (앱 전용) ──────────────────────────────────────────────── */
+  // 앱이 백그라운드로 갈 때 예약할 후보: 대화한 적 있고 삐져 있지 않은 인물 (남은 사진·영상 수 포함)
+  const nudgeCandidates = useCallback((): NudgeCandidate[] => {
+    const out: NudgeCandidate[] = [];
+    for (const p of personas) {
+      const c = loadChat(p.id);
+      if (!c) continue;
+      const talked = c.messages.some((m) => m.role === "user" && (m.kind ?? "text") === "text" && !m.local);
+      if (!talked) continue;
+      if (c.sulk && !sulkExpired(c.sulk)) continue; // 삐져 있으면 먼저 연락하지 않는다
+      const sent = new Set(c.messages.flatMap((m) => (m.media?.albumId ? [m.media.albumId] : [])));
+      const left = p.album.filter((a) => !sent.has(a.id));
+      out.push({
+        personaId: p.id,
+        name: p.name,
+        lastAt: c.messages.reduce((mx, m) => Math.max(mx, m.at), 0),
+        photos: left.filter((a) => a.type === "photo").length,
+        videos: left.filter((a) => a.type === "video").length,
+      });
+    }
+    return out;
+  }, [personas]);
+
+  // 알림을 눌렀을 때(pid)나 앱이 앞으로 와서 도착한 선톡을 정리했을 때
+  const handleNudge = (pid?: string) => {
+    const cur = personaIdRef.current;
+    if (pid && pid !== cur) {
+      if (byId.has(pid)) openChat(pid); // 열면서 도착한 선톡을 전달한다
+      return;
+    }
+    const target = cur;
+    if (!target) return;
+    const q = peekNudge(target);
+    if (q) {
+      nudgeRef.current = q;
+      setAutoAction("nudge");
+    }
+  };
+  const handleNudgeRef = useRef(handleNudge);
+  handleNudgeRef.current = handleNudge;
+
+  useEffect(() => {
+    // 웹에서는 알림이 없다. 같은 처리를 시험할 수 있게 창 이벤트로도 받는다.
+    const onTest = (e: Event) => handleNudgeRef.current((e as CustomEvent<{ personaId?: string }>).detail?.personaId);
+    window.addEventListener("charactalk:nudge", onTest);
+    const stop = isNativeApp() ? startNudgeLifecycle({ getCandidates: nudgeCandidates, onDelivered: (pid) => handleNudgeRef.current(pid) }) : () => {};
+    return () => {
+      window.removeEventListener("charactalk:nudge", onTest);
+      stop();
+    };
+  }, [nudgeCandidates]);
 
   /* ── 보내기 ─────────────────────────────────────────────────────────── */
   const handleSubmit = useCallback(() => {
@@ -1022,6 +1096,11 @@ export default function ChatApp({
     setMessages(msgs);
     setInput("");
     setConfirmReset(false);
+    // 📲 처음 말을 건네는 순간 한 번만 알림 허용을 물어본다 (앱에서만, 설정에서 끌 수 있다)
+    if (isNativeApp()) {
+      const ns = loadNotifySettings();
+      if (ns.enabled && !ns.asked) void requestNotifyPermission();
+    }
     requestReply(msgs, "text", userMsg.id);
   }, [input, busy, personaId, messages, requestReply]);
 
@@ -1331,7 +1410,7 @@ export default function ChatApp({
   if (!persona) {
     return (
       <main className="h-[100dvh] w-full bg-paper">
-        <PersonaSelector personas={personas} currentId={null} onSelect={handleSelect} previews={previews()} onBackup={() => setBackupOpen(true)} onTheme={() => setThemeOpen(true)} />
+        <PersonaSelector personas={personas} currentId={null} onSelect={handleSelect} previews={previews()} onBackup={() => setBackupOpen(true)} onTheme={() => setThemeOpen(true)} onNotify={() => setNotifyOpen(true)} />
         {backupOpen && <BackupModal onClose={() => setBackupOpen(false)} onRestored={() => window.location.reload()} />}
       {themeOpen && (
         <ThemePicker
@@ -1342,6 +1421,7 @@ export default function ChatApp({
           onClose={() => setThemeOpen(false)}
         />
       )}
+      {notifyOpen && <NotifySettings onClose={() => setNotifyOpen(false)} />}
       </main>
     );
   }
@@ -1513,6 +1593,7 @@ export default function ChatApp({
             onClick={() => { setMenuOpen(false); toggleKakao(); }}
           />
           <MenuItem icon={<IconSparkle className="h-[18px] w-[18px]" />} label="대화창 꾸미기" data="theme" onClick={() => { setMenuOpen(false); setThemeOpen(true); }} />
+          <MenuItem icon={<IconBell className="h-[18px] w-[18px]" />} label="알림 설정" data="notify" onClick={() => { setMenuOpen(false); setNotifyOpen(true); }} />
           <div className="my-1 h-px bg-ink-line" />
           <MenuItem
             icon={<IconBrain className="h-[18px] w-[18px]" />}
@@ -1862,6 +1943,7 @@ export default function ChatApp({
           onClose={() => setSelectorOpen(false)}
           onBackup={() => setBackupOpen(true)}
           onTheme={() => setThemeOpen(true)}
+          onNotify={() => setNotifyOpen(true)}
           previews={previews()}
         />
       )}
@@ -1874,6 +1956,7 @@ export default function ChatApp({
           onClose={() => setThemeOpen(false)}
         />
       )}
+      {notifyOpen && <NotifySettings onClose={() => setNotifyOpen(false)} />}
     </main>
   );
 }

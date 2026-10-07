@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import PersonaPortrait from "@/components/PersonaPortrait";
-import { IconBackup, IconChats, IconClose, IconSparkle } from "@/components/icons";
+import { IconBackup, IconBell, IconChats, IconClose, IconSparkle } from "@/components/icons";
 import type { Persona, PersonaId } from "@/lib/personas/types";
 
 type Filter = "all" | "female" | "male";
@@ -22,6 +22,8 @@ interface PersonaSelectorProps {
   onBackup?: () => void;
   /** 🎨 대화창 꾸미기 */
   onTheme?: () => void;
+  /** 🔔 알림 설정 */
+  onNotify?: () => void;
   /** 대화방별 마지막 메시지 (대화한 적 있는 사람만) */
   previews?: Record<string, string>;
 }
@@ -33,6 +35,7 @@ export default function PersonaSelector({
   onClose,
   onBackup,
   onTheme,
+  onNotify,
   previews = {},
 }: PersonaSelectorProps) {
   const [filter, setFilter] = useState<Filter>("all");
@@ -66,6 +69,17 @@ export default function PersonaSelector({
                 className="flex items-center gap-1 rounded-full bg-surface px-3 py-1.5 text-sm text-ink-soft shadow-soft ring-1 ring-ink-line transition hover:text-ink"
               >
                 <IconSparkle className="h-4 w-4" /> 테마
+              </button>
+            )}
+            {onNotify && (
+              <button
+                type="button"
+                onClick={onNotify}
+                aria-label="알림 설정"
+                data-selector-notify
+                className="flex items-center gap-1 rounded-full bg-surface px-3 py-1.5 text-sm text-ink-soft shadow-soft ring-1 ring-ink-line transition hover:text-ink"
+              >
+                <IconBell className="h-4 w-4" /> 알림
               </button>
             )}
             {onBackup && (
