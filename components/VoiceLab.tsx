@@ -1,5 +1,6 @@
 "use client";
 
+import { apiUrl } from "@/lib/apiBase";
 import { useEffect, useMemo, useRef, useState } from "react";
 import PersonaPortrait from "@/components/PersonaPortrait";
 import { GEMINI_VOICES, readVoiceOverride, writeVoiceOverride, type GeminiVoiceName } from "@/config/voices";
@@ -87,7 +88,7 @@ export default function VoiceLab({ personas }: { personas: Persona[] }) {
         } catch {
           /* 없음 */
         }
-        const res = await fetch("/api/voice/preview", {
+        const res = await fetch(apiUrl("/api/voice/preview"), {
           method: "POST",
           headers: { "Content-Type": "application/json", ...(pass ? { "x-voice-pass": pass } : {}) },
           body: JSON.stringify({ personaId: persona.id, voice, text }),

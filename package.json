@@ -8,13 +8,19 @@
     "start": "next start",
     "lint": "next lint",
     "gen:placeholder": "node scripts/generate-placeholder-avatar.mjs",
-    "gen:clips": "node scripts/make-placeholder-clips.mjs"
+    "gen:clips": "node scripts/make-placeholder-clips.mjs",
+    "mobile:build": "node scripts/build-mobile.mjs",
+    "android:open": "npx cap open android",
+    "ios:open": "npx cap open ios"
   },
   "dependencies": {
     "@ai-sdk/amazon-bedrock": "^5.0.105",
     "@ai-sdk/anthropic": "^4.0.71",
     "@ai-sdk/google": "^4.0.87",
     "@ai-sdk/openai": "^4.0.83",
+    "@capacitor/android": "^8.5.2",
+    "@capacitor/core": "^8.5.2",
+    "@capacitor/ios": "^8.5.2",
     "@google/genai": "^2.27.0",
     "@react-three/drei": "^9.122.0",
     "@react-three/fiber": "^8.17.10",
@@ -27,6 +33,7 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.5.2",
     "@gltf-transform/core": "^4.5.1",
     "@gltf-transform/functions": "^4.5.1",
     "@types/node": "^20.14.0",

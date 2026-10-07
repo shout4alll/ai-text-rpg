@@ -1,5 +1,6 @@
 "use client";
 
+import { apiUrl } from "@/lib/apiBase";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AvatarStage from "@/components/AvatarStage";
 import ChatPanel from "@/components/ChatPanel";
@@ -792,7 +793,7 @@ export default function ChatApp({
       if (turns.length < 2) return;
       setMemoryBusy(true);
       try {
-        const res = await fetch("/api/memory", {
+        const res = await fetch(apiUrl("/api/memory"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ personaId: pid, facts: cur?.facts ?? [], turns, timeZone: userTimeZone() }),
@@ -847,7 +848,7 @@ export default function ChatApp({
         if (rec) lastMedia.images = rec.frames;
       }
       const sendTurns = turns.map(({ localKey: _k, ...t }) => t);
-      const req = fetch("/api/chat", {
+      const req = fetch(apiUrl("/api/chat"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1077,7 +1078,7 @@ export default function ChatApp({
     const session = sessionRef.current;
     try {
       const pass = readPass();
-      const res = await fetch("/api/media/photo", {
+      const res = await fetch(apiUrl("/api/media/photo"), {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(pass ? { "x-voice-pass": pass } : {}) },
         body: JSON.stringify({ personaId: offer.personaId, request: offer.request, timeZone: userTimeZone() }),

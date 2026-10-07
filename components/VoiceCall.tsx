@@ -1,5 +1,6 @@
 "use client";
 
+import { apiUrl } from "@/lib/apiBase";
 import { BALANCE } from "@/config/balance";
 import { readVoiceOverride } from "@/config/voices";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -327,7 +328,7 @@ export default function VoiceCall({
         } catch {
           /* 저장소 없음 */
         }
-        const res = await fetch("/api/voice/session", {
+        const res = await fetch(apiUrl("/api/voice/session"), {
           method: "POST",
           headers: { "Content-Type": "application/json", ...passHeader },
           body: JSON.stringify({
