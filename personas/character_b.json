@@ -19,6 +19,44 @@
     "portrait": "portrait.webp",
     "objectPosition": "52% 30%"
   },
+  "album": [
+    {
+      "id": "smile",
+      "type": "photo",
+      "file": "album/smile.jpg",
+      "desc": "방에서 카메라 보며 은근히 웃는 셀카 (회색 니트)"
+    },
+    {
+      "id": "laugh",
+      "type": "photo",
+      "file": "album/laugh.jpg",
+      "desc": "뭔가 웃겨서 활짝 웃은 순간"
+    },
+    {
+      "id": "shy",
+      "type": "photo",
+      "file": "album/shy.jpg",
+      "desc": "머리 넘기며 쑥스럽게 웃는 사진"
+    },
+    {
+      "id": "wink",
+      "type": "photo",
+      "file": "album/wink.jpg",
+      "desc": "장난스럽게 윙크하는 사진"
+    },
+    {
+      "id": "laugh_video",
+      "type": "video",
+      "file": "clips/laugh.mp4",
+      "desc": "웃음 터진 짧은 영상"
+    },
+    {
+      "id": "wink_video",
+      "type": "video",
+      "file": "clips/touch_joy.mp4",
+      "desc": "윙크하며 피식 웃는 짧은 영상"
+    }
+  ],
   "voice": {
     "name": "Kore",
     "style": "담담하고 건조한 30대 여성 목소리. 말끝을 짧게 끊고, 무심한 듯 툭 던지는 위트"
