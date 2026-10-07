@@ -119,6 +119,12 @@
     "affectionMaxGain": 3
   },
 
+  "aiMedia": {
+    "requireUserRequest": true,
+    "cooldownTurns": 8,
+    "requestKeywords": ["사진", "셀카", "셀피", "얼굴 보", "얼굴 좀", "모습", "영상", "동영상", "찍어", "인증샷", "pic", "photo", "selfie", "video"]
+  },
+
   "voice": {
     "freeExchanges": 5,
     "trialMaxSeconds": 180,

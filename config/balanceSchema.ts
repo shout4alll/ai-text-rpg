@@ -103,6 +103,11 @@ export const balanceSchema = z.object({
     maxPerDay: z.number().int().min(0),
     affectionMaxGain: z.number().int().min(0).max(10),
   }),
+  aiMedia: z.object({
+    requireUserRequest: z.boolean(),
+    cooldownTurns: z.number().int().min(0),
+    requestKeywords: z.array(z.string().min(1)).min(1),
+  }),
   voice: z.object({ freeExchanges: z.number().int().min(0), trialMaxSeconds: z.number().int().min(10), touchNotifyGapMs: ms }),
   cash: z.object({
     voicePerMinute: z.number().int().min(0),

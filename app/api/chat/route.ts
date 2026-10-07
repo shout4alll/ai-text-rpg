@@ -363,7 +363,7 @@ ${timeLines || "- 현재 시각 정보 없음"}
 ${SHARED_RULES}
 ${c.allure && persona.allure ? `\n${allureInstructions(persona.name, persona.allure.prompt)}\n` : ""}
 [사진·영상]
-- 너는 메신저로 사진과 영상을 보낼 수 있다. 유저가 먼저 보고 싶다고 할 때만 보내고, 네가 먼저 자주 보내지는 마라.
+- 너는 메신저로 사진과 영상을 보낼 수 있다. 단, 유저가 이번 메시지에서 "사진/셀카/영상/모습을 보여 달라"고 직접 요청했을 때만 보낸다. 그 밖에는 항상 media_action=none 이다. 네가 먼저 사진을 보내거나 "사진 보내 줄까요?"라고 권하지 마라. 인사·리액션·칭찬·"보고 싶다"는 말에는 사진을 보내지 않는다.
 - 유저가 그냥 "사진 보내 줘", "얼굴 보고 싶어", "영상 보여 줘"처럼 요청하면: "찍어 둔 게 있다"는 식으로 자연스럽게 말하고 앨범에서 어울리는 것 하나를 보낸다(media_action=album, album_id). 영상을 원하면 video, 사진이면 photo 를 골라라.
 - 유저가 "지금" 모습이나 앨범에 없는 특정 모습(특정 장소·옷·포즈·상황)을 콕 집어 요청하면: media_action=custom, custom_request 에 장면을 적고, 말풍선에서는 "잠깐만요, 찍어 볼게요"처럼 지금 찍으려는 듯 자연스럽게 답해라. 영상을 지금 찍어 달라는 요청도 custom(사진)으로 처리한다. 돈·결제·유료 이야기는 절대 하지 마라(앱이 따로 안내한다).
 - 노출, 속옷·수영복, 선정적인 포즈, 침대 위 등 성적인 느낌의 사진·영상 요청은 부드럽게 거절하고 media_action=none. 유저가 미성년자로 보여도 none.
@@ -480,8 +480,11 @@ export async function POST(request: Request) {
         name: "chat_reply",
         description: "캐릭터의 메신저 답장(말풍선)과 화면 리액션, 마음 리액션, 호감도 변화",
       }),
-      temperature: persona.prompt.temperature ?? 1.0,
+      // Claude Sonnet 5 계열은 temperature 를 받지 않는다 (SDK 가 자동으로 빼고 경고만 남김)
+      temperature: /anthropic\.claude/.test(resolved.modelId) ? undefined : persona.prompt.temperature ?? 1.0,
+      maxOutputTokens: 1200,
       maxRetries: 1,
+      ...(resolved.providerOptions ? { providerOptions: resolved.providerOptions as never } : {}),
     });
 
     let bubbles = output.messages
@@ -491,11 +494,12 @@ export async function POST(request: Request) {
       .slice(0, MAX_BUBBLES);
     // 말로 보낸 메시지·재접속에는 반드시 답장, 마음 리액션에는 말 없이도 OK
     if (bubbles.length === 0 && last.kind !== "reaction") {
-      // 모델이 사진 지시만 보내고 말풍선을 빼먹은 경우 자연스러운 한마디로 채운다
+      // 모델이 사진 지시만 보내고 말풍선을 빼먹은 경우 자연스러운 한마디로 채운다 (사진은 유저가 요청했을 때만)
+      const askedPhoto = last.kind === "text" && BALANCE.aiMedia.requestKeywords.some((k) => last.content.toLowerCase().includes(k.toLowerCase()));
       bubbles =
-        output.media_action === "album"
+        askedPhoto && output.media_action === "album"
           ? ["찍어 둔 거 있는데 보내 줄게요"]
-          : output.media_action === "custom"
+          : askedPhoto && output.media_action === "custom"
             ? ["잠깐만요, 찍어 볼게요"]
             : ["…"];
     }
@@ -510,16 +514,25 @@ export async function POST(request: Request) {
     if (raw > 0 && last.kind === "user_media") raw = Math.min(raw, BALANCE.userMedia.affectionMaxGain);
     const delta = Math.max(-AFFECTION_STEP, Math.min(AFFECTION_STEP, Math.round(raw)));
 
-    // 사진·영상 (텍스트 메시지에 대해서만)
+    // 사진·영상 (텍스트 메시지에 대해서만) — 유저가 직접 달라고 했을 때만 보낸다 (balance.json aiMedia)
+    const M = BALANCE.aiMedia;
+    const text = last.content.toLowerCase();
+    const asked = last.kind === "text" && M.requestKeywords.some((k) => text.includes(k.toLowerCase()));
+    const lastSentIdx = messages.map((m) => m.role === "assistant" && m.kind === "media").lastIndexOf(true);
+    const userTurnsSince = lastSentIdx < 0 ? Infinity : messages.slice(lastSentIdx + 1).filter((m) => m.role === "user" && m.kind === "text").length;
+    const mediaAllowed = asked || (!M.requireUserRequest && userTurnsSince >= M.cooldownTurns);
+    if (output.media_action !== "none" && !mediaAllowed) {
+      console.info(`[/api/chat] media_action=${output.media_action} 무시 (유저 요청 없음)`);
+    }
     let media: MediaDirective | null = null;
-    if (last.kind === "text" && output.media_action === "album" && album.length > 0) {
+    if (mediaAllowed && last.kind === "text" && output.media_action === "album" && album.length > 0) {
       const sent = new Set(parsed.data.sentAlbumIds ?? []);
       const picked = album.find((a) => a.id === output.album_id.trim());
       // 잘못된 id 면 아직 안 보낸 것 중 하나 (같은 종류 우선)
       const fallback = album.filter((a) => !sent.has(a.id));
       const item = picked ?? fallback[Math.floor(Math.random() * fallback.length)] ?? album[0];
       media = { action: "album", item };
-    } else if (last.kind === "text" && output.media_action === "custom") {
+    } else if (mediaAllowed && last.kind === "text" && output.media_action === "custom") {
       const req = output.custom_request.trim().slice(0, 200) || last.content.slice(0, 200);
       media = { action: "custom", type: "photo", request: req };
     }
@@ -536,7 +549,7 @@ export async function POST(request: Request) {
       animation: def.animation,
       media,
     };
-    return NextResponse.json(response);
+    return NextResponse.json(response, { headers: { "x-ai-model": `${resolved.label} / ${resolved.modelId}` } });
   } catch (error) {
     const where = resolved ? `${resolved.label} / ${resolved.modelId}` : "model init";
     console.error(`[/api/chat] LLM error (${where}):`, error);

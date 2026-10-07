@@ -203,6 +203,16 @@ AI가 주는 기준은 이렇습니다. 관심·배려·다정함은 +1~+3, 평�
 - 파일은 **이 기기의 IndexedDB**에 보관되고, 대화방 **"처음부터"(초기화)** 를 누르면 같이 지워집니다.
 - AI에게는 줄인 JPEG 장면만 보내고 원본은 서버로 보내지 않습니다.
 
+## 7-1. AI가 자기 사진·영상을 보내는 조건 (`aiMedia`)
+
+| 키 | 현재 | 설명 |
+| --- | --- | --- |
+| `requireUserRequest` | true | 유저가 이번 메시지에서 직접 달라고 할 때만 앨범 사진·실시간 사진을 보냄. `false`면 아래 간격마다 AI가 가끔 먼저 보낼 수 있음 |
+| `cooldownTurns` | 8 | (`requireUserRequest=false`일 때) 사진을 보낸 뒤 유저 메시지가 이만큼 지나야 다시 보냄 |
+| `requestKeywords` | 사진, 셀카, 셀피, 얼굴 보, 얼굴 좀, 모습, 영상, 동영상, 찍어, 인증샷, pic, photo, selfie, video | 이 말이 들어 있으면 "사진 요청"으로 봄 |
+
+- AI가 사진을 보내려 해도 이 조건에 안 맞으면 서버가 막습니다. 마음 리액션·인사·"보고 싶다"에는 사진이 나가지 않습니다.
+
 ## 8. 보이스톡 · 캐시 · 멤버십 (`voice`, `cash`, `plans`)
 
 | 키 | 현재 | 설명 |
@@ -251,6 +261,8 @@ AI가 주는 기준은 이렇습니다. 관심·배려·다정함은 +1~+3, 평�
 | 영상 확률 `director.aiVideoChance` | 0.65 | |
 | 뽀뽀 호감도 `director.kissAffection` | 75 | |
 | 하루 사진·영상 수 `userMedia.maxPerDay` | 30 | |
+| AI 사진은 요청할 때만 `aiMedia.requireUserRequest` | true | |
+| 사진 요청으로 볼 단어 `aiMedia.requestKeywords` | 사진, 셀카, 모습, 영상 … | |
 | 무료 보이스톡 주고받기 `voice.freeExchanges` | 5 | |
 | 보이스톡 1분 💎 `cash.voicePerMinute` | 5 | |
 | 실시간 사진 💎 `cash.photo` | 10 | |

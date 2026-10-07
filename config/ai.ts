@@ -1,6 +1,9 @@
 import "server-only";
 import type { LanguageModel } from "ai";
 
+/** generateText 에 함께 넘길 프로바이더 옵션 (모델마다 다름) */
+export type ProviderOptions = Record<string, Record<string, unknown>>;
+
 /* ========================================================================== */
 /*  AI 프로바이더 / 모델 설정 — 모델을 바꿀 때는 이 파일만 수정하면 된다.          */
 /* ========================================================================== */
@@ -35,6 +38,24 @@ interface ProviderEntry {
   model: string;
   /** 모델 인스턴스 생성 */
   create: (modelId: string) => LanguageModel;
+  /** (선택) 모델별 추가 옵션 — 예: Claude 의 생각(thinking) 끄기 */
+  options?: (modelId: string) => ProviderOptions | undefined;
+}
+
+/**
+ * Bedrock 의 Claude 모델 옵션.
+ *  - Claude Sonnet 5 계열은 "생각(adaptive thinking)"이 기본으로 켜져 있어 답장이 느리고 비싸다.
+ *    메신저 답장에는 필요 없으므로 끈다. (5.5 처럼 끌 수 없는 모델은 가장 낮은 단계로)
+ *  - 답장 형식(JSON)은 도구 호출 방식으로 받는다 (Sonnet 5 는 Bedrock 네이티브 structured output 미지원).
+ */
+function bedrockClaudeOptions(modelId: string): ProviderOptions | undefined {
+  if (!/anthropic\.claude/.test(modelId)) return undefined;
+  const cannotDisableThinking = /claude-(sonnet|opus)-5-5|claude-fable-5-1/.test(modelId);
+  return {
+    bedrock: cannotDisableThinking
+      ? { reasoningConfig: { type: "adaptive", maxReasoningEffort: "low" } }
+      : { additionalModelRequestFields: { thinking: { type: "disabled" } }, structuredOutputMode: "jsonTool" },
+  };
 }
 
 const PROVIDERS = {
@@ -48,12 +69,13 @@ const PROVIDERS = {
   /* ------------------------------------------------------------------------ */
   bedrock: {
     label: "Amazon Bedrock",
-    // 아래 중 하나만 주석 해제
-    model: "amazon.nova-lite-v1:0", // Amazon Nova Lite — us-east-1 리전 내 호출, 빠르고 저렴
-    // model: "us.amazon.nova-pro-v1:0",                       // Amazon Nova Pro (교차 리전)
-    // model: "us.anthropic.claude-haiku-4-5-20251001-v1:0",   // Claude Haiku 4.5 (교차 리전 추론 프로파일)
-    // model: "us.anthropic.claude-sonnet-4-5-20250929-v1:0",  // Claude Sonnet 4.5 (교차 리전 추론 프로파일)
-    // model: "anthropic.claude-3-5-sonnet-20240620-v1:0",     // Claude 3.5 Sonnet v1 — 현재 AWS 리전 목록에서 빠짐(단종 추정), 비권장
+    // 아래 중 하나만 주석 해제 (또는 .env 의 AI_MODEL 로 덮어쓰기)
+    model: "us.anthropic.claude-sonnet-5", // ✅ Claude Sonnet 5 — 미국 교차 리전 추론 프로파일 (BEDROCK_REGION=us-east-1 등 미국 리전)
+    // model: "global.anthropic.claude-sonnet-5",            // Claude Sonnet 5 — 전 세계 교차 리전 (어느 리전에서나)
+    // model: "anthropic.claude-sonnet-5",                   // Claude Sonnet 5 — 서울 리전 직접 호출 (BEDROCK_REGION=ap-northeast-2)
+    // model: "us.anthropic.claude-sonnet-5-5",              // Claude Sonnet 5.5 (2026-09 출시, 생각 기능을 끌 수 없어 조금 느림)
+    // model: "us.anthropic.claude-haiku-4-5-20251001-v1:0", // Claude Haiku 4.5 — 빠르고 저렴
+    // model: "amazon.nova-lite-v1:0",                       // Amazon Nova Lite — 가장 저렴 (이전 기본값)
     create: (modelId) => {
       const apiKey = process.env.AWS_BEDROCK_API_KEY || process.env.AWS_BEARER_TOKEN_BEDROCK;
       const useIam = process.env.BEDROCK_USE_IAM === "true";
@@ -70,6 +92,7 @@ const PROVIDERS = {
         baseURL: process.env.BEDROCK_BASE_URL || undefined, // (선택) 프록시/테스트용
       })(modelId);
     },
+    options: bedrockClaudeOptions,
   },
 
   /* ------------------------------------------------------------------------ */
@@ -123,6 +146,20 @@ export interface ResolvedModel {
   label: string;
   modelId: string;
   model: LanguageModel;
+  /** generateText({ providerOptions }) 에 그대로 넘긴다 */
+  providerOptions?: ProviderOptions;
+}
+
+/** 지금 어떤 프로바이더/모델을 쓰는지 (키 없이 설정만 읽음 — /api/status 표시용) */
+export function describeModel(): { provider: string; label: string; modelId: string; region?: string } {
+  const requested = process.env.AI_PROVIDER?.trim() || ACTIVE_PROVIDER;
+  const entry: ProviderEntry | undefined = isProviderId(requested) ? PROVIDERS[requested] : undefined;
+  return {
+    provider: requested,
+    label: entry?.label ?? "(알 수 없음)",
+    modelId: process.env.AI_MODEL?.trim() || entry?.model || "",
+    ...(requested === "bedrock" ? { region: process.env.BEDROCK_REGION || process.env.AWS_REGION || "us-east-1" } : {}),
+  };
 }
 
 /** 환경변수 > 설정 파일 순으로 프로바이더/모델을 결정해 모델 인스턴스를 만든다. */
@@ -136,5 +173,11 @@ export function resolveModel(): ResolvedModel {
   }
   const entry: ProviderEntry = PROVIDERS[requested];
   const modelId = process.env.AI_MODEL?.trim() || entry.model;
-  return { provider: requested, label: entry.label, modelId, model: entry.create(modelId) };
+  return {
+    provider: requested,
+    label: entry.label,
+    modelId,
+    model: entry.create(modelId),
+    providerOptions: entry.options?.(modelId),
+  };
 }
