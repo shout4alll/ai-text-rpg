@@ -46,7 +46,7 @@ export default function MediaPurchaseModal({
       onClick={onCancel}
     >
       <div
-        className="w-full max-w-sm overflow-hidden rounded-3xl bg-white text-ink shadow-lift ring-1 ring-ink-line"
+        className="w-full max-w-sm overflow-hidden rounded-3xl bg-surface text-ink shadow-lift ring-1 ring-ink-line"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3 bg-gradient-to-r from-brand-100 to-violet-100 px-5 py-4">

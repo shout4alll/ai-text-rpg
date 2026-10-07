@@ -25,7 +25,7 @@ function Shell({
       onClick={onClose}
     >
       <div
-        className={`max-h-[90dvh] w-full max-w-sm overflow-y-auto rounded-3xl bg-white text-ink shadow-lift ring-1 ${
+        className={`max-h-[90dvh] w-full max-w-sm overflow-y-auto rounded-3xl bg-surface text-ink shadow-lift ring-1 ${
           tone === "rose" ? "ring-brand-100" : "ring-ink-line"
         }`}
         onClick={(e) => e.stopPropagation()}

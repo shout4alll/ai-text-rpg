@@ -10,7 +10,7 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover", // 노치 영역까지 배경 사용 (safe-area 로 여백 처리)
-  themeColor: "#f7f5f2",
+  themeColor: "#fdf7fa",
 };
 
 export default function RootLayout({
@@ -19,8 +19,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="ko">
+    <html lang="ko" data-theme="blossom" suppressHydrationWarning>
       <head>
+        {/* 🎨 저장된 테마를 그리기 전에 적용 (깜빡임 방지) */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{var t=localStorage.getItem("ai-rpg.theme");if(t)document.documentElement.dataset.theme=t}catch(e){}`,
+          }}
+        />
         {/* 프리텐다드 (한글 UI 폰트) */}
         <link
           rel="stylesheet"

@@ -49,7 +49,7 @@ export default function PlansModal({
       onClick={onClose}
     >
       <div
-        className="max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-3xl bg-white text-ink shadow-lift ring-1 ring-ink-line"
+        className="max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-3xl bg-surface text-ink shadow-lift ring-1 ring-ink-line"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="relative bg-gradient-to-br from-brand-100 via-violet-50 to-amber-100 px-5 pb-4 pt-5">

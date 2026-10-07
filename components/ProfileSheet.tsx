@@ -42,7 +42,7 @@ export default function ProfileSheet({
   const stage = affectionStage(affection, persona.relationshipType);
   const prog = affectionProgress(affection, persona.relationshipType);
   const days = stats.firstAt ? Math.max(1, Math.ceil((Date.now() - stats.firstAt) / 86_400_000)) : 0;
-  const accentBtn = kakao ? "bg-kakao-yellow text-kakao-ink" : "bg-gradient-to-r from-brand-500 to-brand-400 text-white shadow-glow";
+  const accentBtn = kakao ? "bg-brand-400 text-onbrand" : "bg-gradient-to-r from-brand-500 to-brand-400 text-onbrand shadow-glow";
 
   return (
     <div
@@ -54,7 +54,7 @@ export default function ProfileSheet({
       onClick={onClose}
     >
       <div
-        className="sheet-up relative flex max-h-[92dvh] w-full max-w-md flex-col overflow-hidden rounded-t-[28px] bg-white text-ink shadow-lift sm:rounded-[28px]"
+        className="sheet-up relative flex max-h-[92dvh] w-full max-w-md flex-col overflow-hidden rounded-t-[28px] bg-surface text-ink shadow-lift sm:rounded-[28px]"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="overflow-y-auto">
@@ -68,7 +68,7 @@ export default function ProfileSheet({
               <p className="mt-0.5 text-sm text-white/85">
                 {persona.profile.age}세 · {persona.profile.occupation}
               </p>
-              <p className="mt-2 inline-flex max-w-full items-center rounded-full bg-white/15 px-3 py-1 text-xs text-white/95 ring-1 ring-white/25 backdrop-blur">
+              <p className="mt-2 inline-flex max-w-full items-center rounded-full bg-surface/15 px-3 py-1 text-xs text-white/95 ring-1 ring-white/25 backdrop-blur">
                 <span className="truncate">“{persona.status}”</span>
               </p>
             </div>
@@ -171,7 +171,7 @@ export default function ProfileSheet({
             )}
 
             <section className="flex items-center gap-3 rounded-2xl bg-paper p-3.5 ring-1 ring-ink-line">
-              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white text-xl shadow-soft">{persona.traits.gift.emoji}</span>
+              <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-surface text-xl shadow-soft">{persona.traits.gift.emoji}</span>
               <div className="min-w-0 flex-1">
                 <p className="flex items-center gap-1 text-xs font-semibold text-ink-mute">
                   <IconGift className="h-3.5 w-3.5" /> 좋아하는 선물
@@ -237,7 +237,7 @@ export default function ProfileSheet({
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-xl bg-white px-2 py-2 shadow-soft">
+    <div className="rounded-xl bg-surface px-2 py-2 shadow-soft">
       <p className="text-[15px] font-bold tabular-nums">{value}</p>
       <p className="text-[10px] text-ink-mute">{label}</p>
     </div>

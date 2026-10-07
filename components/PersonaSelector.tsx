@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import PersonaPortrait from "@/components/PersonaPortrait";
-import { IconBackup, IconChats, IconClose } from "@/components/icons";
+import { IconBackup, IconChats, IconClose, IconSparkle } from "@/components/icons";
 import type { Persona, PersonaId } from "@/lib/personas/types";
 
 type Filter = "all" | "female" | "male";
@@ -20,6 +20,8 @@ interface PersonaSelectorProps {
   onClose?: () => void;
   /** 💾 대화 기록 백업 열기 */
   onBackup?: () => void;
+  /** 🎨 대화창 꾸미기 */
+  onTheme?: () => void;
   /** 대화방별 마지막 메시지 (대화한 적 있는 사람만) */
   previews?: Record<string, string>;
 }
@@ -30,6 +32,7 @@ export default function PersonaSelector({
   onSelect,
   onClose,
   onBackup,
+  onTheme,
   previews = {},
 }: PersonaSelectorProps) {
   const [filter, setFilter] = useState<Filter>("all");
@@ -48,18 +51,29 @@ export default function PersonaSelector({
       <div className="sticky top-0 z-10 border-b border-ink-line/70 bg-paper/85 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-6">
           <div className="flex items-center gap-2">
-            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-400 text-white shadow-glow">
+            <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-400 text-onbrand shadow-glow">
               <IconChats className="h-[18px] w-[18px]" />
             </span>
             <span className="text-[17px] font-extrabold tracking-tight">캐릭톡</span>
           </div>
           <div className="flex shrink-0 gap-2">
+            {onTheme && (
+              <button
+                type="button"
+                onClick={onTheme}
+                aria-label="테마"
+                data-selector-theme
+                className="flex items-center gap-1 rounded-full bg-surface px-3 py-1.5 text-sm text-ink-soft shadow-soft ring-1 ring-ink-line transition hover:text-ink"
+              >
+                <IconSparkle className="h-4 w-4" /> 테마
+              </button>
+            )}
             {onBackup && (
               <button
                 type="button"
                 onClick={onBackup}
                 data-selector-backup
-                className="flex items-center gap-1 rounded-full bg-white px-3 py-1.5 text-sm text-ink-soft shadow-soft ring-1 ring-ink-line transition hover:text-ink"
+                className="flex items-center gap-1 rounded-full bg-surface px-3 py-1.5 text-sm text-ink-soft shadow-soft ring-1 ring-ink-line transition hover:text-ink"
               >
                 <IconBackup className="h-4 w-4" /> 백업
               </button>
@@ -68,7 +82,7 @@ export default function PersonaSelector({
               <button
                 onClick={onClose}
                 aria-label="닫기"
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-white text-ink-soft shadow-soft ring-1 ring-ink-line transition hover:text-ink"
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-surface text-ink-soft shadow-soft ring-1 ring-ink-line transition hover:text-ink"
               >
                 <IconClose className="h-[18px] w-[18px]" />
               </button>
@@ -88,7 +102,7 @@ export default function PersonaSelector({
           </p>
         </div>
 
-        <div className="mb-6 inline-flex w-fit gap-1 rounded-full bg-white p-1 shadow-soft ring-1 ring-ink-line" role="tablist" aria-label="캐릭터 필터">
+        <div className="mb-6 inline-flex w-fit gap-1 rounded-full bg-surface p-1 shadow-soft ring-1 ring-ink-line" role="tablist" aria-label="캐릭터 필터">
           {FILTERS.map((f) => (
             <button
               key={f.id}
@@ -115,7 +129,7 @@ export default function PersonaSelector({
                 type="button"
                 data-persona={p.id}
                 onClick={() => onSelect(p.id)}
-                className={`group flex flex-col overflow-hidden rounded-[26px] bg-white text-left shadow-soft ring-1 transition duration-300 hover:-translate-y-1 hover:shadow-lift focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 ${
+                className={`group flex flex-col overflow-hidden rounded-[26px] bg-surface text-left shadow-soft ring-1 transition duration-300 hover:-translate-y-1 hover:shadow-lift focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-400 ${
                   selected ? "ring-2" : "ring-ink-line"
                 }`}
                 style={selected ? ({ "--tw-ring-color": p.accent } as React.CSSProperties) : undefined}
@@ -132,12 +146,12 @@ export default function PersonaSelector({
                     </p>
                   </div>
                   {previews[p.id] && !selected && (
-                    <span className="absolute left-3 top-3 flex items-center gap-1 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-semibold text-ink shadow-soft backdrop-blur">
+                    <span className="absolute left-3 top-3 flex items-center gap-1 rounded-full bg-surface/90 px-2.5 py-1 text-[11px] font-semibold text-ink shadow-soft backdrop-blur">
                       <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> 대화 중
                     </span>
                   )}
                   {selected && (
-                    <span className="absolute right-3 top-3 rounded-full bg-white/90 px-2.5 py-1 text-[11px] font-semibold text-ink shadow-soft backdrop-blur">
+                    <span className="absolute right-3 top-3 rounded-full bg-surface/90 px-2.5 py-1 text-[11px] font-semibold text-ink shadow-soft backdrop-blur">
                       지금 대화 상대
                     </span>
                   )}

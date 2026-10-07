@@ -7,8 +7,10 @@ import EffectsLayer, { type Burst, type Particle, type TouchMark, type TouchSpar
 import PersonaPortrait from "@/components/PersonaPortrait";
 import PersonaSelector from "@/components/PersonaSelector";
 import ProfileSheet, { type ProfileStats } from "@/components/ProfileSheet";
+import ThemePicker from "@/components/ThemePicker";
+import { DEFAULT_THEME, isThemeId, THEME_KEY, VIEW_KEY, type ThemeId } from "@/config/themes";
 import {
-  IconBack, IconBackup, IconBrain, IconBubble, IconCrown, IconMore, IconPhone, IconScreen, IconSound, IconTrash, IconUser,
+  IconBack, IconBackup, IconBrain, IconBubble, IconCrown, IconMore, IconPhone, IconScreen, IconSound, IconSparkle, IconTrash, IconUser,
 } from "@/components/icons";
 import VoiceCall, { type VoiceBilling, type VoiceCallHandle, type VoiceCallResult } from "@/components/VoiceCall";
 import PlansModal, { type PlansReason } from "@/components/PlansModal";
@@ -77,8 +79,8 @@ interface StoredChat {
   memory?: { facts: string[]; upTo: number; at: number };
 }
 
-/** 💬 카톡 모드 저장 키 */
-const KAKAO_KEY = "ai-rpg.kakaoMode";
+/** 💬 카톡(메신저) 모드 저장 키 */
+const KAKAO_KEY = VIEW_KEY;
 
 /** 헤더 ⋯ 메뉴 항목 */
 function MenuItem({
@@ -315,15 +317,27 @@ export default function ChatApp({
   // 💬 카톡 모드 (배경 영상 없이 메신저처럼, 기기에 기억) · 👤 프로필
   const [kakaoMode, setKakaoMode] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  // 🎨 색 테마 (파스텔, 기기에 기억) — <html data-theme> 로 전체에 적용
+  const [theme, setThemeState] = useState<ThemeId>(DEFAULT_THEME);
+  const [themeOpen, setThemeOpen] = useState(false);
   useEffect(() => {
     setKakaoMode(readStorage(KAKAO_KEY) === "1");
+    const t = readStorage(THEME_KEY);
+    if (isThemeId(t)) setThemeState(t);
   }, []);
-  const toggleKakao = () => {
-    setKakaoMode((on) => {
-      writeStorage(KAKAO_KEY, on ? "0" : "1");
-      return !on;
-    });
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+  }, [theme]);
+  const setTheme = (t: ThemeId) => {
+    setThemeState(t);
+    writeStorage(THEME_KEY, t);
   };
+  const setMessenger = (on: boolean) => {
+    setMenuOpen(false);
+    setKakaoMode(on);
+    writeStorage(KAKAO_KEY, on ? "1" : "0");
+  };
+  const toggleKakao = () => setMessenger(!kakaoMode);
 
   // 보이스톡
   const [voiceOpen, setVoiceOpen] = useState(false);
@@ -1316,8 +1330,17 @@ export default function ChatApp({
   if (!persona) {
     return (
       <main className="h-[100dvh] w-full bg-paper">
-        <PersonaSelector personas={personas} currentId={null} onSelect={handleSelect} previews={previews()} onBackup={() => setBackupOpen(true)} />
+        <PersonaSelector personas={personas} currentId={null} onSelect={handleSelect} previews={previews()} onBackup={() => setBackupOpen(true)} onTheme={() => setThemeOpen(true)} />
         {backupOpen && <BackupModal onClose={() => setBackupOpen(false)} onRestored={() => window.location.reload()} />}
+      {themeOpen && (
+        <ThemePicker
+          theme={theme}
+          messenger={kakaoMode}
+          onTheme={setTheme}
+          onMessenger={persona ? setMessenger : undefined}
+          onClose={() => setThemeOpen(false)}
+        />
+      )}
       </main>
     );
   }
@@ -1347,7 +1370,7 @@ export default function ChatApp({
     >
       <div
         className={`w-full text-center shadow-lift ${
-          kakaoView ? "rounded-2xl bg-white px-3.5 py-2.5 text-kakao-ink" : "max-w-xs rounded-3xl bg-white/90 px-4 py-3 text-ink ring-1 ring-white/70 backdrop-blur-xl"
+          kakaoView ? "rounded-2xl bg-surface px-3.5 py-2.5 text-ink" : "max-w-xs rounded-3xl bg-surface/90 px-4 py-3 text-ink ring-1 ring-white/70 backdrop-blur-xl"
         }`}
       >
         <p className="text-[13px] font-semibold">
@@ -1387,7 +1410,7 @@ export default function ChatApp({
             onClick={sendGift}
             data-sulk-gift={giftCost(sulk)}
             className={`rounded-full px-3 py-1 text-xs font-bold disabled:opacity-50 ${
-              kakaoView ? "bg-kakao-yellow text-kakao-ink" : "bg-gradient-to-r from-brand-500 to-brand-400 text-white shadow-glow"
+              "bg-gradient-to-r from-brand-500 to-brand-400 text-onbrand shadow-glow"
             }`}
           >
             {persona.traits.gift.emoji} {persona.traits.gift.name} 선물 · 💎{giftCost(sulk)}
@@ -1404,7 +1427,7 @@ export default function ChatApp({
       className={`pointer-events-none z-20 flex justify-center ${kakaoView ? "fixed inset-x-0 top-[22%]" : "absolute inset-x-0 top-[22%]"}`}
       data-stage-up={stageBanner.label}
     >
-      <div className="stage-up-pop rounded-3xl bg-white/95 px-6 py-3.5 text-center text-ink shadow-lift ring-1 ring-brand-100 backdrop-blur">
+      <div className="stage-up-pop rounded-3xl bg-surface/95 px-6 py-3.5 text-center text-ink shadow-lift ring-1 ring-brand-100 backdrop-blur">
         <p className="text-[11px] text-ink-mute">관계가 한 단계 가까워졌어요</p>
         <p className="bg-gradient-to-r from-brand-600 to-brand-400 bg-clip-text text-lg font-extrabold text-transparent">💗 {stageBanner.label}</p>
       </div>
@@ -1418,13 +1441,13 @@ export default function ChatApp({
       title={prog.next ? `호감도 ${Math.round(affection)} · 다음 "${prog.next.label}"까지 ${prog.toNext}` : `호감도 ${Math.round(affection)} · 최고 단계`}
       data-affection={Math.round(affection)}
     >
-      <span className={`whitespace-nowrap text-[10px] font-bold tabular-nums ${kakaoView ? "text-[#e0457b]" : "text-brand-500"}`} data-affection-num>
+      <span className={`whitespace-nowrap text-[10px] font-bold tabular-nums text-brand-500`} data-affection-num>
         ♥ {Math.round(affection)}
       </span>
-      <div className={`h-1 w-10 shrink-0 overflow-hidden rounded-full ${kakaoView ? "bg-black/10" : "bg-ink/10"}`} data-stage-progress={Math.round(prog.ratio * 100)}>
+      <div className={`h-1 w-10 shrink-0 overflow-hidden rounded-full bg-ink/10`} data-stage-progress={Math.round(prog.ratio * 100)}>
         <div className="h-full rounded-full bg-gradient-to-r from-brand-400 to-brand-500 transition-all duration-700" style={{ width: `${Math.round(prog.ratio * 100)}%` }} />
       </div>
-      <span className={`whitespace-nowrap text-[10px] ${kakaoView ? "text-[#4a5560]" : "text-ink-mute"}`} data-stage>
+      <span className={`whitespace-nowrap text-[10px] text-ink-mute`} data-stage>
         {stage.label}
         {prog.next && <span className="ml-0.5 text-[9px] opacity-70">({prog.toNext})</span>}
       </span>
@@ -1446,9 +1469,9 @@ export default function ChatApp({
         }}
         data-plan-badge={membership?.plan ?? "free"}
         className={`ml-0.5 inline-flex shrink-0 items-center gap-0.5 rounded-full px-1.5 py-px text-[9px] font-bold leading-tight ring-1 ${
-          kakaoView ? "ring-black/15" : "ring-ink-line bg-white"
+          "ring-ink-line bg-surface"
         }`}
-        style={{ color: membership && membership.plan !== "free" ? PLANS[membership.plan].color : kakaoView ? "#4a5560" : "#8b8690" }}
+        style={{ color: membership && membership.plan !== "free" ? PLANS[membership.plan].color : "rgb(var(--ink-mute))" }}
       >
         {membership && membership.plan !== "free" ? (
           <>
@@ -1462,7 +1485,7 @@ export default function ChatApp({
   );
 
   const iconBtn = kakaoView
-    ? "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-kakao-ink/80 transition hover:bg-black/5"
+    ? "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-ink-soft transition hover:bg-ink/5"
     : "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-ink-soft transition hover:bg-ink/5";
 
   /* 관리 메뉴 */
@@ -1480,14 +1503,15 @@ export default function ChatApp({
       </button>
       {menuOpen && <div className="fixed inset-0 z-20" onClick={() => setMenuOpen(false)} aria-hidden />}
       {menuOpen && (
-        <div className="fade-in absolute right-0 top-full z-30 mt-1.5 w-52 overflow-hidden rounded-2xl bg-white py-1.5 text-sm text-ink shadow-lift ring-1 ring-ink-line" role="menu">
+        <div className="fade-in absolute right-0 top-full z-30 mt-1.5 w-52 overflow-hidden rounded-2xl bg-surface py-1.5 text-sm text-ink shadow-lift ring-1 ring-ink-line" role="menu">
           <MenuItem icon={<IconUser className="h-[18px] w-[18px]" />} label="프로필 보기" data="profile" onClick={() => { setMenuOpen(false); setProfileOpen(true); }} />
           <MenuItem
             icon={kakaoView ? <IconScreen className="h-[18px] w-[18px]" /> : <IconBubble className="h-[18px] w-[18px]" />}
-            label={kakaoMode ? "영상 모드로 보기" : "카톡 모드로 보기"}
+            label={kakaoMode ? "영상 배경으로 보기" : "메신저(카톡) 모드로 보기"}
             data="kakao"
             onClick={() => { setMenuOpen(false); toggleKakao(); }}
           />
+          <MenuItem icon={<IconSparkle className="h-[18px] w-[18px]" />} label="대화창 꾸미기" data="theme" onClick={() => { setMenuOpen(false); setThemeOpen(true); }} />
           <div className="my-1 h-px bg-ink-line" />
           <MenuItem
             icon={<IconBrain className="h-[18px] w-[18px]" />}
@@ -1533,7 +1557,7 @@ export default function ChatApp({
       title="보이스톡 (유료)"
       data-voice-button
       className={`relative flex h-9 shrink-0 items-center gap-1 rounded-full px-2.5 text-xs font-semibold transition disabled:opacity-50 ${
-        kakaoView ? "text-kakao-ink/80 hover:bg-black/5" : "bg-gradient-to-r from-brand-500 to-brand-400 text-white shadow-glow hover:brightness-105 wide:px-3.5"
+        kakaoView ? "text-ink-soft hover:bg-ink/5" : "bg-gradient-to-r from-brand-500 to-brand-400 text-onbrand shadow-glow hover:brightness-105 wide:px-3.5"
       }`}
     >
       <IconPhone className="h-[18px] w-[18px]" />
@@ -1545,7 +1569,7 @@ export default function ChatApp({
   );
 
   const header = kakaoView ? (
-    <header className="pointer-events-auto flex items-center gap-1 bg-kakao-bg/95 px-2 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] text-kakao-ink backdrop-blur" data-header="kakao">
+    <header className="pointer-events-auto relative z-30 flex items-center gap-1 bg-chat/95 px-2 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] text-ink backdrop-blur" data-header="kakao">
       {backBtn}
       <div className="min-w-0 flex-1 pl-1">
         <p className="truncate text-[15px] font-bold">{persona.name}</p>
@@ -1562,7 +1586,7 @@ export default function ChatApp({
     </header>
   ) : (
     <header
-      className={`pointer-events-auto flex items-center gap-1.5 border-b border-white/50 bg-white/80 px-3 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] shadow-soft backdrop-blur-xl wide:border-ink-line wide:bg-white wide:px-4 wide:py-3 wide:shadow-none wide:backdrop-blur-none ${
+      className={`pointer-events-auto relative z-30 flex items-center gap-1.5 border-b border-white/50 bg-surface/80 px-3 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] shadow-soft backdrop-blur-xl wide:border-ink-line wide:bg-surface wide:px-4 wide:py-3 wide:shadow-none wide:backdrop-blur-none ${
         voiceOpen ? "invisible" : ""
       }`}
       data-header="default"
@@ -1608,10 +1632,10 @@ export default function ChatApp({
   );
 
   return (
-    <main className={`relative h-[100dvh] w-full overflow-hidden ${kakaoView ? "bg-kakao-bg" : "bg-paper wide:flex"}`} data-view={kakaoView ? "kakao" : "stage"}>
+    <main className={`relative h-[100dvh] w-full overflow-hidden ${kakaoView ? "bg-chat" : "bg-paper wide:flex"}`} data-view={kakaoView ? "kakao" : "stage"}>
       {kakaoView ? (
         /* 💬 카톡 모드: 배경 영상 없이 평범한 메신저 화면 */
-        <section className="relative mx-auto flex h-full w-full max-w-3xl flex-col wide:border-x wide:border-kakao-line/70">
+        <section className="relative mx-auto flex h-full w-full max-w-3xl flex-col wide:border-x wide:border-ink-line">
           {header}
           {sulkCard}
           <div className="min-h-0 flex-1">{chatPanel}</div>
@@ -1650,7 +1674,7 @@ export default function ChatApp({
               onClick={toggleSound}
               aria-label={soundOn ? "리액션 소리 끄기" : "리액션 소리 켜기"}
               data-sound-toggle={soundOn ? "on" : "off"}
-              className="absolute right-3 top-[calc(max(0.5rem,env(safe-area-inset-top))+4.75rem)] z-10 flex h-9 w-9 items-center justify-center rounded-full bg-white/75 text-ink shadow-soft ring-1 ring-white/70 backdrop-blur-md wide:top-4"
+              className="absolute right-3 top-[calc(max(0.5rem,env(safe-area-inset-top))+4.75rem)] z-10 flex h-9 w-9 items-center justify-center rounded-full bg-surface/75 text-ink shadow-soft ring-1 ring-white/70 backdrop-blur-md wide:top-4"
             >
               <IconSound muted={!soundOn} className="h-[18px] w-[18px]" />
             </button>
@@ -1664,7 +1688,7 @@ export default function ChatApp({
                 aria-pressed={allureActive}
                 data-allure-toggle={allureActive ? "on" : "off"}
                 className={`absolute right-3 top-[calc(max(0.5rem,env(safe-area-inset-top))+7.5rem)] z-10 flex h-9 w-9 items-center justify-center rounded-full text-base ring-1 backdrop-blur-md transition wide:top-[3.75rem] ${
-                  allureActive ? "bg-brand-500/90 text-white ring-white/70 shadow-glow" : "bg-white/75 text-ink shadow-soft ring-white/70 grayscale-[40%]"
+                  allureActive ? "bg-brand-500/90 text-onbrand ring-white/70 shadow-glow" : "bg-surface/75 text-ink shadow-soft ring-white/70 grayscale-[40%]"
                 }`}
               >
                 {persona.allureUi?.emoji ?? "💋"}
@@ -1675,7 +1699,7 @@ export default function ChatApp({
             {/* 유료 리액션 잠금 안내 (가끔만) */}
             {teaser && (
               <div className="pointer-events-none absolute inset-x-0 top-[30%] flex justify-center" data-teaser={teaser}>
-                <span className="touch-line-static rounded-full bg-white/90 px-3.5 py-1.5 text-xs font-semibold text-brand-600 shadow-lift backdrop-blur">
+                <span className="touch-line-static rounded-full bg-surface/90 px-3.5 py-1.5 text-xs font-semibold text-brand-600 shadow-lift backdrop-blur">
                   💋 {persona.name} 님의 특별한 리액션이 있어요 · PRO
                 </span>
               </div>
@@ -1700,7 +1724,7 @@ export default function ChatApp({
 
           {/* 메신저: 폰/세로 = 배경 위에 겹쳐서, 넓은 화면 = 오른쪽 절반 */}
           {/* 폰: 메신저가 인물 화면 위에 겹치므로 빈 곳은 터치가 통과(pointer-events-none)하고 실제 UI만 터치를 받는다 */}
-          <section className="pointer-events-none absolute inset-0 flex flex-col bg-gradient-to-b from-transparent via-transparent to-black/45 wide:pointer-events-auto wide:relative wide:inset-auto wide:w-1/2 wide:bg-none wide:bg-paper">
+          <section className="pointer-events-none absolute inset-0 flex flex-col bg-gradient-to-b from-transparent via-transparent to-black/45 wide:pointer-events-auto wide:relative wide:inset-auto wide:w-1/2 wide:bg-none wide:bg-chat">
             {header}
             <div className={`min-h-0 flex-1 ${voiceOpen ? "invisible" : ""}`}>{chatPanel}</div>
           </section>
@@ -1836,7 +1860,17 @@ export default function ChatApp({
           onSelect={handleSelect}
           onClose={() => setSelectorOpen(false)}
           onBackup={() => setBackupOpen(true)}
+          onTheme={() => setThemeOpen(true)}
           previews={previews()}
+        />
+      )}
+      {themeOpen && (
+        <ThemePicker
+          theme={theme}
+          messenger={kakaoMode}
+          onTheme={setTheme}
+          onMessenger={persona ? setMessenger : undefined}
+          onClose={() => setThemeOpen(false)}
         />
       )}
     </main>

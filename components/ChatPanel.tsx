@@ -12,29 +12,30 @@ export type ChatVariant = "default" | "kakao";
 
 /** 화면 모드별 스타일 (default = 영상 위 / 넓은 화면은 wide: 로 오른쪽 패널, kakao = 메신저 모드) */
 function stylesOf(v: ChatVariant) {
+  // 색은 모두 테마 변수 (app/globals.css · config/themes.ts)
   if (v === "kakao") {
     return {
       scroll: "flex-1 overflow-y-auto px-3 pb-3 pt-3",
-      ai: "bg-white text-kakao-ink",
-      user: "bg-kakao-yellow text-kakao-ink",
+      ai: "bg-ai text-ai-ink shadow-[0_1px_1px_rgba(0,0,0,.04)]",
+      user: "bg-me text-me-ink shadow-[0_1px_1px_rgba(0,0,0,.04)]",
       aiShape: "rounded-[16px] rounded-tl-[5px]",
       userShape: "rounded-[16px] rounded-tr-[5px]",
-      meta: "text-[#55606b]",
-      name: "text-[#3a4550]",
-      chip: "bg-black/15 text-white",
+      meta: "text-chat-meta",
+      name: "text-chat-name",
+      chip: "bg-ink/10 text-chat-name",
       avatar: "h-10 w-10 overflow-hidden rounded-[15px]",
       avatarBox: "w-10",
-      badge: "bg-white ring-1 ring-black/5 shadow-soft",
-      unread: "text-[#d9a400]",
-      dot: "bg-[#9aa5ae]",
-      form: "bg-white border-t border-kakao-line/60",
-      input: "bg-[#f4f4f4] text-kakao-ink placeholder:text-[#9a9a9a] rounded-full focus:bg-white focus:ring-1 focus:ring-[#d0d0d0]",
-      send: "rounded-full bg-kakao-yellow px-3.5 text-sm font-semibold text-kakao-ink disabled:bg-[#f4f4f4] disabled:text-[#b0b0b0]",
-      iconBtn: "text-[#5b6670] hover:bg-black/5",
-      heartBtn: "text-[#5b6670] hover:bg-black/5",
-      picker: "bg-white ring-1 ring-black/5 text-kakao-ink",
-      pickerLabel: "text-[#7a7a7a]",
-      call: "bg-white/70 text-[#3a4550]",
+      badge: "bg-surface ring-1 ring-ink-line shadow-soft",
+      unread: "text-brand-600",
+      dot: "bg-ink-mute",
+      form: "bg-surface border-t border-ink-line",
+      input: "bg-ink/[0.05] text-ink placeholder:text-ink-mute rounded-full focus:bg-surface focus:ring-1 focus:ring-ink-line",
+      send: "rounded-full bg-brand-400 px-3.5 text-sm font-semibold text-onbrand disabled:bg-ink/5 disabled:text-ink-mute",
+      iconBtn: "text-ink-soft hover:bg-ink/5",
+      heartBtn: "text-brand-500 hover:bg-ink/5",
+      picker: "bg-surface ring-1 ring-ink-line text-ink",
+      pickerLabel: "text-ink-mute",
+      call: "bg-surface/70 text-chat-name",
       mediaRing: "ring-1 ring-black/5",
       text: "text-[15px] leading-relaxed",
     };
@@ -42,26 +43,26 @@ function stylesOf(v: ChatVariant) {
   return {
     scroll:
       "fade-top-mask max-h-[54dvh] overflow-y-auto px-3 pb-2 pt-16 wide:no-mask wide:max-h-none wide:flex-1 wide:px-6 wide:pt-6",
-    ai: "bg-white/90 text-ink shadow-soft backdrop-blur-md wide:bg-white wide:backdrop-blur-none",
-    user: "bg-gradient-to-br from-brand-500 to-brand-400 text-white shadow-[0_4px_14px_-6px_rgba(244,63,110,.6)]",
+    ai: "bg-ai/95 text-ai-ink shadow-soft backdrop-blur-md wide:bg-ai wide:backdrop-blur-none",
+    user: "bg-me text-me-ink shadow-[0_4px_14px_-8px_rgb(var(--b500)/.7)]",
     aiShape: "rounded-[20px] rounded-tl-md",
     userShape: "rounded-[20px] rounded-tr-md",
-    meta: "text-white/85 [text-shadow:0_1px_2px_rgba(0,0,0,.55)] wide:text-ink-mute wide:[text-shadow:none]",
-    name: "font-medium text-white/90 [text-shadow:0_1px_2px_rgba(0,0,0,.55)] wide:text-ink-soft wide:[text-shadow:none]",
-    chip: "bg-white/75 text-ink-soft shadow-soft backdrop-blur wide:bg-white wide:ring-1 wide:ring-ink-line wide:shadow-none",
+    meta: "text-white/90 [text-shadow:0_1px_2px_rgba(0,0,0,.6)] wide:text-chat-meta wide:[text-shadow:none]",
+    name: "font-medium text-white [text-shadow:0_1px_2px_rgba(0,0,0,.6)] wide:text-chat-name wide:[text-shadow:none]",
+    chip: "bg-surface/80 text-ink-soft shadow-soft backdrop-blur wide:bg-surface wide:ring-1 wide:ring-ink-line wide:shadow-none",
     avatar: "h-9 w-9 overflow-hidden rounded-2xl ring-2 ring-white/80 shadow-soft",
     avatarBox: "w-9",
-    badge: "bg-white ring-1 ring-ink-line shadow-soft",
-    unread: "text-amber-400 wide:text-brand-500",
+    badge: "bg-surface ring-1 ring-ink-line shadow-soft",
+    unread: "text-amber-300 wide:text-brand-600",
     dot: "bg-ink-mute/70",
-    form: "border-t border-white/50 bg-white/80 backdrop-blur-xl wide:border-ink-line wide:bg-white wide:backdrop-blur-none",
-    input: "bg-ink/[0.05] text-ink placeholder:text-ink-mute rounded-full focus:bg-white focus:ring-2 focus:ring-brand-200",
-    send: "flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-brand-400 text-white shadow-glow disabled:bg-none disabled:bg-ink/10 disabled:text-ink-mute disabled:shadow-none",
+    form: "border-t border-white/40 bg-surface/85 backdrop-blur-xl wide:border-ink-line wide:bg-surface wide:backdrop-blur-none",
+    input: "bg-ink/[0.05] text-ink placeholder:text-ink-mute rounded-full focus:bg-surface focus:ring-2 focus:ring-brand-200",
+    send: "flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-brand-500 to-brand-400 text-onbrand shadow-glow disabled:bg-none disabled:bg-ink/10 disabled:text-ink-mute disabled:shadow-none",
     iconBtn: "text-ink-soft hover:bg-ink/5",
     heartBtn: "text-brand-500 hover:bg-brand-50",
-    picker: "bg-white ring-1 ring-ink-line text-ink",
+    picker: "bg-surface ring-1 ring-ink-line text-ink",
     pickerLabel: "text-ink-mute",
-    call: "bg-white/75 text-brand-600 shadow-soft backdrop-blur wide:bg-brand-50 wide:shadow-none",
+    call: "bg-surface/80 text-brand-600 shadow-soft backdrop-blur wide:bg-brand-50 wide:shadow-none",
     mediaRing: "ring-1 ring-black/5 shadow-soft",
     text: "text-[15px] leading-relaxed wide:text-[14.5px]",
   };
@@ -308,7 +309,7 @@ export default function ChatPanel({
             if (m.kind === "gift") {
               return (
                 <div key={m.id} className="my-3 flex justify-center" data-gift>
-                  <span className={`rounded-2xl px-4 py-2 text-xs font-semibold shadow-soft ${kakao ? "bg-white text-kakao-ink" : "bg-gradient-to-r from-brand-500 to-brand-400 text-white"}`}>
+                  <span className={`rounded-2xl px-4 py-2 text-xs font-semibold shadow-soft ${kakao ? "bg-surface text-ink" : "bg-gradient-to-r from-brand-500 to-brand-400 text-onbrand"}`}>
                     🎁 {m.text} 을(를) 선물했어요 · {timeFmt.format(m.at)}
                   </span>
                 </div>
