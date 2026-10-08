@@ -115,6 +115,7 @@ export function toPublic(p: PersonaFile): Persona {
     tags: p.tags,
     relationshipType: p.relationshipType,
     greeting: p.greeting,
+    ...(p.cheatRoom ? { cheatRoom: true } : {}),
     accent: p.accent,
     ...(p.touchLines ? { touchLines: p.touchLines } : {}),
     ...(p.allure

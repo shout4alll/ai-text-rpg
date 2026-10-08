@@ -45,6 +45,28 @@ export const balanceSchema = z.object({
     lossMultiplier: z.number().min(0).max(5),
     gainWhileSulking: z.number().min(0).max(1),
     heartReactionMaxGain: z.number().int().min(0).max(10),
+    /** 한 턴에 오를 수 있는 최대치 (손실은 stepCap) */
+    gainCap: z.number().int().min(1).max(20),
+    /** 관계 단계별 배수 — 가까울수록 더 오르기 어렵고(gain↓) 더 상처받는다(loss↑) */
+    gainByStage: z.array(z.number().min(0).max(5)).min(1),
+    lossByStage: z.array(z.number().min(0).max(5)).min(1),
+    /** 오래 연락이 없으면 서서히 식는다 */
+    decay: z.object({
+      graceHours: z.number().min(0),
+      perDay: z.number().min(0),
+      maxTotal: z.number().min(0),
+      floorAtStage: z.boolean(),
+    }),
+    /** 화면 터치에 의한 호감도 */
+    touch: z.object({
+      gain: z.number().int().min(0).max(5),
+      gainCooldownSec: z.number().min(0),
+      gainMaxPerVisit: z.number().int().min(0),
+      gainBelow: z.number().min(0).max(100),
+      strangerLoss: z.number().int().min(0).max(5),
+      strangerLossCooldownSec: z.number().min(0),
+      poutLoss: z.number().int().min(0).max(5),
+    }),
     stages: z.object({ romance: stages, friendship: stages }),
     stageUpBannerMs: ms,
     stageDownNotice: z.boolean(),

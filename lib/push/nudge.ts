@@ -19,6 +19,7 @@ import {
   type NudgeKind,
 } from "@/config/notifications";
 import { planNudges, type NudgeCandidate } from "@/lib/push/plan";
+import { loadNotifyPlan, refreshNotifyPlan } from "@/lib/push/planClient";
 import { loadNotifySettings, saveNotifySettings } from "@/lib/push/settings";
 
 export type { NudgeCandidate } from "@/lib/push/plan";
@@ -49,6 +50,8 @@ export interface Nudge {
   key: string;
   personaId: string;
   kind: NudgeKind;
+  /** 일과표 슬롯 id (morning·lunch·goodnight …) */
+  topic?: string;
   /** 알림이 울릴 예정이던 시각(ms) */
   at: number;
 }
@@ -168,7 +171,7 @@ export async function scheduleNudges(candidates: NudgeCandidate[]): Promise<numb
   const settings = loadNotifySettings();
   if (!settings.enabled) return 0;
   if ((await notifyPermission()) !== "granted") return 0;
-  const plan = planNudges(new Date(), candidates, settings);
+  const plan = planNudges(new Date(), candidates, settings, loadNotifyPlan());
   if (plan.length === 0) return 0;
   try {
     await ensureChannel();
@@ -179,7 +182,7 @@ export async function scheduleNudges(candidates: NudgeCandidate[]): Promise<numb
         body: nudgeBody(p.name, p.kind),
         channelId: NOTIFY_CHANNEL.id,
         schedule: { at: p.at, allowWhileIdle: true },
-        extra: { personaId: p.personaId, kind: p.kind, at: p.at.getTime() },
+        extra: { personaId: p.personaId, kind: p.kind, topic: p.topic, at: p.at.getTime() },
       })),
     });
     return plan.length;
@@ -191,10 +194,10 @@ export async function scheduleNudges(candidates: NudgeCandidate[]): Promise<numb
 const isNudgeKind = (k: unknown): k is NudgeKind => k === "message" || k === "photo" || k === "video";
 
 function toNudge(id: number, extra: unknown): Nudge | null {
-  const e = (extra ?? {}) as { personaId?: unknown; kind?: unknown; at?: unknown };
+  const e = (extra ?? {}) as { personaId?: unknown; kind?: unknown; at?: unknown; topic?: unknown };
   if (typeof e.personaId !== "string" || !isNudgeKind(e.kind)) return null;
   const at = typeof e.at === "number" ? e.at : Date.now();
-  return { key: `${id}:${at}`, personaId: e.personaId, kind: e.kind, at };
+  return { key: `${id}:${at}`, personaId: e.personaId, kind: e.kind, topic: typeof e.topic === "string" ? e.topic : undefined, at };
 }
 
 /** 이미 도착해 알림창에 쌓여 있는 선톡을 목록으로 옮기고 알림창은 비운다 */
@@ -237,12 +240,16 @@ export function startNudgeLifecycle(h: NudgeLifecycleHandlers): () => void {
 
   const toForeground = async () => {
     await syncDeliveredNudges();
-    await cancelNudges();
     if (!disposed) h.onDelivered();
+    // 쓰는 중에도 "지금부터 minLeadMin 뒤" 기준으로 예약을 계속 갱신해 둔다.
+    // (앱이 백그라운드로 가는 순간에만 예약하면, 그 사이 OS 가 앱을 멈추면 예약이 통째로 빠진다)
+    await scheduleNudges(h.getCandidates());
   };
   const toBackground = () => {
     void scheduleNudges(h.getCandidates());
   };
+  // 쓰는 동안에도 10분마다 예약을 "지금부터 minLeadMin 뒤" 기준으로 밀어 둔다 → 쓰는 중에 알림이 울리지 않고, 갑자기 앱이 멈춰도 예약이 남는다
+  const tick = setInterval(() => void scheduleNudges(h.getCandidates()), 10 * 60_000);
 
   void (async () => {
     try {
@@ -262,10 +269,11 @@ export function startNudgeLifecycle(h: NudgeLifecycleHandlers): () => void {
         return;
       }
       subs.push(s1, s2);
-      await toForeground();
+      await refreshNotifyPlan(); // CMS 일과표 (실패하면 마지막 값/기본값)
       // 처음 실행이면 바로 알림 권한을 묻는다 (기다렸다 묻지 않아야 첫 백그라운드 때 예약된다)
       const st = loadNotifySettings();
       if (st.enabled && !st.asked && (await notifyPermission()) === "prompt") await requestNotifyPermission();
+      await toForeground(); // 권한을 받은 뒤에 예약해야 첫 실행에서도 예약된다
     } catch {
       /* 플러그인을 못 불러오면 알림 없이 동작 */
     }
@@ -273,6 +281,7 @@ export function startNudgeLifecycle(h: NudgeLifecycleHandlers): () => void {
 
   return () => {
     disposed = true;
+    clearInterval(tick);
     for (const s of subs) void s.remove();
   };
 }

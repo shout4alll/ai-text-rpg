@@ -33,6 +33,10 @@ export const personaFileSchema = z.object({
   relationshipType: z.enum(["romance", "friendship"]).default("romance"),
   accent: z.string().regex(/^#[0-9a-fA-F]{6}$/, "accent 는 #RRGGBB 형식"),
   greeting: z.string().min(1),
+  /** 🔑 치트룸: 목록에 안 보이고(치트 코드로 입장), 서버도 운영자 인증 없이는 응답하지 않는다. 운영자 프롬프트(제한 해제)가 기본 */
+  cheatRoom: z.boolean().default(false),
+  /** (치트룸) 🛠 규칙 탭 "주인님 모드 규칙"의 기본 문장 — 이 방의 제한 수위 (미성년자 관련 줄은 코드에 고정) */
+  cheatRules: z.string().optional(),
   image: z.object({
     /** public/avatar/personas/<id>/ 안의 파일명 */
     portrait: z.string().min(1).default("portrait.jpg"),

@@ -45,7 +45,7 @@ export async function GET(request: Request) {
     safety: (pr?.safety as string[] | undefined) ?? [...SAFETY_RULES],
     absolute: (pr?.absolute as string[] | undefined) ?? absoluteRules(p.name),
     allureRules: (pr?.allureRules as string | undefined) ?? defaultLevelRules(p.name, p.gender),
-    ownerRules: (pr?.ownerRules as string | undefined) ?? defaultOwnerRules(p.name),
+    ownerRules: (pr?.ownerRules as string | undefined) ?? p.cheatRules ?? defaultOwnerRules(p.name),
   };
 
   const keys = providerKeys();

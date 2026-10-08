@@ -340,6 +340,7 @@ export default function VoiceCall({
             allure: cb.current.allure,
             voice: readVoiceOverride(persona.id) ?? undefined,
             memory: cb.current.memory,
+            ...(persona.cheatRoom ? { ownerToken: (() => { try { return localStorage.getItem("ai-rpg.owner") ?? undefined; } catch { return undefined; } })() } : {}),
           }),
         });
         const info = (await res.json().catch(() => ({}))) as {

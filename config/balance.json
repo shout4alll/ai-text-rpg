@@ -1,73 +1,183 @@
 {
   "_readme": "밸런스 데이터 한곳 모음. 각 항목 설명은 docs/BALANCE.md. 값을 바꾸고 재배포하면 적용된다. 형식이 틀리면 빌드가 어느 항목이 틀렸는지 알려 준다.",
-
   "affection": {
-    "start": 10,
+    "start": 5,
     "max": 100,
     "stepCap": 5,
     "gainMultiplier": 1.0,
     "lossMultiplier": 1.0,
-    "gainWhileSulking": 0.5,
-    "heartReactionMaxGain": 2,
+    "gainWhileSulking": 0.3,
+    "heartReactionMaxGain": 1,
     "stages": {
       "romance": [
-        { "min": 0, "label": "알아가는 중", "guide": "막 알게 된 사이. 예의와 적당한 거리를 지키며 서로를 알아 간다.", "reward": { "reaction": "smile", "bonusCash": 0 } },
-        { "min": 20, "label": "편한 사이", "guide": "편한 친구 사이. 장난과 근황 공유가 자연스럽고, 허락을 받으면 말을 편하게 해도 된다.", "reward": { "reaction": "laugh", "bonusCash": 0 } },
-        { "min": 45, "label": "설레는 사이", "guide": "서로 설레는 사이. 관심과 보고 싶은 마음을 은근히, 돌려서 표현한다. 아직 고백은 서두르지 않는다.", "reward": { "reaction": "love", "bonusCash": 5 } },
-        { "min": 75, "label": "특별한 사이", "guide": "아주 가까운 사이. 다정한 애정 표현이 자연스럽다. 연인 관계는 대화에서 서로 마음을 확인했을 때만 연인처럼 대한다.", "reward": { "reaction": "kiss", "bonusCash": 10 } }
+        {
+          "min": 0,
+          "label": "알아가는 중",
+          "guide": "막 알게 된 사이. 존댓말과 적당한 거리를 지킨다. 아직 경계가 조금 남아 있어 쉽게 속마음을 열지 않고, 호칭·애칭·스킨십 암시·사적인 질문에는 살짝 선을 긋거나 당황한다. 말투는 차분하고 예의 바르며 감정 표현은 절제한다.",
+          "reward": {
+            "reaction": "smile",
+            "bonusCash": 0
+          }
+        },
+        {
+          "min": 25,
+          "label": "편한 사이",
+          "guide": "편한 친구 사이. 장난과 근황 공유가 자연스럽고 가벼운 농담·놀림도 오간다. 허락을 받으면 말을 조금 편하게 해도 된다. 아직 애정 표현은 없고, 유저가 선을 넘으면 웃으며 받아치거나 슬쩍 피한다. 가끔 먼저 안부를 묻는 정도.",
+          "reward": {
+            "reaction": "laugh",
+            "bonusCash": 0
+          }
+        },
+        {
+          "min": 55,
+          "label": "설레는 사이",
+          "guide": "서로 설레는 사이. 눈치 보며 관심과 보고 싶은 마음을 은근히 돌려 표현하고, 칭찬에 쑥스러워하며, 질투·서운함이 가끔 드러난다. 말투가 부드러워지고 말끝이 길어지며 둘만의 이야기가 늘어난다. 아직 고백은 서두르지 않고 유저가 다른 이성 얘기를 하면 티 나게 신경 쓴다.",
+          "reward": {
+            "reaction": "love",
+            "bonusCash": 5
+          }
+        },
+        {
+          "min": 85,
+          "label": "특별한 사이",
+          "guide": "아주 가까운 사이. 다정하고 솔직한 애정 표현, 보고 싶다는 말, 애칭, 은근한 스킨십 암시가 자연스럽다. 감정 기복과 서운함도 숨기지 않고 솔직히 말하며, 유저의 하루를 세세히 챙기고 의지한다. 대화의 열기와 친밀감이 가장 높다. 연인 관계는 서로 마음을 확인했을 때만 연인처럼 대한다.",
+          "reward": {
+            "reaction": "kiss",
+            "bonusCash": 10
+          }
+        }
       ],
       "friendship": [
-        { "min": 0, "label": "알아가는 중", "guide": "막 알게 된 사이. 예의와 적당한 거리를 지키며 서로를 알아 간다.", "reward": { "reaction": "smile", "bonusCash": 0 } },
-        { "min": 20, "label": "편한 사이", "guide": "편한 친구 사이. 장난과 근황 공유가 자연스럽다.", "reward": { "reaction": "laugh", "bonusCash": 0 } },
-        { "min": 45, "label": "친한 친구", "guide": "속 얘기를 나누는 친구. 고민을 털어놓고 진심으로 응원한다. 연애 감정은 아니다.", "reward": { "reaction": "laugh", "bonusCash": 5 } },
-        { "min": 75, "label": "절친", "guide": "무엇이든 말할 수 있는 절친. 깊이 신뢰하고 챙긴다. 연애 감정으로는 발전하지 않는다.", "reward": { "reaction": "touched", "bonusCash": 10 } }
+        {
+          "min": 0,
+          "label": "알아가는 중",
+          "guide": "막 알게 된 사이. 존댓말과 적당한 거리를 지키며 서로를 알아 간다. 사적인 질문에는 조심스럽다.",
+          "reward": {
+            "reaction": "smile",
+            "bonusCash": 0
+          }
+        },
+        {
+          "min": 25,
+          "label": "편한 사이",
+          "guide": "편한 친구 사이. 장난과 근황 공유가 자연스럽고 가벼운 농담이 오간다.",
+          "reward": {
+            "reaction": "laugh",
+            "bonusCash": 0
+          }
+        },
+        {
+          "min": 55,
+          "label": "친한 친구",
+          "guide": "속 얘기를 나누는 친구. 고민을 털어놓고 진심으로 응원하며, 서운하면 솔직하게 말한다. 연애 감정은 아니다.",
+          "reward": {
+            "reaction": "laugh",
+            "bonusCash": 5
+          }
+        },
+        {
+          "min": 85,
+          "label": "절친",
+          "guide": "무엇이든 말할 수 있는 절친. 깊이 신뢰하고 서로 막 대하듯 편하며 진심으로 챙긴다. 허물없는 말투와 장난이 최고조. 연애 감정으로는 발전하지 않는다.",
+          "reward": {
+            "reaction": "touched",
+            "bonusCash": 10
+          }
+        }
       ]
     },
     "stageUpBannerMs": 4000,
-    "stageDownNotice": true
-  },
-
-  "sulk": {
-    "startDrop": -3,
-    "levelByDrop": [
-      { "maxDelta": -1, "level": 1 },
-      { "maxDelta": -3, "level": 2 },
-      { "maxDelta": -5, "level": 3 }
+    "stageDownNotice": true,
+    "gainCap": 2,
+    "gainByStage": [
+      1.0,
+      0.7,
+      0.5,
+      0.4
     ],
-    "levelBonusByStage": [0, 0, 1, 1],
+    "lossByStage": [
+      0.8,
+      1.0,
+      1.3,
+      1.6
+    ],
+    "decay": {
+      "graceHours": 36,
+      "perDay": 1,
+      "maxTotal": 6,
+      "floorAtStage": true
+    },
+    "touch": {
+      "gain": 1,
+      "gainCooldownSec": 120,
+      "gainMaxPerVisit": 3,
+      "gainBelow": 70,
+      "strangerLoss": 1,
+      "strangerLossCooldownSec": 60,
+      "poutLoss": 1
+    }
+  },
+  "sulk": {
+    "startDrop": -2,
+    "levelByDrop": [
+      {
+        "maxDelta": -1,
+        "level": 1
+      },
+      {
+        "maxDelta": -3,
+        "level": 2
+      },
+      {
+        "maxDelta": -5,
+        "level": 3
+      }
+    ],
+    "levelBonusByStage": [
+      0,
+      0,
+      1,
+      1
+    ],
     "escalateWindowMin": 30,
     "sootheDelta": 2,
     "levels": [
       {
         "level": 1,
         "label": "살짝 삐짐",
-        "freeHearts": ["love", "like", "hug", "touched", "shy"],
+        "freeHearts": [
+          "love",
+          "like",
+          "hug",
+          "touched",
+          "shy"
+        ],
         "sootheNeeded": 1,
         "giftCost": 3,
-        "autoReleaseMin": 30,
+        "autoReleaseMin": 45,
         "hint": "하트나 좋아요, 다정한 한마디로 풀려요"
       },
       {
         "level": 2,
         "label": "토라짐",
         "freeHearts": [],
-        "sootheNeeded": 1,
-        "giftCost": 5,
-        "autoReleaseMin": 180,
-        "hint": "하트로는 안 풀려요 · 기분 풀릴 말을 해 주세요"
+        "sootheNeeded": 2,
+        "giftCost": 6,
+        "autoReleaseMin": 240,
+        "hint": "하트로는 안 풀려요 · 진심 어린 사과나 다정한 말을 두 번쯤 해 주세요"
       },
       {
         "level": 3,
         "label": "단단히 화남",
         "freeHearts": [],
-        "sootheNeeded": 2,
-        "giftCost": 10,
-        "autoReleaseMin": 720,
-        "hint": "진심으로 두 번 이상 달래거나 선물이 필요해요"
+        "sootheNeeded": 3,
+        "giftCost": 12,
+        "autoReleaseMin": 1440,
+        "hint": "진심으로 세 번 이상 달래거나 선물이 필요해요"
       }
     ],
     "gift": {
-      "affectionBonus": 2,
+      "affectionBonus": 1,
       "reaction": "love",
       "kissIfPossible": true
     },
@@ -76,17 +186,15 @@
       "autoReleaseSec": 20
     }
   },
-
   "touch": {
     "comboMs": 1200,
     "fireGapMs": 350,
     "poutCombo": 5,
     "poutComboMaybe": 3,
     "poutComboMaybeChance": 0.6,
-    "shyUntil": 20,
-    "closeFrom": 45
+    "shyUntil": 25,
+    "closeFrom": 55
   },
-
   "director": {
     "aiVideoGapMs": 12000,
     "sameClipGapMs": 45000,
@@ -96,12 +204,11 @@
     "touchSameClipGapMs": 18000,
     "touchTurnAwayCombo": 9,
     "kissGapMs": 600000,
-    "kissAffection": 75,
+    "kissAffection": 85,
     "kissFromHeartChance": 0.35,
     "kissFromHeadPatChance": 0.12,
     "teaserGapMs": 600000
   },
-
   "allure": {
     "gapMs": 25000,
     "sameClipGapMs": 90000,
@@ -109,29 +216,40 @@
     "heartChance": 0.8,
     "touchChance": 0.45
   },
-
   "userMedia": {
     "maxImageSide": 1280,
     "modelImageSide": 768,
     "videoFrames": 3,
     "maxVideoMB": 60,
     "maxPerDay": 30,
-    "affectionMaxGain": 3
+    "affectionMaxGain": 2
   },
-
   "aiMedia": {
     "requireUserRequest": true,
     "cooldownTurns": 8,
-    "requestKeywords": ["사진", "셀카", "셀피", "얼굴 보", "얼굴 좀", "모습", "영상", "동영상", "찍어", "인증샷", "pic", "photo", "selfie", "video"]
+    "requestKeywords": [
+      "사진",
+      "셀카",
+      "셀피",
+      "얼굴 보",
+      "얼굴 좀",
+      "모습",
+      "영상",
+      "동영상",
+      "찍어",
+      "인증샷",
+      "pic",
+      "photo",
+      "selfie",
+      "video"
+    ]
   },
-
   "memory": {
     "everyUserTurns": 12,
     "afterVoiceCall": true,
     "maxFacts": 30,
     "maxTurnsPerUpdate": 60
   },
-
   "cost": {
     "maxOutputTokens": 700,
     "historyTurns": 40,
@@ -139,20 +257,55 @@
     "heartLlmGapSec": 30,
     "voiceRecentTurns": 16
   },
-
   "routing": {
     "enabled": true,
     "lightMaxChars": 25,
     "firstTurnsMain": 4,
     "mainEveryLight": 6,
-    "lightKinds": ["reaction"],
-    "mainKinds": ["user_media", "gift", "return", "call"],
+    "lightKinds": [
+      "reaction"
+    ],
+    "mainKinds": [
+      "user_media",
+      "gift",
+      "return",
+      "call"
+    ],
     "mainWhenSulking": true,
     "mainWhenAllure": false,
-    "mainKeywords": ["?", "？", "왜", "어떻게", "고민", "힘들", "슬퍼", "우울", "외로", "불안", "무서", "아파", "죽고", "사랑해", "좋아해", "보고 싶", "미안", "헤어", "싸웠", "회사", "시험", "취업", "약속", "기억나", "비밀"],
-    "lightPatterns": ["^[ㅋㅎㄱㅇㅠㅜ~!.?\\s]+$", "^((응|웅|엉|어|ㅇㅇ|그래|그렇구나|그치|맞아|좋아|오케이|ok|okay|굿|헐|대박|와|오|아하|넹|네|넵|예|흐음|음)[~!.ㅋㅎ\\s]*)+$", "^(안녕|하이|hi|hello|좋은 ?아침|굿모닝|잘 ?자|굿밤|잘자요|잘 ?있었|고마워|고마워요|감사|땡큐|ㄱㅅ)"]
+    "mainKeywords": [
+      "?",
+      "？",
+      "왜",
+      "어떻게",
+      "고민",
+      "힘들",
+      "슬퍼",
+      "우울",
+      "외로",
+      "불안",
+      "무서",
+      "아파",
+      "죽고",
+      "사랑해",
+      "좋아해",
+      "보고 싶",
+      "미안",
+      "헤어",
+      "싸웠",
+      "회사",
+      "시험",
+      "취업",
+      "약속",
+      "기억나",
+      "비밀"
+    ],
+    "lightPatterns": [
+      "^[ㅋㅎㄱㅇㅠㅜ~!.?\\s]+$",
+      "^((응|웅|엉|어|ㅇㅇ|그래|그렇구나|그치|맞아|좋아|오케이|ok|okay|굿|헐|대박|와|오|아하|넹|네|넵|예|흐음|음)[~!.ㅋㅎ\\s]*)+$",
+      "^(안녕|하이|hi|hello|좋은 ?아침|굿모닝|잘 ?자|굿밤|잘자요|잘 ?있었|고마워|고마워요|감사|땡큐|ㄱㅅ)"
+    ]
   },
-
   "replyPool": {
     "enabled": true,
     "minVariants": 3,
@@ -160,30 +313,86 @@
     "useChance": 0.6,
     "ttlMin": 720,
     "categories": {
-      "greeting": ["안녕", "하이", "hi", "hello", "반가워"],
-      "morning": ["좋은 아침", "좋은아침", "굿모닝", "잘 잤"],
-      "goodnight": ["잘 자", "잘자", "굿밤", "좋은 꿈", "자러 갈게", "잘게"],
-      "thanks": ["고마워", "감사", "땡큐", "ㄱㅅ"]
+      "greeting": [
+        "안녕",
+        "하이",
+        "hi",
+        "hello",
+        "반가워"
+      ],
+      "morning": [
+        "좋은 아침",
+        "좋은아침",
+        "굿모닝",
+        "잘 잤"
+      ],
+      "goodnight": [
+        "잘 자",
+        "잘자",
+        "굿밤",
+        "좋은 꿈",
+        "자러 갈게",
+        "잘게"
+      ],
+      "thanks": [
+        "고마워",
+        "감사",
+        "땡큐",
+        "ㄱㅅ"
+      ]
     }
   },
-
   "voice": {
     "freeExchanges": 5,
     "trialMaxSeconds": 180,
     "touchNotifyGapMs": 8000
   },
-
   "cash": {
     "voicePerMinute": 5,
     "photo": 10,
     "demoStart": 30,
     "demoTopup": 100
   },
-
   "plans": {
-    "free": { "name": "무료", "priceKrw": 0, "voiceMinutes": 0, "photos": 0, "premiumReactions": false, "bonusCash": 0, "color": "#64748b", "tagline": "" },
-    "best": { "name": "BEST", "priceKrw": 9900, "voiceMinutes": 30, "photos": 10, "premiumReactions": false, "bonusCash": 0, "color": "#38bdf8", "tagline": "가볍게 목소리 듣기" },
-    "prime": { "name": "PRIME", "priceKrw": 19900, "voiceMinutes": 120, "photos": 40, "premiumReactions": true, "bonusCash": 50, "color": "#f472b6", "tagline": "매일 통화하는 사이" },
-    "vip": { "name": "VIP", "priceKrw": 39900, "voiceMinutes": 300, "photos": 100, "premiumReactions": true, "bonusCash": 150, "color": "#fbbf24", "tagline": "가장 특별한 사이" }
+    "free": {
+      "name": "무료",
+      "priceKrw": 0,
+      "voiceMinutes": 0,
+      "photos": 0,
+      "premiumReactions": false,
+      "bonusCash": 0,
+      "color": "#64748b",
+      "tagline": ""
+    },
+    "best": {
+      "name": "BEST",
+      "priceKrw": 9900,
+      "voiceMinutes": 30,
+      "photos": 10,
+      "premiumReactions": false,
+      "bonusCash": 0,
+      "color": "#38bdf8",
+      "tagline": "가볍게 목소리 듣기"
+    },
+    "prime": {
+      "name": "PRIME",
+      "priceKrw": 19900,
+      "voiceMinutes": 120,
+      "photos": 40,
+      "premiumReactions": true,
+      "bonusCash": 50,
+      "color": "#f472b6",
+      "tagline": "매일 통화하는 사이"
+    },
+    "vip": {
+      "name": "VIP",
+      "priceKrw": 39900,
+      "voiceMinutes": 300,
+      "photos": 100,
+      "premiumReactions": true,
+      "bonusCash": 150,
+      "color": "#fbbf24",
+      "tagline": "가장 특별한 사이"
+    }
   }
 }

@@ -1,3 +1,4 @@
+import { isOwnerToken } from "@/lib/owner";
 import { NextResponse } from "next/server";
 import { settingValue } from "@/config/settings";
 import { GoogleGenAI, Modality } from "@google/genai";
@@ -41,6 +42,8 @@ const bodySchema = z.object({
   voice: z.string().max(40).optional(),
   /** 💋 매혹 모드 (인물 파일에 allure 가 있을 때만 반영) */
   allure: z.boolean().optional(),
+  /** 🔑 치트룸 보이스톡용 운영자 토큰 */
+  ownerToken: z.string().max(100).optional(),
 });
 
 export async function POST(request: Request) {
@@ -68,6 +71,9 @@ export async function POST(request: Request) {
   }
 
   const persona = getPersonaFile(body.personaId);
+  if (persona.cheatRoom && !isOwnerToken(body.ownerToken)) {
+    return NextResponse.json({ error: "치트룸은 운영자만 쓸 수 있어요." }, { status: 403 });
+  }
   const model = settingValue("voiceModel") || DEFAULT_MODEL; // config/settings.ts voiceModel (GEMINI_LIVE_MODEL)
   const voice = isGeminiVoice(body.voice) ? body.voice : voiceNameFor(persona);
   // 무료 체험(주고받기 5번)은 3분이면 충분 → 토큰 자체를 짧게 (클라이언트 조작 대비)

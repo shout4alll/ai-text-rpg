@@ -30,6 +30,8 @@ interface PersonaSelectorProps {
   onGems?: () => void;
   /** 대화방별 마지막 메시지 (대화한 적 있는 사람만) */
   previews?: Record<string, string>;
+  /** 🔑 치트 코드로 입장 (맞으면 null, 틀리면 안내 문구). 없으면 코드 입력 버튼을 숨긴다 */
+  onCheatCode?: (code: string) => Promise<string | null>;
 }
 
 export default function PersonaSelector({
@@ -43,7 +45,24 @@ export default function PersonaSelector({
   gems,
   onGems,
   previews = {},
+  onCheatCode,
 }: PersonaSelectorProps) {
+  const [codeOpen, setCodeOpen] = useState(false);
+  const [code, setCode] = useState("");
+  const [codeMsg, setCodeMsg] = useState("");
+  const [codeBusy, setCodeBusy] = useState(false);
+  const submitCode = async () => {
+    if (!onCheatCode || !code.trim() || codeBusy) return;
+    setCodeBusy(true);
+    const err = await onCheatCode(code.trim());
+    setCodeBusy(false);
+    if (err) setCodeMsg(err);
+    else {
+      setCode("");
+      setCodeMsg("");
+      setCodeOpen(false);
+    }
+  };
   const [filter, setFilter] = useState<Filter>("all");
   const visible = personas.filter((p) => filter === "all" || p.profile.gender === filter);
   const count = (f: Filter) =>
@@ -171,6 +190,9 @@ export default function PersonaSelector({
                       <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> 대화 중
                     </span>
                   )}
+                  {p.cheatRoom && (
+                    <span className="absolute right-3 bottom-3 rounded-full bg-amber-300 px-2.5 py-1 text-[11px] font-bold text-slate-900 shadow-soft" data-cheat-badge>🔑 치트룸</span>
+                  )}
                   {selected && (
                     <span className="absolute right-3 top-3 rounded-full bg-surface/90 px-2.5 py-1 text-[11px] font-semibold text-ink shadow-soft backdrop-blur">
                       지금 대화 상대
@@ -201,6 +223,41 @@ export default function PersonaSelector({
             );
           })}
         </div>
+
+        {onCheatCode && (
+          <div className="mt-10 flex flex-col items-center gap-2 text-center">
+            {!codeOpen ? (
+              <button type="button" data-cheat-open onClick={() => setCodeOpen(true)} className="text-[11px] text-ink-mute/70 underline-offset-2 hover:underline">
+                🔑 코드 입력
+              </button>
+            ) : (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void submitCode();
+                }}
+                className="flex w-full max-w-sm flex-col gap-2"
+              >
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    autoCapitalize="off"
+                    data-cheat-input
+                    value={code}
+                    onChange={(e) => setCode(e.target.value)}
+                    placeholder="코드"
+                    className="min-w-0 flex-1 rounded-full bg-surface px-4 py-2 text-sm text-ink shadow-soft ring-1 ring-ink-line focus:outline-none focus:ring-2 focus:ring-brand-400"
+                  />
+                  <button type="submit" data-cheat-submit disabled={codeBusy || !code.trim()} className="rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white disabled:opacity-40">
+                    {codeBusy ? "…" : "입장"}
+                  </button>
+                </div>
+                {codeMsg && <p className="text-xs text-rose-500" data-cheat-msg>{codeMsg}</p>}
+              </form>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

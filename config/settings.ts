@@ -15,7 +15,7 @@
 import { TYPO, TYPING } from "@/config/typing";
 import { GEM_TEST_TOPUP, GEM_PACKS } from "@/config/gems";
 import { RETURN_CHANCE } from "@/config/returnNudge";
-import { NOTIFY_PER_DAY, NOTIFY_WINDOW, NOTIFY_MIN_LEAD_MIN } from "@/config/notifications";
+import { DEFAULT_NOTIFY_PLAN } from "@/config/notifications";
 import { BALANCE } from "@/config/balance";
 
 export type SettingType = "enum" | "number" | "string";
@@ -151,6 +151,6 @@ export function appSettings(): AppSettingView[] {
     { label: "충전 상품", value: GEM_PACKS.map((p) => `💎${p.gems}`).join(" · "), file: "config/gems.ts GEM_PACKS" },
     { label: "시작 보석", value: `💎${BALANCE.cash.demoStart}`, file: "config/balance.json cash.demoStart" },
     { label: "재입장 선톡 확률", value: RETURN_CHANCE.map((b) => `${b.minGapMin >= 60 ? `${b.minGapMin / 60}h` : `${b.minGapMin}m`}:${Math.round(b.chance * 100)}%`).join(" "), file: "config/returnNudge.ts" },
-    { label: "선톡 알림", value: `${NOTIFY_WINDOW.startHour}~${NOTIFY_WINDOW.endHour}시 · 하루 ${NOTIFY_PER_DAY.min}~${NOTIFY_PER_DAY.max}번 · 닫고 ${NOTIFY_MIN_LEAD_MIN}분 뒤부터`, file: "config/notifications.ts" },
+    { label: "선톡 알림", value: `${DEFAULT_NOTIFY_PLAN.window.start}~${DEFAULT_NOTIFY_PLAN.window.end} · 하루 ${DEFAULT_NOTIFY_PLAN.perDay.min}~${DEFAULT_NOTIFY_PLAN.perDay.max}번(끼니·일과·잠) · 닫고 ${DEFAULT_NOTIFY_PLAN.minLeadMin}분 뒤부터`, file: "config/notifications.ts" },
   ];
 }

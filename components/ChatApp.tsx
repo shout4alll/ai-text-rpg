@@ -334,7 +334,7 @@ export default function ChatApp({
   const [marks, setMarks] = useState<TouchMark[]>([]);
   const effectId = useRef(0);
   // 화면 터치 연타 추적
-  const touchRef = useRef({ lastAt: 0, combo: 0, lastFire: 0 });
+  const touchRef = useRef({ lastAt: 0, combo: 0, lastFire: 0, lastGain: 0, gains: 0, lastLoss: 0 });
 
   // 유료 실시간 사진 (모달 → 캐시 차감 → 생성)
   const [photoOffer, setPhotoOffer] = useState<null | { personaId: PersonaId; request: string }>(null);
@@ -420,6 +420,16 @@ export default function ChatApp({
   const sessionRef = useRef(0);
 
   const persona = personaId ? byId.get(personaId) ?? null : null;
+  // 🔑 치트룸: 치트 코드를 친 운영자에게만 목록에 보이고, 안에서는 결제·멤버십 제한이 없다 (서버도 운영자 인증 없이는 응답 안 함)
+  const cheat = !!persona?.cheatRoom && !!ownerTok;
+  const cheatRef = useRef(false);
+  cheatRef.current = cheat;
+  const payCash = (n: number) => cheatRef.current || spendCash(n);
+  const listed = useMemo(() => personas.filter((p) => !p.cheatRoom || !!ownerTok), [personas, ownerTok]);
+  // 치트 토큰이 사라지면(주인님퇴장) 치트룸에서 나온다
+  useEffect(() => {
+    if (personaId && byId.get(personaId)?.cheatRoom && !ownerTok) setPersonaId(null);
+  }, [ownerTok, personaId, byId]);
 
   /* ── 효과 ─────────────────────────────────────────────────────────────── */
   const spawnParticles = useCallback((emojis: string[] | undefined, count = 6) => {
@@ -482,7 +492,7 @@ export default function ChatApp({
   const [stageBanner, setStageBanner] = useState<{ label: string; key: number } | null>(null);
 
   /** 유료 리액션 영상: 서버 설정(PREMIUM_ACCESS=open) 또는 PRIME 이상 구독 */
-  const premiumUnlocked = premiumReactions || (membership ? PLANS[membership.plan].premiumReactions : false);
+  const premiumUnlocked = premiumReactions || cheat || (membership ? PLANS[membership.plan].premiumReactions : false);
   /** 💋 매혹 모드: 인물이 지원 + 멤버십(PRIME 이상) + 켜 둠 */
   const allureActive = !!persona?.allure && premiumUnlocked && allureIds.includes(persona.id);
 
@@ -687,6 +697,28 @@ export default function ChatApp({
         return null;
       }
       t.lastFire = now;
+      // 터치 호감도: 낯선 사이에 몸을 만지면 깎이고, 친해진 뒤 다정한 터치는 가끔·소량만 오른다 (balance.json affection.touch)
+      {
+        const TA = BALANCE.affection.touch;
+        const cur = affectionRef.current;
+        let td = 0;
+        if (cur < BALANCE.touch.shyUntil && zone === "body" && now - t.lastLoss > TA.strangerLossCooldownSec * 1000) {
+          td = -TA.strangerLoss;
+          t.lastLoss = now;
+        } else if (touchId === "pout" && t.combo >= BALANCE.touch.poutCombo && now - t.lastLoss > TA.strangerLossCooldownSec * 1000) {
+          td = -TA.poutLoss;
+          t.lastLoss = now;
+        } else if (
+          (touchId === "joy" || touchId === "lovely" || touchId === "shy") &&
+          cur >= BALANCE.touch.shyUntil && cur < TA.gainBelow && !sulkRef.current &&
+          t.gains < TA.gainMaxPerVisit && now - t.lastGain > TA.gainCooldownSec * 1000
+        ) {
+          td = TA.gain;
+          t.lastGain = now;
+          t.gains += 1;
+        }
+        if (td !== 0) applyAffection(td);
+      }
       const d = director.decide({ type: "touch", touch: touchId, combo: t.combo }, directorCtx(affectionRef.current));
       applyDecision(d, { x, y });
       spawnSparks(d.particles ?? def.particles, x, y, d.video ? 8 : 6);
@@ -703,7 +735,7 @@ export default function ChatApp({
       }
       return touchId;
     },
-    [persona, affection, spawnSparks, director, directorCtx, applyDecision]
+    [persona, affection, spawnSparks, director, directorCtx, applyDecision, applyAffection]
   );
 
   /* ── 대화방 열기 / 지우기 ──────────────────────────────────────────────── */
@@ -717,8 +749,21 @@ export default function ChatApp({
       if (saved && saved.messages.length > 0) {
         msgs = saved.messages;
         nextId.current = Math.max(...msgs.map((m) => m.id)) + 1;
-        setAffection(saved.affection);
-        affectionRef.current = saved.affection;
+        // 오래 연락이 없으면 서서히 식는다 (balance.json affection.decay) — 단계 시작점 밑으로는 내려가지 않는다
+        const D = BALANCE.affection.decay;
+        const lastAt = msgs[msgs.length - 1]?.at ?? Date.now();
+        const idleH = (Date.now() - lastAt) / 3_600_000;
+        let aff = saved.affection;
+        if (D.perDay > 0 && idleH > D.graceHours) {
+          const loss = Math.min(D.maxTotal, Math.floor(((idleH - D.graceHours) / 24) * D.perDay));
+          if (loss > 0) {
+            const floor = D.floorAtStage ? affectionProgress(aff, p.relationshipType).stage.min : 0;
+            aff = Math.max(floor, aff - loss);
+          }
+        }
+        touchRef.current = { lastAt: 0, combo: 0, lastFire: 0, lastGain: 0, gains: 0, lastLoss: 0 };
+        setAffection(aff);
+        affectionRef.current = aff;
         bestStage.current = Math.max(saved.bestStage ?? 0, affectionStageIndex(saved.affection, p.relationshipType));
       } else {
         nextId.current = 0;
@@ -763,7 +808,7 @@ export default function ChatApp({
       const lastAt = msgs.length ? msgs[msgs.length - 1].at : 0;
       const pendingNudge = peekNudge(id);
       if (lastText?.role === "user") setAutoAction("unanswered");
-      else if (pendingNudge && texts.some((m) => m.role === "user")) {
+      else if (pendingNudge) {
         nudgeRef.current = pendingNudge;
         setAutoAction("nudge");
       } else if (texts.some((m) => m.role === "user") && Math.random() < returnChance(Date.now() - lastAt)) setAutoAction("return");
@@ -783,10 +828,33 @@ export default function ChatApp({
     [openChat]
   );
 
+  /** 🔑 치트룸 🛠 › 치트 탭 동작 */
+  const cheatActions = {
+    affection,
+    setAffection: (v: number) => {
+      const n = clampAffection(Math.round(v));
+      setAffection(n);
+      affectionRef.current = n;
+      if (persona) bestStage.current = Math.max(bestStage.current, affectionStageIndex(n, persona.relationshipType));
+    },
+    clearSulk: () => {
+      if (sulkTimer.current) clearTimeout(sulkTimer.current);
+      setSulk(null);
+      sulkReleasedAt.current = Date.now();
+    },
+    addGems: (n: number) => {
+      setCash(getCash() + n);
+      setCashState(getCash());
+    },
+    resetChat: () => {
+      if (persona) resetChat(persona.id);
+    },
+  };
+
   // 마지막으로 대화한 사람 복원
   useEffect(() => {
     const last = readStorage(LAST_KEY);
-    if (last && byId.has(last)) openChat(last);
+    if (last && byId.has(last) && !byId.get(last)?.cheatRoom) openChat(last); // 치트룸은 자동 복원하지 않는다
     setHydrated(true);
   }, [byId, openChat]);
 
@@ -880,7 +948,7 @@ export default function ChatApp({
 
   /* ── 답장 받기 (공통) ──────────────────────────────────────────────────── */
   const requestReply = useCallback(
-    async (msgs: ChatMessage[], kind: Turn["kind"], tapbackTargetId: number | null, heart?: HeartReactionId, nudge?: NudgeKind) => {
+    async (msgs: ChatMessage[], kind: Turn["kind"], tapbackTargetId: number | null, heart?: HeartReactionId, nudge?: NudgeKind, nudgeTopic?: string) => {
       if (!personaId) return;
       const pid = personaId;
       const session = sessionRef.current;
@@ -910,7 +978,7 @@ export default function ChatApp({
           allureOk: !!persona?.allure && premiumUnlocked,
           sulk: sulkSummary(sulkRef.current),
           memory: memoryRef.current?.facts ?? [],
-          ...(kind === "return" && nudge ? { nudge } : {}),
+          ...(kind === "return" && nudge ? { nudge, ...(nudgeTopic ? { nudgeTopic } : {}) } : {}),
           ...(readOwnerToken() ? { ownerToken: readOwnerToken(), ownerOpts: buildOwnerOpts(pid) } : {}),
         }),
       }).then(async (res) => {
@@ -1096,7 +1164,7 @@ export default function ChatApp({
         nudgeRef.current = null;
         if (n) {
           consumeNudge(n.key);
-          requestReply(messages, "return", null, undefined, n.kind);
+          requestReply(messages, "return", null, undefined, n.kind, n.topic);
         }
         return;
       }
@@ -1112,20 +1180,25 @@ export default function ChatApp({
   const nudgeCandidates = useCallback((): NudgeCandidate[] => {
     const out: NudgeCandidate[] = [];
     for (const p of personas) {
+      if (p.cheatRoom) continue; // 치트룸은 선톡 알림 대상이 아니다
       const c = loadChat(p.id);
       if (!c) continue;
       const talked = c.messages.some((m) => m.role === "user" && (m.kind ?? "text") === "text" && !m.local);
-      if (!talked) continue;
+      if (!talked && c.messages.length === 0) continue;
       if (c.sulk && !sulkExpired(c.sulk)) continue; // 삐져 있으면 먼저 연락하지 않는다
       const sent = new Set(c.messages.flatMap((m) => (m.media?.albumId ? [m.media.albumId] : [])));
       const left = p.album.filter((a) => !sent.has(a.id));
       out.push({
         personaId: p.id,
         name: p.name,
-        lastAt: c.messages.reduce((mx, m) => Math.max(mx, m.at), 0),
+        lastAt: c.messages.reduce((mx, m) => Math.max(mx, m.at), 0) - (talked ? 0 : 7 * 86_400_000), // 말 한 번 안 걸어 본 방은 뒤로
         photos: left.filter((a) => a.type === "photo").length,
         videos: left.filter((a) => a.type === "video").length,
       });
+    }
+    // 아직 대화방을 하나도 안 열었어도(막 설치) 알림은 가야 한다: 인물 전체를 후보로
+    if (out.length === 0) {
+      for (const p of personas) if (!p.cheatRoom) out.push({ personaId: p.id, name: p.name, lastAt: 0, photos: p.album.filter((a) => a.type === "photo").length, videos: p.album.filter((a) => a.type === "video").length });
     }
     return out;
   }, [personas]);
@@ -1272,7 +1345,7 @@ export default function ChatApp({
     // 구독 사진이 남았으면 그걸로, 아니면 캐시
     const usePlan = consumePlanPhoto();
     const cost = usePlan ? 0 : MEDIA_COST.photo;
-    if (!usePlan && !spendCash(cost)) {
+    if (!usePlan && !payCash(cost)) {
       setCashState(getCash());
       return;
     }
@@ -1325,7 +1398,7 @@ export default function ChatApp({
     const s = sulkRef.current;
     if (!persona || !s || busy) return;
     const cost = giftCost(s);
-    if (cost > 0 && !spendCash(cost)) {
+    if (cost > 0 && !payCash(cost)) {
       setCashState(getCash());
       addNotice(`💎 캐시가 부족해요 (필요 ${cost})`);
       refreshMembership();
@@ -1429,11 +1502,32 @@ export default function ChatApp({
       setPlansModal("allure");
       return;
     }
-    if (readStorage(ALLURE_STORAGE.adult) !== "1") {
+    if (!cheat && readStorage(ALLURE_STORAGE.adult) !== "1") {
       setAllureGate(true);
       return;
     }
     enableAllure();
+  };
+
+  /** 🔑 치트 코드 입장: 서버가 코드를 확인하고 토큰을 준다 → 치트룸이 목록에 나타나고 바로 들어간다 */
+  const handleCheatCode = async (code: string): Promise<string | null> => {
+    try {
+      const res = await fetch(apiUrl("/api/owner/enter"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; ownerToken?: string; error?: string };
+      if (!res.ok || !data.ok || !data.ownerToken) return data.error ?? "입장하지 못했어요.";
+      writeOwnerToken(data.ownerToken);
+      setOwnerTok(data.ownerToken);
+      const room = personas.find((p) => p.cheatRoom);
+      setSelectorOpen(false);
+      if (room) openChat(room.id);
+      return null;
+    } catch {
+      return "서버에 연결하지 못했어요.";
+    }
   };
 
   const handleSelect = (id: PersonaId) => {
@@ -1488,7 +1582,7 @@ export default function ChatApp({
 
   /** 캐시로 통화 시작: 첫 1분을 먼저 차감 */
   const startCashCall = () => {
-    if (!spendCash(CASH_PRICE.voicePerMinute)) {
+    if (!payCash(CASH_PRICE.voicePerMinute)) {
       refreshMembership();
       return;
     }
@@ -1505,7 +1599,7 @@ export default function ChatApp({
       if (voiceBilling?.mode !== "cash") return;
       const needed = Math.floor(sec / 60) + 1;
       if (needed <= cashMinutesPaid.current) return;
-      if (spendCash(CASH_PRICE.voicePerMinute)) {
+      if (payCash(CASH_PRICE.voicePerMinute)) {
         cashMinutesPaid.current = needed;
         setCashState(getCash());
       } else {
@@ -1555,7 +1649,7 @@ export default function ChatApp({
   if (!persona) {
     return (
       <main className="h-[100dvh] w-full bg-paper">
-        <PersonaSelector personas={personas} currentId={null} onSelect={handleSelect} previews={previews()} onBackup={() => setBackupOpen(true)} onTheme={() => setThemeOpen(true)} onNotify={() => setNotifyOpen(true)} gems={cash} onGems={() => setGemOpen(true)} />
+        <PersonaSelector personas={listed} onCheatCode={handleCheatCode} currentId={null} onSelect={handleSelect} previews={previews()} onBackup={() => setBackupOpen(true)} onTheme={() => setThemeOpen(true)} onNotify={() => setNotifyOpen(true)} gems={cash} onGems={() => setGemOpen(true)} />
         {backupOpen && <BackupModal onClose={() => setBackupOpen(false)} onRestored={() => window.location.reload()} />}
       {themeOpen && (
         <ThemePicker
@@ -1893,6 +1987,7 @@ export default function ChatApp({
           <DevPanel
             token={ownerTok}
             personaId={persona.id}
+            cheat={cheat ? cheatActions : undefined}
             last={lastDebug}
             client={[
               { label: "주인님 모드", value: "켜짐 (해제: 주인님퇴장)" },
@@ -2130,7 +2225,8 @@ export default function ChatApp({
 
       {selectorOpen && (
         <PersonaSelector
-          personas={personas}
+          personas={listed}
+          onCheatCode={handleCheatCode}
           currentId={persona.id}
           onSelect={handleSelect}
           onClose={() => setSelectorOpen(false)}

@@ -32,3 +32,36 @@
 - **리전:** Vercel은 `AWS_REGION`을 함수가 실행되는 리전 값으로 자동 주입할 수 있습니다. 그래서 `BEDROCK_REGION`을 먼저 읽습니다. Vercel에서는 `BEDROCK_REGION=us-east-1`을 명시하세요.
 - **인증:** 기본은 Bedrock API 키(`AWS_BEDROCK_API_KEY`)입니다. IAM 액세스 키를 쓰려면 `BEDROCK_USE_IAM=true`를 함께 설정해야 합니다. 플랫폼이 자동으로 넣은 AWS 값으로 잘못 서명하는 것을 막기 위해서입니다.
 - **JSON 응답 강제:** SDK가 Bedrock에서는 스키마를 "강제 도구 호출(json 도구)"로 보내 응답 형식을 맞춥니다. 모델이 도구 호출을 지원해야 합니다(Nova, Claude 지원).
+
+## Meta Llama (Bedrock)
+
+Llama 는 별도 키 없이 **Bedrock 모델 ID** 로 쓴다. 역할(파트)별 환경변수에 그대로 넣으면 된다.
+
+| 파트 | 환경변수 | Llama 예시 |
+| --- | --- | --- |
+| 메인 대화 | `AI_MODEL` | `us.meta.llama4-maverick-17b-instruct-v1:0` |
+| 가벼운 대화 | `AI_MODEL_LIGHT` | `us.meta.llama4-scout-17b-instruct-v1:0` |
+| 기억 정리 | `AI_CHEAP_MODEL` | `us.meta.llama4-scout-17b-instruct-v1:0` |
+| 성인 모델(매혹 모드) | `AI_MODEL_MATURE` | `us.meta.llama4-maverick-17b-instruct-v1:0` |
+| 🛠 테스트 | 🛠 › 모델 탭 목록에 4종 추가됨 | Maverick · Scout · 3.3 70B · 3.1 405B |
+
+- Llama 는 **미국 리전 프로파일(`us.`)** 이다. `BEDROCK_REGION=us-east-1`(또는 us-west-2) 이어야 호출된다. 서울 리전에서는 호출되지 않는다.
+- Bedrock 콘솔 › Model access 에서 Meta 모델을 먼저 활성화해야 한다.
+- 답장 형식(JSON)은 도구 호출로 받는다. 도구 호출을 지원하지 않는 작은 모델(예: 1B·3B·8B)은 쓰지 말 것.
+- 모델 ID 는 AWS 가 바꿀 수 있다 → 안 되면 🛠 › 모델 › "직접 입력"에 콘솔에 보이는 ID 를 넣어 시험한다.
+
+## Grok 도 Bedrock 으로 (xAI 키 불필요)
+
+Grok 4.7 은 Bedrock 에서도 제공된다 (AWS 문서 확인: 모델 ID `xai.grok-4.7`, 호출은 교차 리전 프로파일 `global.xai.grok-4.7` 또는 `us.xai.grok-4.7`, Converse 지원).
+Llama 와 똑같이 **Bedrock 모델 ID** 로 쓰면 되므로 `XAI_API_KEY` 가 필요 없고 `AWS_BEDROCK_API_KEY` 만 있으면 된다.
+
+| 파트 | 환경변수 | 값 |
+| --- | --- | --- |
+| 성인 모델 | `AI_MODEL_MATURE` | `global.xai.grok-4.7` |
+| 메인 | `AI_MODEL` | `global.xai.grok-4.7` |
+| 🛠 테스트 | 🛠 › 모델 탭 | "Grok 4.7 (Bedrock)" |
+
+- `global.` 프로파일은 서울 등 어느 리전에서든 호출된다 (`us.` 는 미국 리전만 — 서울이면 앱이 자동으로 `global.` 로 바꿈).
+- Bedrock 콘솔 › Model access 에서 xAI 모델 접근을 먼저 활성화해야 한다.
+- 문서상 서버측 도구는 미지원이고 클라이언트 함수 호출 지원 여부는 명시돼 있지 않다. 이 앱은 답장 형식을 도구 호출로 받으므로, 🛠 › 모델에서 "Grok 4.7 (Bedrock)" 로 먼저 한 번 시험해 오류가 없는지 확인할 것.
+- 기존 "Grok 4.7 (xAI 직접)" 은 `XAI_API_KEY` 로 api.x.ai 를 직접 부르는 방식이다. Bedrock 만 쓸 거면 필요 없다.

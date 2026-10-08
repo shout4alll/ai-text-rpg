@@ -31,7 +31,16 @@ interface OwnerCfg {
   rules: { fields: FieldDef[]; defaults: Record<string, OverrideValue | undefined>; hard: string[] };
 }
 
-type Tab = "status" | "model" | "persona" | "rules" | "check" | "settings";
+type Tab = "status" | "model" | "persona" | "rules" | "check" | "settings" | "cheat";
+
+/** 🔑 치트룸 전용 조작 (ChatApp 이 넘겨 준다) */
+export interface CheatActions {
+  affection: number;
+  setAffection: (v: number) => void;
+  clearSulk: () => void;
+  addGems: (n: number) => void;
+  resetChat: () => void;
+}
 const SRC: Record<string, string> = { env: "환경변수", default: "기본값", cms: "CMS" };
 const POS_KEY = "ai-rpg.dev.ui";
 const OPACITY = [1, 0.8, 0.55];
@@ -41,6 +50,7 @@ export default function DevPanel({
   last,
   client,
   personaId,
+  cheat,
   className = "",
 }: {
   token: string;
@@ -48,6 +58,8 @@ export default function DevPanel({
   /** 이 기기·이 대화방 상태 */
   client: { label: string; value: string }[];
   personaId: string;
+  /** 치트룸일 때만 */
+  cheat?: CheatActions;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -172,6 +184,7 @@ export default function DevPanel({
   const choiceOf = cfg?.models.choices.find((c) => curModel && c.provider === curModel.provider && c.modelId === curModel.modelId);
 
   const tabs: [Tab, string][] = [
+    ...(cheat ? ([["cheat", "🔑치트"]] as [Tab, string][]) : []),
     ["status", "상태"],
     ["model", `모델${curModel ? " ●" : ""}`],
     ["persona", `캐릭터${nPersona ? ` ${nPersona}` : ""}`],
@@ -391,6 +404,27 @@ export default function DevPanel({
                     </>
                   )}
 
+                  {tab === "cheat" && cheat && (
+                    <div data-dev-cheat className="space-y-3">
+                      <p className="text-slate-400">치트룸 전용. 결제·멤버십·성인 확인이 모두 풀려 있고(💎 무제한, 특별 리액션·매혹 모드 사용 가능), 대화 제한은 <b>규칙 탭</b>과 <b>캐릭터 탭</b>에서 바로 고칩니다.</p>
+                      <Section title={`호감도 ${Math.round(cheat.affection)}`}>
+                        <input type="range" min={0} max={100} value={Math.round(cheat.affection)} onChange={(e) => cheat.setAffection(Number(e.target.value))} className="w-full" data-dev-cheat-aff />
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {[0, 20, 45, 75, 100].map((v) => (
+                            <button key={v} type="button" onClick={() => cheat.setAffection(v)} className="rounded bg-slate-800 px-2 py-1">{v}</button>
+                          ))}
+                        </div>
+                      </Section>
+                      <Section title="바로 실행">
+                        <div className="flex flex-wrap gap-1.5">
+                          <button type="button" onClick={() => cheat.addGems(1000)} className="rounded bg-slate-800 px-2.5 py-1.5">💎 +1000</button>
+                          <button type="button" onClick={cheat.clearSulk} className="rounded bg-slate-800 px-2.5 py-1.5">삐짐 풀기</button>
+                          <button type="button" onClick={cheat.resetChat} className="rounded bg-red-900/70 px-2.5 py-1.5">대화 처음부터</button>
+                        </div>
+                      </Section>
+                    </div>
+                  )}
+
                   {tab === "check" && <CheckTab token={token} serverMain={data?.models.main ?? ""} choices={cfg?.models.choices ?? []} />}
 
                   {tab === "settings" && data && (
@@ -496,7 +530,7 @@ function ResetBar({ n, label, onReset, json }: { n: number; label: string; onRes
 }
 
 function shortModel(id: string) {
-  return id.replace(/^(global|us|apac|eu)\./, "").replace(/^anthropic\.|^mistral\.|^amazon\./, "").replace(/-\d{8}-v\d:\d$/, "");
+  return id.replace(/^(global|us|apac|eu)\./, "").replace(/^anthropic\.|^mistral\.|^amazon\.|^meta\./, "").replace(/-\d{8}-v\d:\d$/, "");
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {

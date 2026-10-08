@@ -31,6 +31,7 @@
 | `tags` | ✔ | 선택 카드 태그 (최대 6개) |
 | `relationshipType` | | (선택) `"romance"`(기본, 연인까지 발전 가능) 또는 `"friendship"`(친구로만, 호감도 단계 이름도 친구용) |
 | `accent` | ✔ | 강조색 `#RRGGBB` |
+| `cheatRoom` / `cheatRules` | | (선택) `cheatRoom: true` 면 치트 코드로 입장한 운영자에게만 보이는 테스트방. `cheatRules` 는 그 방의 "주인님 모드 규칙" 기본 문장 (docs/OWNER_MODE.md) |
 | `greeting` | ✔ | 대화방을 처음 열면 상대가 먼저 보내는 첫 메시지. 시간대와 상관없이 어울리는 문장 권장 |
 | `image.portrait` | ✔ | `public/avatar/personas/<id>/` 안의 이미지 파일명 (기본 `portrait.jpg`) |
 | `image.objectPosition` | ✔ | 얼굴이 화면 중앙에 오도록 하는 기준점 (예: `"55% 30%"`, 앞 숫자가 가로 위치) |

@@ -1,3 +1,4 @@
+import { currentNotifyPlan } from "@/lib/push/planStore";
 import { containsPhrase, isOwnerToken, maskPhrase, ownerToken, ownerInstructions, wantsExit } from "@/lib/owner";
 import { settingValue } from "@/config/settings";
 import { NextResponse } from "next/server";
@@ -109,6 +110,8 @@ const requestSchema = z.object({
   memory: z.array(z.string().max(300)).max(60).optional(),
   /** 📲 선톡: 유저가 알림을 받고 들어왔을 때(kind=return) 어떤 선톡이었는지 */
   nudge: z.enum(["message", "photo", "video"]).optional(),
+  /** 선톡 일과표 슬롯 id (morning·lunch·goodnight …). 문구는 서버(CMS) 일과표에서 찾는다 */
+  nudgeTopic: z.string().regex(/^[a-z0-9_]{1,24}$/).optional(),
   /** 지금 삐져 있는 상태 (lib/sulk.ts) */
   sulk: z
     .object({
@@ -302,6 +305,7 @@ interface InstructionContext {
   userText: string;
   /** 📲 선톡(알림) 종류와, 사진·영상 선톡이면 보낼 앨범 항목 */
   nudge?: "message" | "photo" | "video";
+  nudgeTopic?: string;
   nudgeItem?: AlbumItem | null;
   sinceLast: string | null;
   album: AlbumItem[];
@@ -412,7 +416,7 @@ ${album.length ? `- 앨범: ${album.map((a) => `${a.id}(${a.type === "video" ? "
 [리액션 출력]
 - reaction: 이 순간 화면 속 너의 표정·몸짓. 답장 내용과 어울리게 고르고, 같은 리액션만 반복하지 마라. 선택지: ${REACTION_GUIDE}
 - tapback: 유저 메시지가 특히 마음에 들거나 웃기거나 뭉클할 때만 가끔 단다. 대부분 none. 선택지: ${HEART_GUIDE}
-- affection_delta: 유저의 이번 말이나 리액션이 너에게 준 느낌. 관심·배려·다정함 +1~+3, 평범한 대화 0, 무례하거나 상처 주는 말 -1~-5, 마음 리액션은 관계에 맞게 0~+2. 한 번에 크게 바꾸지 마라.
+- affection_delta: 유저의 이번 말이나 리액션이 너에게 준 느낌. 현실처럼 짜게 줘라. 평범한 대화·인사·단답·빈말은 0(대부분의 턴). 진심 어린 관심·기억해 준 디테일·세심한 배려는 +1. 마음에 오래 남을 특별한 순간(깊은 고백·큰 위로·확실한 약속 이행)만 +2. 무심함·건성 답장·약속 어김·가벼운 무례는 -1, 상처 주는 말·무시·선 넘기는 -2~-5. 호감도가 높을수록 기대치가 높아져 같은 말에도 덜 감동하고, 서운한 건 더 크게 느낀다. 마음 리액션은 0~+1. 한 번에 크게 바꾸지 마라.
 
 [${persona.name}의 말투 예시 — 결을 보여주기 위한 것이며 그대로 따라 쓰지 마라]
 ${examples}
@@ -440,8 +444,10 @@ function unlockedStory(c: InstructionContext): string[] {
 
 /** 📲 선톡 턴 지침: 유저가 먼저 말하지 않았는데 네가 먼저 연락했고, 알림이 갔다 */
 function nudgeTurn(c: InstructionContext): string {
+  const slot = c.nudgeTopic ? currentNotifyPlan().slots.find((s) => s.id === c.nudgeTopic) : undefined;
+  const when = slot ? ` 지금의 상황: ${slot.hint}` : "";
   const base =
-    "- 이번 턴: 한동안 유저의 연락이 없어서 네가 먼저 연락했다(방금 폰으로 알림이 갔다). 유저가 보낸 말에 답하는 게 아니라 네가 먼저 거는 말이다. 시간대·네 하루·기억에 맞게 자연스럽게, 호감도 단계에 맞는 거리감으로. 매번 \"왔어요?\", \"뭐 해요?\"로 시작하지 말고 안부·네 근황·문득 생각난 것·가벼운 질문 중에서 골라라. 말풍선 1~2개.";
+    "- 이번 턴: 한동안 유저의 연락이 없어서 네가 먼저 연락했다(방금 폰으로 알림이 갔다). 유저가 보낸 말에 답하는 게 아니라 네가 먼저 거는 말이다. 시간대·네 하루·기억에 맞게 자연스럽게, 호감도 단계에 맞는 거리감으로. 매번 \"왔어요?\", \"뭐 해요?\"로 시작하지 말고 안부·네 근황·문득 생각난 것·가벼운 질문 중에서 골라라. 말풍선 1~2개." + when;
   if ((c.nudge === "photo" || c.nudge === "video") && c.nudgeItem) {
     const what = c.nudge === "video" ? "영상" : "사진";
     return `${base} 이번에는 말과 함께 네가 찍어 둔 ${what}(${c.nudgeItem.desc})을 보낸다. 앱이 ${what}을 같이 보내 주니 말풍선에서는 "방금 찍은 거 보내요", "이거 보고 네 생각났어요"처럼 ${what}을 건네는 한마디를 해라. ${what} 속 장면은 위 설명을 벗어나 지어내지 마라. media_action 은 none 으로 둔다.`;
@@ -533,6 +539,10 @@ export async function POST(request: Request) {
   const exitNow = last.kind === "text" && wantsExit(last.content) && isOwnerToken(parsed.data.ownerToken);
   /** 주인 인증됨 (🛠 테스트 설정·디버그 사용 가능) */
   const ownerAuth = !exitNow && (phraseNow || isOwnerToken(parsed.data.ownerToken));
+  // 🔑 치트룸은 운영자 인증 없이는 응답하지 않는다 (퇴장 말은 허용 — 앱이 토큰을 지울 수 있게)
+  if (basePersona.cheatRoom && !ownerAuth && !exitNow) {
+    return NextResponse.json({ error: "치트룸은 치트 코드로 입장한 운영자만 쓸 수 있어요." }, { status: 403 });
+  }
   const ownerOpts: OwnerOpts | undefined = ownerAuth ? (parsed.data.ownerOpts as OwnerOpts | undefined) : undefined;
   /** 주인님 프롬프트(대화 제한 해제) — 🛠 에서 "서비스 프롬프트"를 고르면 일반 유저와 같은 규칙으로 테스트 */
   const owner = ownerAuth && ownerOpts?.promptMode !== "service";
@@ -619,6 +629,7 @@ export async function POST(request: Request) {
     }
     const mkContext = (mem: string[], openings: string[]) => buildTurnContext({
       nudge,
+      nudgeTopic: nudge ? parsed.data.nudgeTopic : undefined,
       nudgeItem,
       persona,
       affection,
@@ -664,7 +675,7 @@ export async function POST(request: Request) {
       model: r.model,
       instructions: {
         role: "system",
-        content: owner ? ownerInstructions(persona, { rules: typeof rulesOv?.ownerRules === "string" ? rulesOv.ownerRules : undefined, absolute: Array.isArray(rulesOv?.absolute) ? (rulesOv.absolute as string[]) : undefined, extra: personaExtra }) : buildStaticInstructions(persona, allureEff, { extra: personaExtra, rules: rulesOv }),
+        content: owner ? ownerInstructions(persona, { rules: typeof rulesOv?.ownerRules === "string" ? rulesOv.ownerRules : persona.cheatRules, absolute: Array.isArray(rulesOv?.absolute) ? (rulesOv.absolute as string[]) : undefined, extra: personaExtra }) : buildStaticInstructions(persona, allureEff, { extra: personaExtra, rules: rulesOv }),
         // Bedrock(Claude): 여기까지를 캐시 (Gemini 는 같은 앞부분을 자동으로 캐시)
         providerOptions: { bedrock: { cachePoint: { type: "default" } } },
       },
@@ -677,7 +688,7 @@ export async function POST(request: Request) {
       // Claude 5 세대는 temperature 를 받지 않는다
       temperature: /claude-(sonnet|opus|fable|mythos)-5/.test(r.modelId) ? undefined : persona.prompt.temperature ?? 1.0,
       // Grok 같은 추론 모델은 "생각"도 출력 한도에 포함되므로 넉넉히
-      maxOutputTokens: Math.max(owner ? 2500 : BALANCE.cost.maxOutputTokens, r.provider === "xai" ? 4000 : 0),
+      maxOutputTokens: Math.max(owner ? 2500 : BALANCE.cost.maxOutputTokens, r.provider === "xai" || /xai\.grok/.test(r.modelId) ? 4000 : 0),
       maxRetries: 1,
       ...(r.providerOptions ? { providerOptions: r.providerOptions as never } : {}),
     });
@@ -687,7 +698,7 @@ export async function POST(request: Request) {
     const forced = ownerOpts?.model ? resolveOverrideModel(ownerOpts.model.provider, ownerOpts.model.modelId) : null;
     const ran = forced
       ? { result: await generate(forced), resolved: forced, fellBack: false }
-      : await runWithFallback("/api/chat", owner ? ["chat"] : allureEff && persona.allure ? ["mature", "chat"] : route.tier === "light" ? ["light", "cheap", "chat"] : ["chat"], generate);
+      : await runWithFallback("/api/chat", owner ? (persona.cheatRoom ? ["mature", "chat"] : ["chat"]) : allureEff && persona.allure ? ["mature", "chat"] : route.tier === "light" ? ["light", "cheap", "chat"] : ["chat"], generate);
     resolved = ran.resolved;
     const result = ran.result;
     const { output, usage } = result;
@@ -718,11 +729,16 @@ export async function POST(request: Request) {
     // 호감도 변화: 모델 값 → 배수 → 상황별 상한 → 턴 상한 (config/balance.json affection)
     const A = BALANCE.affection;
     let raw = Number(output.affection_delta) || 0;
-    raw = raw > 0 ? raw * A.gainMultiplier : raw * A.lossMultiplier;
+    // 관계 단계별 난이도: 가까울수록 오르기 어렵고(gain↓) 상처는 더 크다(loss↑)
+    const si = affectionStageIndex(affection, persona.relationshipType);
+    const at = <T,>(a: T[]) => a[Math.min(si, a.length - 1)];
+    raw = raw > 0 ? raw * A.gainMultiplier * at(A.gainByStage) : raw * A.lossMultiplier * at(A.lossByStage);
     if (raw > 0 && parsed.data.sulk) raw *= A.gainWhileSulking;
     if (raw > 0 && last.kind === "reaction") raw = Math.min(raw, A.heartReactionMaxGain);
     if (raw > 0 && last.kind === "user_media") raw = Math.min(raw, BALANCE.userMedia.affectionMaxGain);
-    const delta = Math.max(-AFFECTION_STEP, Math.min(AFFECTION_STEP, Math.round(raw)));
+    // 올릴 때는 확률 반올림(0.5 → 절반 확률로 +1), 내릴 때는 일반 반올림
+    const rounded = raw > 0 ? Math.floor(raw) + (Math.random() < raw - Math.floor(raw) ? 1 : 0) : Math.round(raw);
+    const delta = Math.max(-AFFECTION_STEP, Math.min(A.gainCap, rounded));
 
     // 사진·영상 (텍스트 메시지에 대해서만) — 유저가 직접 달라고 했을 때만 보낸다 (balance.json aiMedia)
     const M = BALANCE.aiMedia;

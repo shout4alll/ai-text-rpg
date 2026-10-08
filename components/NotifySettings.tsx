@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { IconBell, IconClose } from "@/components/icons";
-import { NOTIFY_KINDS, NOTIFY_PER_DAY, NOTIFY_WINDOW } from "@/config/notifications";
+import { NOTIFY_KINDS } from "@/config/notifications";
+import { loadNotifyPlan } from "@/lib/push/planClient";
 import { cancelNudges, isNativeApp, notifyPermission, nudgeStatus, requestNotifyPermission, sendTestNotification, type NotifyPermission } from "@/lib/push/nudge";
 import { loadNotifySettings, saveNotifySettings, type NotifySettings as Settings } from "@/lib/push/settings";
 
@@ -16,6 +17,7 @@ export default function NotifySettings({ onClose }: { onClose: () => void }) {
   const [perm, setPerm] = useState<NotifyPermission>("unsupported");
   const native = isNativeApp();
   const [testMsg, setTestMsg] = useState("");
+  const [plan] = useState(() => loadNotifyPlan());
   const [info, setInfo] = useState("");
 
   useEffect(() => {
@@ -98,7 +100,7 @@ export default function NotifySettings({ onClose }: { onClose: () => void }) {
         </section>
 
         <p className="mt-4 text-[12px] leading-relaxed text-ink-mute">
-          인물이 먼저 말을 걸면 알림이 와요. 오전 {NOTIFY_WINDOW.startHour}시부터 밤 {NOTIFY_WINDOW.endHour}시 사이에만, 하루 {NOTIFY_PER_DAY.min}~{NOTIFY_PER_DAY.max}번 정도 보내고 그 밖의 시간에는 절대 보내지 않아요. 알림에는 누가 보냈는지만 보이고 내용은 보이지 않아요.
+          인물이 먼저 말을 걸면 알림이 와요. {plan.window.start}부터 {plan.window.end} 사이에만, 아침·점심·저녁·잠자리 같은 일과에 맞춰 하루 {plan.perDay.min}~{plan.perDay.max}번 정도 보내고 그 밖의 시간에는 절대 보내지 않아요. 알림에는 누가 보냈는지만 보이고 내용은 보이지 않아요.
         </p>
 
         {native && s.enabled && perm === "denied" && (

@@ -63,6 +63,8 @@ export function fixBedrockModelId(modelId: string, region = bedrockRegion()): st
   const m = /^(us|eu|apac|jp|au|ca)\.(.+)$/.exec(modelId);
   if (!m) return modelId;
   const [, geo, rest] = m;
+  // Meta Llama 는 global. 프로파일이 없다 — 바꾸지 않고 그대로 두면 리전 불일치 시 Bedrock 이 정확한 오류를 알려 준다
+  if (rest.startsWith("meta.")) return modelId;
   const ok =
     (geo === "us" && region.startsWith("us-")) ||
     (geo === "eu" && region.startsWith("eu-")) ||
@@ -74,7 +76,7 @@ export function fixBedrockModelId(modelId: string, region = bedrockRegion()): st
 }
 
 export function bedrockClaudeOptions(modelId: string): ProviderOptions | undefined {
-  // Claude 가 아닌 모델(Nova 등)도 구조화 답장은 도구 방식으로 (가장 널리 지원)
+  // Claude 가 아닌 모델(Nova·Llama·Mistral 등)도 구조화 답장은 도구 방식으로 (가장 널리 지원)
   if (!/anthropic\.claude/.test(modelId)) return { bedrock: { structuredOutputMode: "jsonTool" } };
   const cannotDisableThinking = /claude-(sonnet|opus)-5-5|claude-fable-5-1/.test(modelId);
   return {
