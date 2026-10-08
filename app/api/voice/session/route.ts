@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { settingValue } from "@/config/settings";
 import { GoogleGenAI, Modality } from "@google/genai";
 import { z } from "zod";
 import { getPersonaFile, isPersonaId } from "@/lib/personas/server";
@@ -67,7 +68,7 @@ export async function POST(request: Request) {
   }
 
   const persona = getPersonaFile(body.personaId);
-  const model = process.env.GEMINI_LIVE_MODEL?.trim() || DEFAULT_MODEL;
+  const model = settingValue("voiceModel") || DEFAULT_MODEL; // config/settings.ts voiceModel (GEMINI_LIVE_MODEL)
   const voice = isGeminiVoice(body.voice) ? body.voice : voiceNameFor(persona);
   // 무료 체험(주고받기 5번)은 3분이면 충분 → 토큰 자체를 짧게 (클라이언트 조작 대비)
   const maxSeconds = body.mode === "trial" ? Math.min(BALANCE.voice.trialMaxSeconds, voiceMaxSeconds()) : voiceMaxSeconds();

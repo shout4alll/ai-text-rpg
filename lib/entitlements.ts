@@ -1,4 +1,5 @@
 import "server-only";
+import { settingValue } from "@/config/settings";
 
 /**
  * 유료 리액션 영상(clips/premium/ — 예: 뽀뽀) 이용 권한.
@@ -13,10 +14,8 @@ import "server-only";
  *   또한 유료 영상 파일은 public/ 이 아닌 비공개 저장소 + 서명 URL 로 옮겨야 진짜로 잠긴다. (docs/REACTION_VIDEOS.md)
  */
 export function premiumReactionsUnlocked(): boolean {
-  const v = process.env.PREMIUM_ACCESS?.trim();
-  if (v === "open") return true;
-  if (v === "paid") return false;
-  return process.env.NODE_ENV !== "production";
+  // 값: config/settings.ts premiumAccess (환경변수 PREMIUM_ACCESS)
+  return settingValue("premiumAccess") === "open";
 }
 
 /**
@@ -26,8 +25,8 @@ export function premiumReactionsUnlocked(): boolean {
  * ▶ 결제 연동 시: 여기서 로그인 사용자 확인 + 서버 잔액 차감을 하도록 바꾼다.
  */
 export function checkMediaAccess(request: Request): { ok: true } | { ok: false; status: 402 | 403; error: string } {
-  const v = process.env.MEDIA_ACCESS?.trim();
-  const mode = v === "open" || v === "paid" || v === "off" ? v : "open";
+  // 값: config/settings.ts mediaAccess (환경변수 MEDIA_ACCESS)
+  const mode = settingValue("mediaAccess");
   if (mode === "off") return { ok: false, status: 403, error: "사진 기능이 지금은 꺼져 있어요." };
   if (mode === "open") return { ok: true };
   const pass = process.env.VOICE_DEV_PASS;

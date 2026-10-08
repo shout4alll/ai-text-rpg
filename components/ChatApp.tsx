@@ -42,6 +42,7 @@ import { checkRelease, giftCost, sulkExpired, sulkStartLevel, sulkSummary, touch
 import { deleteMediaFor, deleteMediaKeys, getMedia, importFile, mediaUrl, UserMediaError } from "@/lib/userMedia";
 import { DEMO_TOPUP, MEDIA_COST } from "@/config/media";
 import { GemBadge, GemShop } from "@/components/GemShop";
+import DevPanel from "@/components/DevPanel";
 import { TYPING } from "@/config/typing";
 import { withTypo } from "@/lib/typos";
 import { returnChance } from "@/config/returnNudge";
@@ -351,6 +352,10 @@ export default function ChatApp({
   const [themeOpen, setThemeOpen] = useState(false);
   const [notifyOpen, setNotifyOpen] = useState(false);
   const [gemOpen, setGemOpen] = useState(false);
+  // 🛠 주인님 모드 상태판 (토큰이 있을 때만)
+  const [ownerTok, setOwnerTok] = useState<string | null>(null);
+  const [lastDebug, setLastDebug] = useState<ChatResponse["debug"] | null>(null);
+  useEffect(() => setOwnerTok(readOwnerToken()), []);
   // 🗑 메시지 골라 지우기
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -926,8 +931,16 @@ export default function ChatApp({
         }
         const data = await req;
         // 🔑 주인 모드 인증/해제 (문구는 서버만 안다. 앱은 토큰만 저장)
-        if (data.ownerToken) writeOwnerToken(data.ownerToken);
-        if (data.ownerExit) writeOwnerToken(null);
+        if (data.ownerToken) {
+          writeOwnerToken(data.ownerToken);
+          setOwnerTok(data.ownerToken);
+        }
+        if (data.ownerExit) {
+          writeOwnerToken(null);
+          setOwnerTok(null);
+          setLastDebug(null);
+        }
+        if (data.debug) setLastDebug(data.debug);
 
         // 그사이 다른 대화방으로 옮겼으면: 원래 대화방 저장소에 답장을 기록해 둔다
         if (!same()) {
@@ -1868,6 +1881,25 @@ export default function ChatApp({
   return (
     <main className={`relative h-[100dvh] w-full overflow-hidden ${kakaoView ? "bg-chat" : "bg-paper wide:flex"}`} data-view={kakaoView ? "kakao" : "stage"}>
       {!voiceOpen && <GemBadge gems={cash} onClick={() => setGemOpen(true)} className="absolute left-2 top-[calc(max(0.5rem,env(safe-area-inset-top))+3.5rem)] z-20 bg-white/85 backdrop-blur" />}
+      {!voiceOpen && ownerTok && (
+        <div className="absolute left-[5.4rem] top-[calc(max(0.5rem,env(safe-area-inset-top))+3.5rem)] z-20">
+          <DevPanel
+            token={ownerTok}
+            last={lastDebug}
+            client={[
+              { label: "주인님 모드", value: "켜짐 (해제: 주인님퇴장)" },
+              { label: "인물", value: `${persona.name} (${persona.id})` },
+              { label: "호감도", value: `${Math.round(affection)} · ${affectionStage(affection, persona.relationshipType).label}` },
+              { label: "삐짐", value: sulk ? `${sulk.level}단계 · 달램 ${sulk.soothe}` : "없음" },
+              { label: "매혹 모드", value: persona.allure ? (allureActive ? "켜짐" : allureIds.includes(persona.id) ? "켜 둠(권한 없음)" : "꺼짐") : "없는 인물" },
+              { label: "화면", value: kakaoView ? "메신저(카톡)" : "영상 배경" },
+              { label: "보석", value: `💎${cash}` },
+              { label: "멤버십", value: membership ? `${PLANS[membership.plan].name}` : "없음" },
+              { label: "대화 수", value: `${messages.length}개` },
+            ]}
+          />
+        </div>
+      )}
       {kakaoView ? (
         /* 💬 카톡 모드: 배경 영상 없이 평범한 메신저 화면 */
         <section className="relative mx-auto flex h-full w-full max-w-3xl flex-col wide:border-x wide:border-ink-line">

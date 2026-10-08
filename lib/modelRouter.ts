@@ -1,4 +1,5 @@
 import "server-only";
+import { settingValue } from "@/config/settings";
 /**
  * 💰 하이브리드 모델 라우팅 + 뻔한 대화 답장 풀 (서버 전용, 추가 AI 호출 없음)
  *
@@ -31,7 +32,7 @@ const lightRegexes = () => (compiled ??= BALANCE.routing.lightPatterns.map((p) =
 
 export function routeTier(input: RouteInput, key: string): { tier: Tier; reason: string } {
   const R = BALANCE.routing;
-  if (!R.enabled || process.env.AI_ROUTING?.trim() === "off") return { tier: "chat", reason: "routing-off" };
+  if (!R.enabled || settingValue("routing") === "off") return { tier: "chat", reason: "routing-off" };
   const pick = (tier: Tier, reason: string) => {
     if (tier === "light") lightStreak.set(key, (lightStreak.get(key) ?? 0) + 1);
     else lightStreak.set(key, 0);

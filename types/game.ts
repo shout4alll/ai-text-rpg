@@ -26,6 +26,8 @@ export interface ChatResponse {
   /** 주인 모드 인증 토큰 (인증된 턴에만) / 모드 해제 */
   ownerToken?: string;
   ownerExit?: boolean;
+  /** 🛠 주인님 모드에서만: 이번 턴에 쓰인 모델·경로 */
+  debug?: { model: string; label: string; tier: string; reason: string; allure: boolean; allureLevel: string; ms: number; fellBack: boolean };
 }
 
 export interface ChatMessage {

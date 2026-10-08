@@ -1,5 +1,28 @@
 # 🎛 모드·수위 스위치 참조표
 
+## 0. 한곳 정리 — `config/settings.ts` + 🛠 상태판
+
+- **서버 스위치는 모두 `config/settings.ts` 의 `SERVER_SETTINGS` 한 목록**에 있습니다 (이름·선택지·기본값·환경변수·쓰는 곳·설명).
+  값 우선순위: **CMS(예정) > 환경변수 > 기본값**. 라이브는 Vercel 환경변수로, 기본값은 이 파일에서 바꿉니다.
+- **앱 스위치**(오타·타이핑·보석·선톡 등)는 각 파일에 있고, `appSettings()` 가 현재 값을 모아 보여 줍니다.
+- **🛠 상태판**: 주인님 모드(치트 문구)가 켜져 있으면 대화방 왼쪽 위 💎 옆에 🛠 버튼이 생깁니다.
+  버튼에 이번 턴의 경로·모델이 바로 보이고, 누르면 이번 턴 / 이 대화방 상태 / 서버 모델 / 운영 스위치(값·출처) / 앱 설정 / 환경변수(비밀은 설정 여부만)가 나옵니다.
+  서버 값은 `GET /api/status/full` (주인 토큰 헤더 `x-owner-token` 필요).
+- **CMS 를 만들 때**: `SERVER_SETTINGS` 의 type·options·min·max 로 편집 폼을 자동 생성 → 저장값을 DB 에 두고 서버 시작/요청 시 `setSettingOverrides()` 로 넣으면 환경변수보다 우선합니다.
+
+| 키 | 환경변수 | 선택지 | 기본값(배포/개발) |
+| --- | --- | --- | --- |
+| allureLevel | `ALLURE_LEVEL` | soft · max | max |
+| matureModel | `AI_MODEL_MATURE` | 모델 ID | (메인 모델) |
+| premiumAccess | `PREMIUM_ACCESS` | open · paid | paid / open |
+| mediaAccess | `MEDIA_ACCESS` | open · paid · off | open |
+| voiceAccess | `VOICE_ACCESS` | open · paid · off | paid / open |
+| voiceMaxMinutes | `VOICE_MAX_MINUTES` | 1~10 | 10 |
+| voiceModel | `GEMINI_LIVE_MODEL` | 모델 ID | gemini-3.8-live |
+| routing | `AI_ROUTING` | on · off | on |
+
+잘못된 값(선택지에 없는 값, 범위 밖 숫자)은 무시되고 기본값이 쓰입니다. 상태판의 "(환경변수)/(기본값)" 표시로 실제 적용 여부를 확인하세요.
+
 라이브(Vercel)에서 바꾸는 방법은 두 가지입니다.
 
 | 방법 | 언제 | 반영 |
@@ -15,7 +38,7 @@
 
 | 위치 | 값 |
 | --- | --- |
-| 설정 파일 | `config/allure.ts` 의 `ALLURE_DEFAULT_LEVEL` (지금 `"max"`) |
+| 설정 파일 | `config/settings.ts` 의 `allureLevel` default (지금 `"max"`) |
 | 환경변수 | `ALLURE_LEVEL=soft` 또는 `ALLURE_LEVEL=max` (다른 값은 무시) |
 
 | 단계 | 인물이 하는 말 |

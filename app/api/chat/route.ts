@@ -1,4 +1,5 @@
 import { containsPhrase, isOwnerToken, maskPhrase, ownerToken, ownerInstructions, wantsExit } from "@/lib/owner";
+import { settingValue } from "@/config/settings";
 import { NextResponse } from "next/server";
 import { generateText, Output } from "ai";
 import { z } from "zod";
@@ -476,6 +477,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
+  const startedAt = Date.now();
   const parsed = requestSchema.safeParse(json);
   if (!parsed.success) {
     return NextResponse.json(
@@ -680,6 +682,20 @@ export async function POST(request: Request) {
 
     const response: ChatResponse = {
       ...(owner && phraseNow ? { ownerToken: ownerToken() } : {}),
+      ...(owner || isOwnerToken(parsed.data.ownerToken)
+        ? {
+            debug: {
+              model: resolved.modelId,
+              label: resolved.label,
+              tier: owner ? "owner" : allure && persona.allure ? "mature" : route.tier,
+              reason: route.reason,
+              allure: allure && !!persona.allure,
+              allureLevel: settingValue("allureLevel"),
+              ms: Date.now() - startedAt,
+              fellBack: ran.fellBack,
+            },
+          }
+        : {}),
       messages: bubbles,
       reaction: output.reaction,
       // 마음 리액션에 마음으로 답하는 건 어색하므로 text 턴에만 허용

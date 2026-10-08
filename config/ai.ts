@@ -1,4 +1,5 @@
 import "server-only";
+import { settingValue } from "@/config/settings";
 import type { LanguageModel } from "ai";
 
 /** generateText 에 함께 넘길 프로바이더 옵션 (모델마다 다름) */
@@ -240,7 +241,7 @@ export function resolveModel(purpose: ModelTier = "chat"): ResolvedModel {
   if (purpose === "light") modelId = light;
   // 🔞 mature: 성인 확인을 마친 유저가 매혹(설렘) 모드를 켠 대화에만 쓰는 모델. 환경변수 AI_MODEL_MATURE 가 없으면 메인 모델.
   //    예) Bedrock: AI_MODEL_MATURE=mistral.mistral-large-2407-v1:0  (docs/MODES.md 4번)
-  if (purpose === "mature") modelId = process.env.AI_MODEL_MATURE?.trim() || modelId;
+  if (purpose === "mature") modelId = settingValue("matureModel") || modelId; // config/settings.ts matureModel
   if (purpose === "cheap") modelId = process.env.AI_CHEAP_MODEL?.trim() || entry.cheapModel || light;
   if (requested === "bedrock") modelId = fixBedrockModelId(modelId);
   return {

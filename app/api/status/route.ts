@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { describeModel } from "@/config/ai";
+import { settingValue } from "@/config/settings";
 import { voiceAccessMode } from "@/lib/voice/access";
 
 /**
@@ -20,7 +21,7 @@ export async function GET() {
     },
     voiceTalk: {
       provider: "Google Gemini Live",
-      model: process.env.GEMINI_LIVE_MODEL?.trim() || "gemini-3.8-live",
+      model: settingValue("voiceModel"),
       access: voiceAccessMode(),
       keyConfigured: hasGoogle,
     },

@@ -1,4 +1,5 @@
 import "server-only";
+import { settingValue } from "@/config/settings";
 
 /**
  * 보이스톡 이용 권한 (유료 상품 대비).
@@ -14,9 +15,8 @@ import "server-only";
 export type VoiceAccessMode = "open" | "paid" | "off";
 
 export function voiceAccessMode(): VoiceAccessMode {
-  const v = process.env.VOICE_ACCESS?.trim();
-  if (v === "open" || v === "paid" || v === "off") return v;
-  return process.env.NODE_ENV === "production" ? "paid" : "open";
+  // 값: config/settings.ts voiceAccess (환경변수 VOICE_ACCESS)
+  return settingValue("voiceAccess") as VoiceAccessMode;
 }
 
 /** 결제 연동 전 임시: 요청 헤더 x-voice-pass 가 VOICE_DEV_PASS 와 같으면 통과 */
@@ -38,7 +38,7 @@ export function checkVoiceAccess(request: Request): VoiceAccessResult {
 
 /** 한 번 통화의 최대 길이(초). Live API 세션 한도(약 10분)를 넘지 않게 기본 10분 */
 export function voiceMaxSeconds(): number {
-  const n = Number(process.env.VOICE_MAX_MINUTES);
-  const min = Number.isFinite(n) && n > 0 ? Math.min(n, 10) : 10;
+  // 값: config/settings.ts voiceMaxMinutes (환경변수 VOICE_MAX_MINUTES)
+  const min = Math.min(10, Number(settingValue("voiceMaxMinutes")) || 10);
   return Math.round(min * 60);
 }
