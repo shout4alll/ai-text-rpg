@@ -42,6 +42,8 @@ import { checkRelease, giftCost, sulkExpired, sulkStartLevel, sulkSummary, touch
 import { deleteMediaFor, deleteMediaKeys, getMedia, importFile, mediaUrl, UserMediaError } from "@/lib/userMedia";
 import { DEMO_TOPUP, MEDIA_COST } from "@/config/media";
 import { GemBadge, GemShop } from "@/components/GemShop";
+import { TYPING } from "@/config/typing";
+import { withTypo } from "@/lib/typos";
 import { returnChance } from "@/config/returnNudge";
 import { GEM_TEST_TOPUP } from "@/config/gems";
 import { getCash, refundCash, setCash, spendCash } from "@/lib/wallet";
@@ -288,7 +290,9 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** 메시지를 '읽기'까지 걸리는 시간 */
 const readDelay = () => 600 + Math.random() * 900;
 /** 말풍선 하나를 '입력'하는 시간: 글자 수에 비례, 최대 1.8초 */
-const typingDelay = (text: string) => Math.min(1800, 400 + text.length * 35);
+/** 말풍선이 뜨기 전 "입력 중…" 시간 — 글자 수에 비례, config/typing.ts */
+const typingDelay = (text: string) =>
+  Math.min(TYPING.maxMs, Math.max(TYPING.minMs, TYPING.baseMs + text.length * TYPING.perCharMs + Math.random() * TYPING.jitterMs));
 const clampAffection = (v: number) => Math.max(0, Math.min(100, v));
 const visibleText = (m: ChatMessage) => (m.kind ?? "text") === "text";
 
@@ -907,6 +911,7 @@ export default function ChatApp({
         return (await res.json()) as ChatResponse;
       });
 
+      let typingSince = Date.now();
       const markRead = () => setMessages((prev) => prev.map((m) => (m.role === "user" && m.read === false ? { ...m, read: true } : m)));
 
       try {
@@ -916,6 +921,7 @@ export default function ChatApp({
           if (same()) {
             markRead();
             setTyping(true);
+            typingSince = Date.now();
           }
         }
         const data = await req;
@@ -984,17 +990,35 @@ export default function ChatApp({
           return;
         }
 
-        for (let i = 0; i < data.messages.length; i++) {
-          if (i > 0 || kind !== "text") {
+        // ⌨️ 가끔 오타 (+정정) — 주인님 모드에서는 쓰지 않는다
+        const outs = data.ownerToken || readOwnerToken() ? data.messages : withTypo(data.messages, persona?.profile.age ?? 30);
+        for (let i = 0; i < outs.length; i++) {
+          const text = outs[i];
+          // 첫 말풍선(말로 보낸 턴)은 서버를 기다린 시간만큼 이미 "입력 중"이었으니 그만큼 덜 기다린다
+          const waited = i === 0 && kind === "text" ? Date.now() - typingSince : 0;
+          const need = i > 0 || kind !== "text" || waited < typingDelay(text);
+          if (need) {
             setTyping(true);
-            await sleep(typingDelay(data.messages[i]));
+            const total = typingDelay(text);
+            const wait = Math.max(0, total - waited);
+            // 긴 말은 가끔 중간에 잠깐 멈췄다가 다시 입력 중
+            if (text.length >= TYPING.longChars && wait > 1200 && Math.random() < TYPING.pauseChance) {
+              await sleep(wait * 0.5);
+              if (same()) {
+                setTyping(false);
+                await sleep(TYPING.pauseMs[0] + Math.random() * (TYPING.pauseMs[1] - TYPING.pauseMs[0]));
+                setTyping(true);
+              }
+              await sleep(wait * 0.5);
+            } else {
+              await sleep(wait);
+            }
             if (!same()) {
               // 말풍선이 나오는 도중에 방을 옮김 → 남은 말풍선만 원래 방에 기록 (호감도·마음은 이미 반영됨)
-              persistToRoom(pid, data.messages.slice(i), null, null, 0);
+              persistToRoom(pid, outs.slice(i), null, null, 0);
               return;
             }
           }
-          const text = data.messages[i];
           setMessages((prev) => [...prev, { id: nextId.current++, role: "ai", kind: "text", text, at: Date.now() }]);
           if (i === 0) playReaction(data.reaction, reactOpts);
         }
