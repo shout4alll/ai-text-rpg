@@ -382,7 +382,7 @@ export default function DevPanel({
                       <Section title="직접 입력">
                         <div className="flex gap-1">
                           <select value={custom.provider} onChange={(e) => setCustom({ ...custom, provider: e.target.value })} className="rounded bg-slate-800 px-1 py-1">
-                            {["xai", "bedrock", "google"].map((p) => (<option key={p}>{p}</option>))}
+                            {["mantle", "bedrock", "xai", "google", "openai"].map((p) => (<option key={p}>{p}</option>))}
                           </select>
                           <input value={custom.modelId} onChange={(e) => setCustom({ ...custom, modelId: e.target.value })} placeholder="모델 ID (예: grok-4.6)" className="min-w-0 flex-1 rounded bg-slate-800 px-2 py-1 text-base outline-none sm:text-[12px]" />
                           <button type="button" disabled={!custom.modelId.trim()} onClick={() => pickModel({ provider: custom.provider, modelId: custom.modelId.trim() })} className="rounded bg-amber-300 px-2 py-1 font-bold text-slate-900 disabled:opacity-40">담기</button>

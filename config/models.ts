@@ -9,7 +9,7 @@
  *  프로바이더 키: bedrock=AWS_BEDROCK_API_KEY · google=GOOGLE_GENERATIVE_AI_API_KEY · xai=XAI_API_KEY
  *  (키가 없는 프로바이더의 모델은 목록에 흐리게 표시되고 고르면 호출 시 오류 메시지가 나온다)
  */
-export type ChoiceProvider = "bedrock" | "google" | "xai" | "openai";
+export type ChoiceProvider = "bedrock" | "google" | "xai" | "openai" | "mantle";
 
 export interface ModelChoice {
   /** 목록 안에서 겹치지 않는 이름 */
@@ -23,7 +23,8 @@ export interface ModelChoice {
 }
 
 export const MODEL_CHOICES: readonly ModelChoice[] = [
-  { key: "grok-4.7-bedrock", label: "Grok 4.7 (Bedrock)", provider: "bedrock", modelId: "global.xai.grok-4.7", note: "Bedrock 로 호출 — AWS_BEDROCK_API_KEY 만 있으면 됨(XAI 키 불필요). 어느 리전에서든 global 프로파일로 호출. 추론 기본값 높음 → 느릴 수 있음" },
+  { key: "grok-4.3-mantle", label: "Grok 4.3 (Bedrock · 빠름)", provider: "mantle", modelId: "xai.grok-4.3", note: "✅ 성인 모델 기본값 · Bedrock 키로 호출(Mantle 주소, 미국 리전) · $1.25/$2.50 · 추론 low(MANTLE_REASONING_EFFORT 로 none 까지)" },
+  { key: "grok-4.7-bedrock", label: "Grok 4.7 (Bedrock · 이전)", provider: "bedrock", modelId: "global.xai.grok-4.7", note: "Bedrock 로 호출 — AWS_BEDROCK_API_KEY 만 있으면 됨(XAI 키 불필요). 어느 리전에서든 global 프로파일로 호출. 추론 기본값 높음 → 느릴 수 있음" },
   { key: "grok-4.7", label: "Grok 4.7 (xAI 직접)", provider: "xai", modelId: "grok-4.7", note: "xAI 최신 플래그십(2026-09). 컨텍스트 500k · $2/$6 · 기본 추론 높음이라 답이 느릴 수 있음" },
   { key: "sonnet-5", label: "Claude Sonnet 5", provider: "bedrock", modelId: "global.anthropic.claude-sonnet-5", note: "서비스 메인 모델" },
   { key: "sonnet-5-5", label: "Claude Sonnet 5.5", provider: "bedrock", modelId: "global.anthropic.claude-sonnet-5-5", note: "생각 기능을 끌 수 없어 조금 느림" },
@@ -42,4 +43,4 @@ export const MODEL_CHOICES: readonly ModelChoice[] = [
   { key: "gemini-3-5-flash-lite", label: "Gemini 3.5 Flash Lite", provider: "google", modelId: "gemini-3.5-flash-lite", note: "가장 저렴" },
 ];
 
-export const CHOICE_PROVIDERS: readonly ChoiceProvider[] = ["bedrock", "google", "xai", "openai"];
+export const CHOICE_PROVIDERS: readonly ChoiceProvider[] = ["bedrock", "mantle", "google", "xai", "openai"];

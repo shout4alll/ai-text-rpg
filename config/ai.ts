@@ -261,6 +261,29 @@ const PROVIDERS = {
   },
 
   /* ------------------------------------------------------------------------ */
+  /*  Bedrock Mantle — Bedrock 의 OpenAI 호환 주소 (Grok 4.3 등은 여기서만 호출 가능)   */
+  /*    인증: AWS_BEDROCK_API_KEY (Bedrock 과 같은 키)                            */
+  /*    리전: BEDROCK_MANTLE_REGION (기본 us-east-1 · Grok 4.3 은 us-east-1/us-east-2/us-west-2) */
+  /*    추론(생각) 정도: MANTLE_REASONING_EFFORT = none | low | medium | high (기본 low) */
+  /*    사용: AI_MODEL_MATURE=mantle:xai.grok-4.3                               */
+  /* ------------------------------------------------------------------------ */
+  mantle: {
+    label: "Bedrock Mantle",
+    model: "xai.grok-4.3",
+    create: (modelId) => {
+      const apiKey = (process.env.AWS_BEDROCK_API_KEY || process.env.AWS_BEARER_TOKEN_BEDROCK)?.trim();
+      if (!apiKey) throw new Error("[config/ai] AWS_BEDROCK_API_KEY 가 없습니다 (Bedrock Mantle 은 Bedrock API 키로 호출).");
+      const region = process.env.BEDROCK_MANTLE_REGION?.trim() || "us-east-1";
+      const baseURL = process.env.BEDROCK_MANTLE_BASE_URL?.trim() || `https://bedrock-mantle.${region}.api.aws/openai/v1`;
+      return createOpenAI({ apiKey, baseURL, fetch: guardFetch() }).responses(modelId);
+    },
+    lightModel: "xai.grok-4.3",
+    cheapModel: "xai.grok-4.3",
+    // 메신저 답장은 깊은 생각이 필요 없다 — 추론을 낮춰 빠르게 (none 이면 가장 빠름)
+    options: () => ({ openai: { forceReasoning: true, systemMessageMode: "system", reasoningSummary: null, reasoningEffort: (process.env.MANTLE_REASONING_EFFORT?.trim() || "low") as "low", store: false } }),
+  },
+
+  /* ------------------------------------------------------------------------ */
   /*  OpenAI GPT  (대기 — 우회(fallback) 모델 또는 🛠 › 모델 에서 사용)             */
   /*    인증: OPENAI_API_KEY (선택 OPENAI_BASE_URL)                              */
   /*    Bedrock 으로 쓰는 GPT(gpt-oss)는 이 항목이 아니라 Bedrock 모델 ID 로 부른다  */
@@ -337,7 +360,7 @@ export function describeModel(): {
  */
 export type ModelTier = "chat" | "light" | "cheap" | "mature";
 
-/** 모델 이름 앞에 "프로바이더:" 를 붙이면 그 프로바이더로 호출한다. 예) AI_MODEL_MATURE=xai:grok-4.7 */
+/** 모델 이름 앞에 "프로바이더:" 를 붙이면 그 프로바이더로 호출한다. 예) AI_MODEL_MATURE=mantle:xai.grok-4.3 */
 export function splitProviderPrefix(spec: string): { provider?: ProviderId; modelId: string } {
   const m = /^([a-z]+):(.+)$/.exec(spec.trim());
   if (m && isProviderId(m[1])) return { provider: m[1], modelId: m[2] };
@@ -345,6 +368,11 @@ export function splitProviderPrefix(spec: string): { provider?: ProviderId; mode
 }
 
 function build(provider: ProviderId, modelId: string): ResolvedModel {
+  // Grok 4.3 은 Bedrock 에서 Mantle(OpenAI 호환) 주소로만 호출된다 → bedrock 으로 적어도 mantle 로
+  if (provider === "bedrock" && /^(?:[a-z]+\.)?xai\.grok-4\.3/.test(modelId)) {
+    provider = "mantle";
+    modelId = modelId.replace(/^(?:us|global|eu|apac)\./, "");
+  }
   const entry: ProviderEntry = PROVIDERS[provider];
   const id = provider === "bedrock" ? fixBedrockModelId(modelId) : modelId;
   return { provider, label: entry.label, modelId: id, model: entry.create(id), providerOptions: entry.options?.(id) };
@@ -364,6 +392,7 @@ export function providerKeys(): Record<ProviderId, boolean> {
     google: has("GOOGLE_GENERATIVE_AI_API_KEY"),
     xai: has("XAI_API_KEY"),
     openai: has("OPENAI_API_KEY"),
+    mantle: has("AWS_BEDROCK_API_KEY") || has("AWS_BEARER_TOKEN_BEDROCK"),
   };
 }
 
@@ -402,6 +431,7 @@ export function matureModelId(): string | null {
   if (!m) return null;
   const sp = splitProviderPrefix(m);
   const provider = sp.provider ?? (process.env.AI_PROVIDER?.trim() || ACTIVE_PROVIDER);
+  if (provider === "bedrock" && /xai\.grok-4\.3/.test(sp.modelId)) return sp.modelId.replace(/^(?:us|global|eu|apac)\./, "");
   return provider === "bedrock" ? fixBedrockModelId(sp.modelId) : sp.modelId;
 }
 

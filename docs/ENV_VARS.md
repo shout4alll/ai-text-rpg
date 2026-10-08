@@ -10,7 +10,7 @@ Vercel 화면에는 변수 **이름만** 보이고 값은 가려져 있어서(�
 | `AWS_BEDROCK_API_KEY` | 🔒 | ✅ | 없음(필수) | Bedrock 호출 키 |
 | `BEDROCK_REGION` | | ✅ | `us-east-1` | Bedrock 리전 |
 | `GOOGLE_GENERATIVE_AI_API_KEY` | 🔒 | ✅ | 없음(필수) | Gemini 키 (보이스톡·이미지·google 프로바이더) |
-| `AI_MODEL_MATURE` | | ✅ (방금 추가) | 메인 모델 | 매혹·설렘 모드 대화에만 쓰는 모델 |
+| `AI_MODEL_MATURE` | | ✅ | mantle:xai.grok-4.3 | 매혹·설렘 모드 대화에만 쓰는 모델 |
 | `PREMIUM_ACCESS` | | ✅ | 배포 환경은 `paid` | `open` 이면 유료 영상·매혹 모드 잠금 해제 |
 | `VOICE_ACCESS` | | ✅ | `lib/voice/access.ts` 참고 | 보이스톡 이용 권한 |
 | `VOICE_MAX_MINUTES` | | ✅ | `lib/voice/access.ts` 참고 | 보이스톡 최대 분 |
@@ -19,6 +19,8 @@ Vercel 화면에는 변수 **이름만** 보이고 값은 가려져 있어서(�
 | `AI_FALLBACK_MODELS` | | ✅ | 비움=기본 순서 | 우회 모델 목록(쉼표 구분, `provider:모델`). 기본: Sonnet 5.5 → Haiku → GPT(Bedrock gpt-oss) → GPT(OpenAI) → Gemini → Nova. 성공률 높은 모델이 자동으로 앞으로. `off`=우회 없음 |
 | `SERVICE_FALLBACK` | | ✅ | on | on=일반 대화방에서 모델 실패 시 손님에게 오류를 숨기고 다른 모델로 이어서 답함 / off=끔 |
 | `MOOD_ROUTING` | | ✅ | on | 대화 내용별 모델 라우팅: 설렘·스킨십 말 → `AI_MODEL_MATURE`(Grok 등, 일반 방은 매혹 지원 인물+이용 권한 있을 때만) / 인사·맞장구 → `AI_MODEL_LIGHT`(Haiku, Llama 로 바꿔도 됨) / 그 외 → 메인(Sonnet). 단어 목록: config/spicy.ts moodWords |
+| `BEDROCK_MANTLE_REGION` | | ✅ | us-east-1 | Grok 4.3 을 부르는 Bedrock Mantle 리전 (us-east-1 · us-east-2 · us-west-2) |
+| `MANTLE_REASONING_EFFORT` | | ✅ | low | Grok 4.3 생각 정도: none(가장 빠름) · low · medium · high |
 | `OPENAI_API_KEY` | 🔒 | | 없음 | OpenAI 직접 호출(`openai:gpt-5`)용. 없으면 해당 모델은 건너뜀 |
 | `XAI_API_KEY` | 🔒 | | 없음 | xAI(Grok) 키 — console.x.ai 에서 발급. 🛠 모델 탭의 Grok 테스트·`AI_MODEL_MATURE=xai:grok-4.7` 에 필요 |
 | `XAI_BASE_URL` | | | `https://api.x.ai/v1` | (선택) Grok 주소. 미국 리전 `https://us.api.x.ai/v1` |

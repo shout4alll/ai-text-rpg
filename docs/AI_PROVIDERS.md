@@ -65,3 +65,19 @@ Llama 와 똑같이 **Bedrock 모델 ID** 로 쓰면 되므로 `XAI_API_KEY` 가
 - Bedrock 콘솔 › Model access 에서 xAI 모델 접근을 먼저 활성화해야 한다.
 - 문서상 서버측 도구는 미지원이고 클라이언트 함수 호출 지원 여부는 명시돼 있지 않다. 이 앱은 답장 형식을 도구 호출로 받으므로, 🛠 › 모델에서 "Grok 4.7 (Bedrock)" 로 먼저 한 번 시험해 오류가 없는지 확인할 것.
 - 기존 "Grok 4.7 (xAI 직접)" 은 `XAI_API_KEY` 로 api.x.ai 를 직접 부르는 방식이다. Bedrock 만 쓸 거면 필요 없다.
+
+
+## Grok 4.3 (Bedrock Mantle) — 성인 모델 기본값 (2026-10)
+
+Grok 4.3 은 Bedrock 의 일반 주소(Converse)가 아니라 **Mantle(OpenAI 호환) 주소**에서만 호출됩니다. 코드의 `mantle` 프로바이더가 처리합니다.
+
+| 환경변수 | 값 | 설명 |
+| --- | --- | --- |
+| `AI_MODEL_MATURE` | `mantle:xai.grok-4.3` | 기본값이라 비워 둬도 됨 (`xai.grok-4.3` 만 써도 자동으로 mantle) |
+| `AWS_BEDROCK_API_KEY` | 기존 키 그대로 | 장기 Bedrock API 키여야 함 (단기 키는 발급 리전에서만 동작) |
+| `BEDROCK_MANTLE_REGION` | `us-east-1` (기본) | Grok 4.3 은 us-east-1 · us-east-2 · us-west-2 만 |
+| `MANTLE_REASONING_EFFORT` | `low` (기본) | `none` 이면 가장 빠름 |
+
+- 가격: 입력 $1.25 / 출력 $2.50 (100만 토큰, Standard) — Grok 4.7($2/$6)보다 저렴하고, 생각 정도를 낮춰 빠름.
+- AWS 콘솔 → Bedrock(us-east-1) → Model access 에서 xAI Grok 4.3 이 활성화돼 있어야 합니다.
+- 🛠 › 모델 › "Grok 4.3 (Bedrock · 빠름)" 으로 바로 시험할 수 있습니다. 예전 Grok 4.7 은 "이전" 표시로 남겨 두었습니다.
