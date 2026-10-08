@@ -84,9 +84,19 @@ export function supportsBedrockCache(modelId: string): boolean {
   return /anthropic\.claude|amazon\.nova/.test(modelId);
 }
 
+/**
+ * 구조화 답장을 "글로 쓴 JSON"으로 받아야 하는 모델 (Bedrock 의 Claude·Nova 외 모델).
+ * Bedrock 의 toolChoice(도구 강제)는 일부 모델만 지원 — Llama 는 "doesn't support toolConfig.toolChoice.any" 오류,
+ * Grok 은 도구를 무시하고 글로 답해 "could not parse the response" 오류가 난다.
+ */
+export function usesTextJson(provider: string, modelId: string): boolean {
+  return provider === "bedrock" && !/anthropic\.claude|amazon\.nova/.test(modelId);
+}
+
 export function bedrockClaudeOptions(modelId: string): ProviderOptions | undefined {
   // Claude 가 아닌 모델(Nova·Llama·Mistral 등)도 구조화 답장은 도구 방식으로 (가장 널리 지원)
-  if (!/anthropic\.claude/.test(modelId)) return { bedrock: { structuredOutputMode: "jsonTool" } };
+  // Nova 는 도구 강제를 지원 → 도구 방식. Llama·Grok·gpt-oss 등은 toolChoice 를 거부하거나 무시하므로 글(JSON) 방식(usesTextJson)
+  if (!/anthropic\.claude/.test(modelId)) return /amazon\.nova/.test(modelId) ? { bedrock: { structuredOutputMode: "jsonTool" } } : undefined;
   const cannotDisableThinking = /claude-(sonnet|opus)-5-5|claude-fable-5-1/.test(modelId);
   return {
     bedrock: cannotDisableThinking

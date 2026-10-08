@@ -2,7 +2,8 @@ import { currentNotifyPlan } from "@/lib/push/planStore";
 import { containsPhrase, isOwnerToken, maskPhrase, ownerToken, ownerInstructions, wantsExit } from "@/lib/owner";
 import { settingValue } from "@/config/settings";
 import { NextResponse } from "next/server";
-import { generateText, Output } from "ai";
+import { generateText, NoObjectGeneratedError, Output } from "ai";
+import { extractJsonObject, proseToBubbles } from "@/lib/salvageReply";
 import { z } from "zod";
 import type { ChatResponse } from "@/types/game";
 import {
@@ -15,7 +16,7 @@ import {
 import type { AlbumItem, MediaDirective } from "@/config/media";
 import { allureInstructions } from "@/config/allure";
 import type { PersonaFile } from "@/lib/personas/schema";
-import { resolveModel, resolveOverrideModel, resolveFallbacks, matureModelId, supportsBedrockCache } from "@/config/ai";
+import { resolveModel, resolveOverrideModel, resolveFallbacks, matureModelId, supportsBedrockCache, usesTextJson } from "@/config/ai";
 import { sanitizeHistory, stickyMature } from "@/lib/historySanitizer";
 import { SAFETY_RULES, MINOR_GUARD, absoluteRules } from "@/config/rules";
 import { PERSONA_FIELDS, RULE_FIELDS, applyPersonaOverride, mergeOverride, type OwnerOpts, type RulesOverride } from "@/lib/ownerOverrides";
@@ -167,6 +168,18 @@ const replySchema = z.object({
     .catch("")
     .describe("유저가 방금 사진·영상을 보냈을 때만: 무엇이 보였는지 한국어 한 문장 요약(나중에 기억용). 아니면 빈 문자열."),
 });
+
+/** 도구(JSON) 강제를 지원하지 않는 모델용: 답장 JSON 을 글로 쓰게 하는 지시 (lib/salvageReply.ts 로 읽는다) */
+const TEXT_JSON_GUIDE = `
+
+[출력 형식 — 반드시 지킬 것]
+다른 말 없이 아래 형태의 JSON 객체 하나만 출력한다. 코드 블록(\`\`\`)·설명·생각 과정은 쓰지 않는다.
+{"messages":["말풍선1","말풍선2"],"reaction":"smile","tapback":"none","affection_delta":0,"media_action":"none","album_id":"","custom_request":"","soothed":false,"seen":""}
+- messages: 메신저 말풍선 0~5개 (한국어)
+- reaction: ${AVATAR_REACTION_IDS.join(" | ")} 중 하나
+- tapback: none | ${HEART_REACTION_IDS.join(" | ")} 중 하나 (대부분 none)
+- affection_delta: -5 ~ 5 정수 / media_action: none | album | custom
+- album_id, custom_request, seen: 해당 없으면 빈 문자열 / soothed: true 또는 false`;
 
 type Turn = z.infer<typeof turnSchema>;
 
@@ -666,11 +679,11 @@ export async function POST(request: Request) {
     const contextFor = (h: typeof history, ctx: string) =>
       owner ? h : h.map((t, i) => (i === h.length - 1 && t.role === "user" ? { ...t, content: `${ctx}\n\n[유저]\n${t.content}` } : t));
     // 시도마다 시간 제한: 느리거나 멈춘 모델에서 오래 기다리지 않고 다음 모델로 넘어간다 (전체 56초 안에서)
-    const attemptSignal = (attemptNo: number): AbortSignal | undefined => {
+    const attemptSignal = (attemptNo: number, slowFirst = false): AbortSignal | undefined => {
       if (ownerOpts?.model) return undefined; // 🛠 로 모델을 직접 골랐으면 끝까지 기다린다
       const left = 56_000 - (Date.now() - startedAt);
       if (left < 3_000) throw new Error("응답 시간 초과 (우회할 시간이 남지 않음)");
-      return AbortSignal.timeout(Math.min(attemptNo === 0 ? 20_000 : 16_000, left - 1_000));
+      return AbortSignal.timeout(Math.min(attemptNo === 0 ? (slowFirst ? 30_000 : 20_000) : 16_000, left - 1_000));
     };
     const generate = (r: NonNullable<typeof resolved>, attemptNo = 0) => {
       // 성인 전용 모델이 아닌 모델(메인·가벼운·대체)에는 정화한 대화를 보낸다
@@ -678,28 +691,54 @@ export async function POST(request: Request) {
       const hist = usedSafe ? historySafe! : history;
       const withContext = contextFor(hist, usedSafe ? ctxSafe : ctxRaw);
       if (ownerAuth) sentPreview = hist.slice(-12).map((t) => ({ role: t.role, text: t.content.replace(/\s+/g, " ").slice(0, 90) }));
+      // Llama·Grok 등 (Bedrock 의 도구 강제 미지원): 구조화 출력 대신 글로 쓴 JSON 을 받아 읽는다
+      const textJson = usesTextJson(r.provider, r.modelId);
       return generateText({
       model: r.model,
       instructions: {
         role: "system",
-        content: owner ? ownerInstructions(persona, { rules: typeof rulesOv?.ownerRules === "string" ? rulesOv.ownerRules : persona.cheatRules, absolute: Array.isArray(rulesOv?.absolute) ? (rulesOv.absolute as string[]) : undefined, extra: personaExtra }) : buildStaticInstructions(persona, allureEff, { extra: personaExtra, rules: rulesOv }),
+        content: (owner ? ownerInstructions(persona, { rules: typeof rulesOv?.ownerRules === "string" ? rulesOv.ownerRules : persona.cheatRules, absolute: Array.isArray(rulesOv?.absolute) ? (rulesOv.absolute as string[]) : undefined, extra: personaExtra }) : buildStaticInstructions(persona, allureEff, { extra: personaExtra, rules: rulesOv })) + (textJson ? TEXT_JSON_GUIDE : ""),
         // Bedrock(Claude): 여기까지를 캐시 (Gemini 는 같은 앞부분을 자동으로 캐시)
         // (Claude·Nova 만 — Llama·Grok 등은 cachePoint 를 보내면 오류)
         ...(r.provider !== "bedrock" || supportsBedrockCache(r.modelId) ? { providerOptions: { bedrock: { cachePoint: { type: "default" as const } } } } : {}),
       },
       messages: toSdkMessages(withContext),
-      output: Output.object({
-        schema: replySchema,
-        name: "chat_reply",
-        description: "캐릭터의 메신저 답장(말풍선)과 화면 리액션, 마음 리액션, 호감도 변화",
-      }),
+      ...(textJson
+        ? {}
+        : {
+            output: Output.object({
+              schema: replySchema,
+              name: "chat_reply",
+              description: "캐릭터의 메신저 답장(말풍선)과 화면 리액션, 마음 리액션, 호감도 변화",
+            }),
+          }),
       // temperature 를 받지 않는 모델(Claude 5 세대·Grok 추론 모델·GPT-5/o 시리즈)은 아예 보내지 않는다
       temperature: /claude-(sonnet|opus|fable|mythos)-5|grok|gpt-5|(^|[:./])o[134](-|$)/i.test(r.modelId) ? undefined : persona.prompt.temperature ?? 1.0,
       // Grok 같은 추론 모델은 "생각"도 출력 한도에 포함되므로 넉넉히
       maxOutputTokens: Math.max(owner ? 2500 : BALANCE.cost.maxOutputTokens, r.provider === "xai" || /xai\.grok/.test(r.modelId) ? 4000 : 0),
       maxRetries: attemptNo === 0 && !ownerOpts?.model ? 0 : 1,
-      abortSignal: attemptSignal(attemptNo),
+      abortSignal: attemptSignal(attemptNo, /grok/i.test(r.modelId)), // Grok 같은 추론 모델은 첫 시도를 조금 더 기다린다
       ...(r.providerOptions ? { providerOptions: r.providerOptions as never } : {}),
+    }).then((res) => {
+      if (!textJson) return { output: res.output as z.infer<typeof replySchema>, usage: res.usage };
+      const raw = res.text ?? "";
+      const obj = extractJsonObject(raw);
+      const parsedObj = obj ? replySchema.safeParse(obj) : null;
+      const output = parsedObj?.success ? parsedObj.data : replySchema.parse({ messages: proseToBubbles(raw) });
+      if (!output.messages.length && !parsedObj?.success) throw new Error(`응답을 해석하지 못함 (finish=${res.finishReason}, 글 ${raw.length}자: ${raw.replace(/\s+/g, " ").slice(0, 160)})`);
+      return { output, usage: res.usage };
+    }).catch((e: unknown) => {
+      // 도구(JSON) 형식을 지키지 않고 글로 답한 모델(Grok·Llama 등): 글에서 답장을 복구한다
+      if (!NoObjectGeneratedError.isInstance(e)) throw e;
+      const raw = e.text ?? "";
+      const obj = extractJsonObject(raw);
+      const parsedObj = obj ? replySchema.safeParse(obj) : null;
+      const output = parsedObj?.success ? parsedObj.data : replySchema.parse({ messages: proseToBubbles(raw) });
+      if (!output.messages.length) {
+        throw new Error(`응답을 해석하지 못함 (finish=${e.finishReason ?? "?"}, 글 ${raw.length}자: ${raw.replace(/\s+/g, " ").slice(0, 160)})`);
+      }
+      console.warn(`[/api/chat] ${r.modelId}: JSON 형식이 아니어서 글에서 복구함 (${parsedObj?.success ? "JSON" : "글"})`);
+      return { output, usage: e.usage };
     });
     };
     // 가벼운 턴: lightModel → cheapModel → 메인 순서로 (권한 없는 모델은 자동으로 건너뜀)
