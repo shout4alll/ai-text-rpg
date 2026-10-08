@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { describeFallbacks, describeModel, providerKeys } from "@/config/ai";
 import { modelStats } from "@/lib/modelRouter";
-import { settingValue } from "@/config/settings";
+import { resolveSetting, settingValue } from "@/config/settings";
 import { MODEL_CHOICES } from "@/config/models";
 import { SAFETY_RULES, MINOR_GUARD, absoluteRules } from "@/config/rules";
 import { defaultLevelRules } from "@/config/allure";
@@ -56,7 +56,7 @@ export async function GET(request: Request) {
     models: {
       choices: MODEL_CHOICES.map((c) => ({ ...c, hasKey: keys[c.provider] })),
       providers: keys,
-      server: { provider: m.provider, main: m.modelId, light: m.lightModelId, cheap: m.cheapModelId },
+      server: { provider: m.provider, main: m.modelId, light: m.lightModelId, cheap: m.cheapModelId, mature: resolveSetting("matureModel").value || "" },
       fallbackOn: settingValue("serviceFallback") !== "off",
       fallback: describeFallbacks().map((f) => {
         const st = modelStats().find((x) => x.id === f.modelId);

@@ -18,6 +18,7 @@ Vercel 화면에는 변수 **이름만** 보이고 값은 가려져 있어서(�
 | `STICKY_ROUTING` | | | `on` | 매혹 모드를 끈 직후 "아까 어땠어?" 같은 회상은 몇 턴 더 성인 모델로 (`on`/`off`) |
 | `AI_FALLBACK_MODELS` | | ✅ | 비움=기본 순서 | 우회 모델 목록(쉼표 구분, `provider:모델`). 기본: Sonnet 5.5 → Haiku → GPT(Bedrock gpt-oss) → GPT(OpenAI) → Gemini → Nova. 성공률 높은 모델이 자동으로 앞으로. `off`=우회 없음 |
 | `SERVICE_FALLBACK` | | ✅ | on | on=일반 대화방에서 모델 실패 시 손님에게 오류를 숨기고 다른 모델로 이어서 답함 / off=끔 |
+| `MOOD_ROUTING` | | ✅ | on | 대화 내용별 모델 라우팅: 설렘·스킨십 말 → `AI_MODEL_MATURE`(Grok 등, 일반 방은 매혹 지원 인물+이용 권한 있을 때만) / 인사·맞장구 → `AI_MODEL_LIGHT`(Haiku, Llama 로 바꿔도 됨) / 그 외 → 메인(Sonnet). 단어 목록: config/spicy.ts moodWords |
 | `OPENAI_API_KEY` | 🔒 | | 없음 | OpenAI 직접 호출(`openai:gpt-5`)용. 없으면 해당 모델은 건너뜀 |
 | `XAI_API_KEY` | 🔒 | | 없음 | xAI(Grok) 키 — console.x.ai 에서 발급. 🛠 모델 탭의 Grok 테스트·`AI_MODEL_MATURE=xai:grok-4.7` 에 필요 |
 | `XAI_BASE_URL` | | | `https://api.x.ai/v1` | (선택) Grok 주소. 미국 리전 `https://us.api.x.ai/v1` |

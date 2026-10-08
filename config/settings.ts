@@ -63,6 +63,11 @@ export const SERVER_SETTINGS = [
     desc: "비우면 기본 순서(Sonnet 5.5 → Haiku → GPT(Bedrock gpt-oss) → GPT(OpenAI) → Gemini → Nova). 쉼표로 구분, 앞에 프로바이더: 를 붙일 수 있음. off=우회 없음. 성공률이 높았던 모델이 자동으로 앞으로 옴",
   },
   {
+    key: "moodRouting", label: "분위기 라우팅 (설렘·스킨십 말 → 성인 모델)", group: "모델", type: "enum", options: ["on", "off"],
+    default: "on", env: "MOOD_ROUTING", usedIn: "app/api/chat/route.ts · config/spicy.ts moodWords",
+    desc: "on=유저 말이 설렘·스킨십 분위기면 매혹 모드를 안 켜도 그 턴은 성인 전용 모델(AI_MODEL_MATURE)로 (일반 방은 매혹 지원 인물+이용 권한 있을 때만, 치트룸은 항상). 인사·맞장구는 가벼운 모델, 고민·질문은 메인 모델 / off=끔",
+  },
+  {
     key: "historySanitize", label: "성인 대화 구간 정화 (다른 모델 전달용)", group: "수위·모드", type: "enum", options: ["on", "off"],
     default: "on", env: "HISTORY_SANITIZE", usedIn: "lib/historySanitizer.ts · app/api/chat/route.ts",
     desc: "on=성인 전용 모델이 따로 있을 때, 매혹 모드 대화는 화면·저장에는 그대로 두고 다른 모델(Claude 등)에게는 원문 대신 '친밀한 대화를 나눴다' 요약만 전달 / off=원문 그대로 전달",

@@ -26,7 +26,7 @@ interface FullStatus {
   secrets: { name: string; set: boolean }[];
 }
 interface OwnerCfg {
-  models: { choices: { key: string; label: string; provider: string; modelId: string; note: string; hasKey: boolean }[]; providers: Record<string, boolean>; server: { provider: string; main: string; light: string; cheap: string }; fallback?: { spec: string; provider: string; modelId: string; usable: boolean; ok: number; fail: number; rate: number }[]; fallbackOn?: boolean };
+  models: { choices: { key: string; label: string; provider: string; modelId: string; note: string; hasKey: boolean }[]; providers: Record<string, boolean>; server: { provider: string; main: string; light: string; cheap: string; mature?: string }; fallback?: { spec: string; provider: string; modelId: string; usable: boolean; ok: number; fail: number; rate: number }[]; fallbackOn?: boolean };
   persona: { id: string; name: string; hasAllure: boolean; fields: FieldDef[]; defaults: Record<string, OverrideValue | undefined> };
   rules: { fields: FieldDef[]; defaults: Record<string, OverrideValue | undefined>; hard: string[] };
 }
@@ -149,6 +149,15 @@ export default function DevPanel({
     setTimeout(() => setAppliedAt(0), 2200);
   };
   const discard = () => setOpts(saved);
+  /** 모델 선택은 누르는 즉시 적용 (다른 편집 중인 값은 그대로 초안으로 둔다) */
+  const pickModel = (model: StoredOwnerOpts["model"]) => {
+    const nextSaved = { ...saved, model };
+    saveOwnerOpts(nextSaved);
+    setSaved(nextSaved);
+    setOpts({ ...opts, model });
+    setAppliedAt(Date.now());
+    setTimeout(() => setAppliedAt(0), 2200);
+  };
 
   const clamp = (x: number, y: number) => {
     const w = boxRef.current?.offsetWidth ?? 360;
@@ -309,7 +318,7 @@ export default function DevPanel({
 
                   {tab === "model" && (
                     <>
-                      <p className="mb-2 text-[11px] text-slate-400">모델을 고르고 맨 아래 [확인]을 누르면 다음 메시지부터 이 모델만 사용 (가벼운 대화·성인 라우팅 무시, 실패해도 대체하지 않고 오류를 그대로 보여 줌). ‘자동’이면 서비스와 같은 순서로 시도하고, 실패 시 아래 우회 목록으로 넘어가며 그 경과를 대화창에 보여 줍니다. 이 기기 · 주인님 모드에서만.</p>
+                      <p className="mb-2 text-[11px] text-slate-400">모델을 누르면 바로 적용되어 다음 메시지부터 이 모델만 사용 (가벼운 대화·성인 라우팅 무시, 실패해도 대체하지 않고 오류를 그대로 보여 줌). ‘자동’이면 서비스와 같은 순서로 시도하고, 실패 시 아래 우회 목록으로 넘어가며 그 경과를 대화창에 보여 줍니다. 이 기기 · 주인님 모드에서만.</p>
                       {cfg?.models.fallback && (
                         <Section title={`🔁 우회 목록 (서비스 대화방) — ${cfg.models.fallbackOn === false ? "꺼짐" : "켜짐"}`}>
                           {cfg.models.fallback.length === 0 && <p className="text-slate-500">우회 모델 없음</p>}
@@ -342,10 +351,10 @@ export default function DevPanel({
                         <button
                           type="button"
                           data-dev-model="auto"
-                          onClick={() => commit({ ...opts, model: undefined })}
+                          onClick={() => pickModel(undefined)}
                           className={`mb-1 w-full rounded px-2 py-1.5 text-left ${!curModel ? "bg-amber-300 font-bold text-slate-900" : "bg-slate-800"}`}
                         >
-                          자동 (서버 설정){cfg ? <span className="block text-[10px] opacity-70">{cfg.models.server.provider} · {cfg.models.server.main}</span> : null}
+                          자동 (서버 설정){cfg ? <span className="block text-[10px] opacity-70">{`내용에 따라: 평소 ${cfg.models.server.main}${cfg.models.server.mature ? ` · 설렘·스킨십 말 → ${cfg.models.server.mature}` : ""} · 실패 시 우회 목록`}</span> : null}
                         </button>
                         {cfg?.models.choices.map((c) => {
                           const sel = !!curModel && c.provider === curModel.provider && c.modelId === curModel.modelId;
@@ -354,7 +363,7 @@ export default function DevPanel({
                               key={c.key}
                               type="button"
                               data-dev-model={c.key}
-                              onClick={() => commit({ ...opts, model: { provider: c.provider, modelId: c.modelId } })}
+                              onClick={() => pickModel({ provider: c.provider, modelId: c.modelId })}
                               className={`mb-1 w-full rounded px-2 py-1.5 text-left ${sel ? "bg-amber-300 font-bold text-slate-900" : "bg-slate-800"} ${c.hasKey ? "" : "opacity-50"}`}
                             >
                               <span className="flex justify-between gap-2"><span>{c.label}</span><span className="text-[10px] opacity-70">{c.provider}{c.hasKey ? "" : " · 키 없음"}</span></span>
@@ -370,7 +379,7 @@ export default function DevPanel({
                             {["xai", "bedrock", "google"].map((p) => (<option key={p}>{p}</option>))}
                           </select>
                           <input value={custom.modelId} onChange={(e) => setCustom({ ...custom, modelId: e.target.value })} placeholder="모델 ID (예: grok-4.6)" className="min-w-0 flex-1 rounded bg-slate-800 px-2 py-1 text-base outline-none sm:text-[12px]" />
-                          <button type="button" disabled={!custom.modelId.trim()} onClick={() => commit({ ...opts, model: { provider: custom.provider, modelId: custom.modelId.trim() } })} className="rounded bg-amber-300 px-2 py-1 font-bold text-slate-900 disabled:opacity-40">담기</button>
+                          <button type="button" disabled={!custom.modelId.trim()} onClick={() => pickModel({ provider: custom.provider, modelId: custom.modelId.trim() })} className="rounded bg-amber-300 px-2 py-1 font-bold text-slate-900 disabled:opacity-40">담기</button>
                         </div>
                         {curModel && !choiceOf && <p className="mt-1 text-[10px] text-emerald-300">지금: {curModel.provider} · {curModel.modelId}</p>}
                       </Section>

@@ -18,6 +18,7 @@ import { allureInstructions } from "@/config/allure";
 import type { PersonaFile } from "@/lib/personas/schema";
 import { resolveModel, resolveOverrideModel, resolveFallbacks, matureModelId, supportsBedrockCache, usesTextJson } from "@/config/ai";
 import { sanitizeHistory, stickyMature } from "@/lib/historySanitizer";
+import { SPICY } from "@/config/spicy";
 import { SAFETY_RULES, MINOR_GUARD, absoluteRules } from "@/config/rules";
 import { PERSONA_FIELDS, RULE_FIELDS, applyPersonaOverride, mergeOverride, type OwnerOpts, type RulesOverride } from "@/lib/ownerOverrides";
 import { persistedPersona, persistedRules } from "@/lib/overridesStore";
@@ -591,7 +592,12 @@ export async function POST(request: Request) {
     !allure && !owner && parsed.data.allureOk === true && !!persona.allure && !!matureId && !ownerOpts?.model &&
     settingValue("stickyRouting") === "on" && last.kind === "text" && stickyMature(recent, last.content);
   const allureEff = allure || sticky;
-  const category = parsed.data.sulk || ownerAuth || sticky ? null : poolCategory(last.kind, last.content);
+  // 🔀 분위기 라우팅: 설렘·스킨십 분위기의 말이면 이번 턴은 성인 전용 모델로 (모델만 바뀌고 수위 규칙은 그대로)
+  const moodHit =
+    !!matureId && !ownerOpts?.model && !allureEff && last.kind === "text" && settingValue("moodRouting") === "on" &&
+    (owner || (parsed.data.allureOk === true && !!persona.allure)) &&
+    SPICY.moodWords.some((w) => last.content.includes(w));
+  const category = parsed.data.sulk || ownerAuth || sticky || moodHit ? null : poolCategory(last.kind, last.content);
   const pKey = category ? poolKey(persona.id, affectionStageIndex(affection, persona.relationshipType), category, allureEff) : "";
   if (category) {
     const lastAi = [...messages].reverse().find((m) => m.role === "assistant" && m.kind === "text")?.content;
@@ -748,7 +754,8 @@ export async function POST(request: Request) {
       ? { result: await generate(forced), resolved: forced, fellBack: false }
       : await runWithFallback(
           "/api/chat",
-          owner ? (persona.cheatRoom ? ["mature", "chat"] : ["chat"]) : allureEff && persona.allure ? ["mature", "chat"] : route.tier === "light" ? ["light", "cheap", "chat"] : ["chat"],
+          // 대화 내용에 따라: 매혹 모드·설렘 분위기 → 성인 모델(Grok 등) / 인사·맞장구 → 가벼운 모델(Haiku·Llama 등) / 그 외 → 메인(Sonnet)
+          (owner ? moodHit : (allureEff && persona.allure) || moodHit) ? ["mature", "chat"] : !owner && route.tier === "light" ? ["light", "cheap", "chat"] : ["chat"],
           generate,
           // 🔁 우회: 위 모델들이 모두 실패하면 우회 목록(성공률 높은 순)으로 이어서 답한다. 일반 대화방은 오류를 보이지 않는다.
           { extras: settingValue("serviceFallback") === "off" ? [] : resolveFallbacks() }
@@ -827,7 +834,7 @@ export async function POST(request: Request) {
             debug: {
               model: resolved.modelId,
               label: resolved.label,
-              tier: forced ? "forced" : owner ? "owner" : allureEff && persona.allure ? "mature" : route.tier,
+              tier: forced ? "forced" : moodHit ? (owner ? "owner·mood" : "mood") : owner ? "owner" : allureEff && persona.allure ? "mature" : route.tier,
               reason: forced ? "model-override" : route.reason,
               promptMode: owner ? "owner" : "service",
               overrides: appliedOverrides,
@@ -844,7 +851,7 @@ export async function POST(request: Request) {
           }
         : {}),
       messages: bubbles,
-      ...(allureEff && persona.allure ? { mature: true } : {}),
+      ...((allureEff && persona.allure) || (moodHit && !!matureId && resolved?.modelId === matureId) ? { mature: true } : {}),
       reaction: output.reaction,
       // 마음 리액션에 마음으로 답하는 건 어색하므로 text 턴에만 허용
       tapback: last.kind === "text" && output.tapback !== "none" ? output.tapback : null,
