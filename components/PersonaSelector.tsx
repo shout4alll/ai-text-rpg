@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import PersonaPortrait from "@/components/PersonaPortrait";
+import { BRAND } from "@/config/brand";
+import { GemBadge } from "@/components/GemShop";
 import { IconBackup, IconBell, IconChats, IconClose, IconSparkle } from "@/components/icons";
 import type { Persona, PersonaId } from "@/lib/personas/types";
 
@@ -24,6 +26,8 @@ interface PersonaSelectorProps {
   onTheme?: () => void;
   /** 🔔 알림 설정 */
   onNotify?: () => void;
+  gems?: number;
+  onGems?: () => void;
   /** 대화방별 마지막 메시지 (대화한 적 있는 사람만) */
   previews?: Record<string, string>;
 }
@@ -36,6 +40,8 @@ export default function PersonaSelector({
   onBackup,
   onTheme,
   onNotify,
+  gems,
+  onGems,
   previews = {},
 }: PersonaSelectorProps) {
   const [filter, setFilter] = useState<Filter>("all");
@@ -57,7 +63,8 @@ export default function PersonaSelector({
             <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-400 text-onbrand shadow-glow">
               <IconChats className="h-[18px] w-[18px]" />
             </span>
-            <span className="text-[17px] font-extrabold tracking-tight">캐릭톡</span>
+            <span className="flex items-baseline gap-1.5"><span className="text-[19px] font-extrabold tracking-tight" data-brand>{BRAND.name}</span><span className="text-[12px] font-semibold text-ink-mute">{BRAND.ko}</span></span>
+            {onGems && typeof gems === "number" && <GemBadge gems={gems} onClick={onGems} className="ml-1" />}
           </div>
           <div className="flex shrink-0 gap-2">
             {onTheme && (

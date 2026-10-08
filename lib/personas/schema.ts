@@ -113,6 +113,13 @@ export const personaFileSchema = z.object({
       voiceStyle: z.string().min(1).optional(),
     })
     .optional(),
+  /** 서사: background 는 처음부터 공개, chapters 는 호감도가 min 이상이면 열리고(프로필에 표시) 대화에도 반영된다 */
+  story: z
+    .object({
+      background: z.string().min(1),
+      chapters: z.array(z.object({ min: z.number().int().min(0).max(100), title: z.string().min(1), text: z.string().min(1) })).default([]),
+    })
+    .optional(),
   prompt: z.object({
     identity: z.string().min(1),
     personality: z.string().min(1),

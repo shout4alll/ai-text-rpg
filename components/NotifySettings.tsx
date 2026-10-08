@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { IconBell, IconClose } from "@/components/icons";
 import { NOTIFY_KINDS, NOTIFY_PER_DAY, NOTIFY_WINDOW } from "@/config/notifications";
-import { cancelNudges, isNativeApp, notifyPermission, requestNotifyPermission, type NotifyPermission } from "@/lib/push/nudge";
+import { cancelNudges, isNativeApp, notifyPermission, nudgeStatus, requestNotifyPermission, sendTestNotification, type NotifyPermission } from "@/lib/push/nudge";
 import { loadNotifySettings, saveNotifySettings, type NotifySettings as Settings } from "@/lib/push/settings";
 
 /**
@@ -15,10 +15,23 @@ export default function NotifySettings({ onClose }: { onClose: () => void }) {
   const [s, setS] = useState<Settings>(() => loadNotifySettings());
   const [perm, setPerm] = useState<NotifyPermission>("unsupported");
   const native = isNativeApp();
+  const [testMsg, setTestMsg] = useState("");
+  const [info, setInfo] = useState("");
 
   useEffect(() => {
     void notifyPermission().then(setPerm);
+    void nudgeStatus().then((st) =>
+      setInfo(`권한: ${st.permission === "granted" ? "허용" : st.permission === "denied" ? "꺼짐" : "미확인"} · 예약된 알림 ${st.pending}개${st.next ? ` (다음 ${st.next.getMonth() + 1}/${st.next.getDate()} ${String(st.next.getHours()).padStart(2, "0")}:${String(st.next.getMinutes()).padStart(2, "0")})` : ""}`),
+    );
   }, []);
+
+  const runTest = async () => {
+    setTestMsg("보내는 중…");
+    const r = await sendTestNotification();
+    setTestMsg(
+      r === "ok" ? "5초 뒤에 알림이 와요. 지금 앱을 홈 화면으로 보내 보세요." : r === "denied" ? "알림 권한이 꺼져 있어요. 폰 설정 › 앱 › WitH › 알림에서 허용해 주세요." : r === "unsupported" ? "앱에서만 시험할 수 있어요." : "알림을 보내지 못했어요. 앱을 최신으로 다시 설치해 주세요.",
+    );
+  };
 
   const update = (next: Settings) => {
     setS(next);
@@ -57,7 +70,7 @@ export default function NotifySettings({ onClose }: { onClose: () => void }) {
 
         {!native && (
           <p className="mt-3 rounded-2xl bg-paper px-3.5 py-3 text-[13px] leading-relaxed text-ink-soft ring-1 ring-ink-line" data-notify-web-note>
-            알림은 캐릭톡 앱에서만 받을 수 있어요. 앱을 설치하면 이 설정이 그대로 적용돼요.
+            알림은 WitH 앱에서만 받을 수 있어요. 앱을 설치하면 이 설정이 그대로 적용돼요.
           </p>
         )}
 
@@ -90,8 +103,18 @@ export default function NotifySettings({ onClose }: { onClose: () => void }) {
 
         {native && s.enabled && perm === "denied" && (
           <p className="mt-3 rounded-2xl bg-brand-50 px-3.5 py-3 text-[13px] leading-relaxed text-ink-soft ring-1 ring-brand-100" data-notify-denied>
-            폰 설정에서 캐릭톡의 알림이 꺼져 있어요. 폰의 설정 › 앱 › 캐릭톡 › 알림에서 허용해 주세요.
+            폰 설정에서 WitH의 알림이 꺼져 있어요. 폰의 설정 › 앱 › WitH › 알림에서 허용해 주세요.
           </p>
+        )}
+        {native && (
+          <div className="mt-3 rounded-2xl bg-paper px-3.5 py-3 text-[12px] leading-relaxed text-ink-soft ring-1 ring-ink-line" data-notify-diag>
+            <p data-notify-info>{info}</p>
+            <p className="mt-1 text-ink-mute">앱을 열어 둔 동안은 예약이 0개인 게 정상이에요. 홈 화면으로 나가면 오전 9시~밤 10시 사이로 예약되고, 가장 가까운 알림도 1시간 이후예요.</p>
+            <button type="button" onClick={runTest} data-notify-test className="mt-2 rounded-full bg-surface px-3 py-1.5 text-[13px] font-semibold text-ink shadow-soft ring-1 ring-ink-line">
+              테스트 알림 보내기
+            </button>
+            {testMsg && <p className="mt-1.5 text-ink">{testMsg}</p>}
+          </div>
         )}
         {native && s.enabled && perm === "prompt" && (
           <button

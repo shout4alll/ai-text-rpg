@@ -30,7 +30,7 @@ export const NOTIFY_ID_COUNT = 100;
 export const NOTIFY_CHANNEL = { id: "nudge", name: "선톡 알림", description: "인물이 먼저 보내는 메시지·사진·영상 알림" } as const;
 
 /** 알림 제목 */
-export const NOTIFY_TITLE = "캐릭톡";
+export const NOTIFY_TITLE = "WitH";
 
 /** 알림이 대화방에 도착하기 전까지 보관하는 시간 (이 시간이 지나면 버린다) */
 export const NUDGE_KEEP_MS = 48 * 60 * 60 * 1000;

@@ -35,6 +35,7 @@
 | `image.portrait` | ✔ | `public/avatar/personas/<id>/` 안의 이미지 파일명 (기본 `portrait.jpg`) |
 | `image.objectPosition` | ✔ | 얼굴이 화면 중앙에 오도록 하는 기준점 (예: `"55% 30%"`, 앞 숫자가 가로 위치) |
 | `image.fallbackClipsDir` / `fallbackPoster` | | (선택) **같은 인물의** 대체 영상 폴더·이미지 (인물 폴더에 없는 이름만 여기서 찾음) |
+| `story` | ✔ | (선택) 서사. `background`는 프로필에 처음부터 공개, `chapters[{min,title,text}]`는 호감도 `min` 이상이면 열려 프로필에 보이고 대화에도 반영됨 |
 | `prompt.identity` | | 배경: 어떤 사람인지 |
 | `prompt.personality` | | 성격 |
 | `prompt.speech` | | 말투 규칙 (처음 말투와 친해진 뒤 말투를 함께 적으면 좋음) |

@@ -1,4 +1,4 @@
-# 📱 캐릭톡 앱 (Android APK · iOS) — Capacitor
+# 📱 WitH(위드) 앱 (Android APK · iOS) — Capacitor
 
 앱은 **화면(이 프로젝트의 Next.js 화면을 정적 파일로 만든 것)** 을 앱 안에 담고,
 **AI 대화·보이스톡·사진은 서버(배포된 Next.js, Vercel 등)** 에 요청한다.
@@ -48,7 +48,7 @@ API 키는 서버에만 있고 앱에는 들어가지 않는다.
 | 항목 | 값 | 위치 |
 | --- | --- | --- |
 | 앱 ID | `kr.co.takeone.charactalk` (스토어 등록 후 변경 불가) | `capacitor.config.ts` |
-| 앱 이름 | 캐릭톡 | `android/app/src/main/res/values/strings.xml` |
+| 앱 이름 | WitH | `android/app/src/main/res/values/strings.xml` |
 | 버전 | versionCode 1 / 1.0 (스토어에 올릴 때마다 versionCode +1) | `android/app/build.gradle` |
 | 권한 | 인터넷, 마이크(보이스톡), 알림(플러그인이 추가) | `android/app/src/main/AndroidManifest.xml` |
 | 앱 아이콘 | 기본 아이콘 (교체 예정) | `android/app/src/main/res/mipmap-*` |

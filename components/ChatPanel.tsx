@@ -184,6 +184,9 @@ interface ChatPanelProps {
   typing: boolean;
   /** 답장을 기다리는 중 (전송·리액션 잠금) */
   busy: boolean;
+  /** 보낼 사진·영상을 골라 둔 상태 (메시지를 더 쓰고 전송) */
+  attachment?: { url: string; isVideo: boolean; name: string } | null;
+  onClearAttachment?: () => void;
   onInputChange: (value: string) => void;
   onSubmit: () => void;
   /** 상대 메시지에 마음 리액션 달기 */
@@ -234,6 +237,8 @@ export default function ChatPanel({
   input,
   typing,
   busy,
+  attachment,
+  onClearAttachment,
   onInputChange,
   onSubmit,
   onReact,
@@ -552,6 +557,21 @@ export default function ChatPanel({
             <HeartPicker S={S} className="max-w-[19rem]" onPick={(h) => react(lastAiId, h)} />
           </div>
         )}
+        {attachment && (
+          <div className={`flex items-center gap-2 px-3 pt-2 ${S.form}`} data-attach-tray>
+            <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-black/10">
+              {attachment.isVideo ? (
+                <video src={attachment.url} muted playsInline className="h-full w-full object-cover" />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={attachment.url} alt="보낼 사진" className="h-full w-full object-cover" />
+              )}
+              {attachment.isVideo && <span className="absolute inset-0 flex items-center justify-center text-lg text-white drop-shadow">▶</span>}
+            </div>
+            <p className="min-w-0 flex-1 truncate text-[13px] text-ink-soft">{attachment.isVideo ? "영상" : "사진"} · 말을 같이 써서 보낼 수 있어요</p>
+            <button type="button" onClick={onClearAttachment} aria-label="첨부 취소" data-attach-clear className="px-2 text-lg text-ink-mute">×</button>
+          </div>
+        )}
         <form
           className={`flex items-center gap-1.5 px-3 pt-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] ${S.form}`}
           onSubmit={(e) => {
@@ -575,7 +595,7 @@ export default function ChatPanel({
               <button
                 type="button"
                 onClick={() => fileRef.current?.click()}
-                disabled={busy || uploading}
+                disabled={uploading}
                 aria-label="사진·영상 보내기"
                 title="사진·영상 보내기"
                 data-attach-button
@@ -601,14 +621,14 @@ export default function ChatPanel({
             value={input}
             onChange={(e) => onInputChange(e.target.value)}
             onFocus={() => setPaletteOpen(false)}
-            placeholder="메시지를 입력하세요"
+            placeholder={attachment ? "사진·영상과 함께 보낼 말 (생략 가능)" : "메시지를 입력하세요"}
             maxLength={1000}
             enterKeyHint="send"
             className={`h-10 min-w-0 flex-1 px-4 text-base outline-none transition wide:text-[14.5px] ${S.input}`}
           />
           <button
             type="submit"
-            disabled={busy || !input.trim()}
+            disabled={uploading || (!input.trim() && !attachment)}
             aria-label="전송"
             data-send
             className={`h-10 shrink-0 transition disabled:cursor-not-allowed ${S.send}`}

@@ -68,7 +68,7 @@ export async function downloadBackup(opts: { includeMedia: boolean }): Promise<{
 export async function readBackup(file: File): Promise<BackupFile> {
   const data = JSON.parse(await file.text()) as Partial<BackupFile>;
   if (!data || data.app !== "charactalk" || data.v !== 1 || typeof data.storage !== "object") {
-    throw new Error("캐릭톡 백업 파일이 아니에요.");
+    throw new Error("WitH 백업 파일이 아니에요.");
   }
   return { ...data, media: Array.isArray(data.media) ? data.media : [] } as BackupFile;
 }

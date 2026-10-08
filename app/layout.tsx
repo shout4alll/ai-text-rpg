@@ -1,9 +1,11 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { BRAND } from "@/config/brand";
 
 export const metadata: Metadata = {
-  title: "캐릭톡 — 마음이 닿는 대화",
-  description: "정해진 인물과 메신저로 교감하는 AI 채팅",
+  title: `${BRAND.full} — ${BRAND.tagline}`,
+  description: BRAND.description,
+  applicationName: BRAND.name,
 };
 
 export const viewport: Viewport = {

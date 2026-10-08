@@ -41,6 +41,9 @@ import { BALANCE, sulkLevelDef } from "@/config/balance";
 import { checkRelease, giftCost, sulkExpired, sulkStartLevel, sulkSummary, touchSulk, type SulkState } from "@/lib/sulk";
 import { deleteMediaFor, getMedia, importFile, mediaUrl, UserMediaError } from "@/lib/userMedia";
 import { DEMO_TOPUP, MEDIA_COST } from "@/config/media";
+import { GemBadge, GemShop } from "@/components/GemShop";
+import { returnChance } from "@/config/returnNudge";
+import { GEM_TEST_TOPUP } from "@/config/gems";
 import { getCash, refundCash, setCash, spendCash } from "@/lib/wallet";
 import {
   AFFECTION_START,
@@ -64,11 +67,27 @@ import type { ChatMessage, ChatResponse } from "@/types/game";
 /* -------------------------------------------------------------------------- */
 /*  브라우저 저장: 인물마다 대화방(메시지 + 호감도)이 따로 저장된다               */
 /* -------------------------------------------------------------------------- */
+const OWNER_KEY = "ai-rpg.owner";
+function readOwnerToken(): string | null {
+  try {
+    return localStorage.getItem(OWNER_KEY);
+  } catch {
+    return null;
+  }
+}
+function writeOwnerToken(t: string | null) {
+  try {
+    if (t) localStorage.setItem(OWNER_KEY, t);
+    else localStorage.removeItem(OWNER_KEY);
+  } catch {
+    /* 저장 불가 */
+  }
+}
+
 const LAST_KEY = "ai-rpg.personaId";
 const chatKey = (id: PersonaId) => `ai-rpg.chat.${id}`;
 const MAX_STORED = 300; // 대화방당 저장할 최대 기록 수
 
-const RETURN_GAP = 3 * 60 * 60 * 1000; // 이 시간 이상 비웠다가 들어오면 상대가 먼저 말을 건다
 
 interface StoredChat {
   v: 2;
@@ -295,6 +314,7 @@ export default function ChatApp({
   const [affection, setAffection] = useState(AFFECTION_START);
   const [typing, setTyping] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
 
   // 화면 리액션 & 효과
   const [reaction, setReaction] = useState<AvatarReactionId>("idle");
@@ -326,6 +346,7 @@ export default function ChatApp({
   const [theme, setThemeState] = useState<ThemeId>(DEFAULT_THEME);
   const [themeOpen, setThemeOpen] = useState(false);
   const [notifyOpen, setNotifyOpen] = useState(false);
+  const [gemOpen, setGemOpen] = useState(false);
   useEffect(() => {
     setKakaoMode(readStorage(KAKAO_KEY) === "1");
     const t = readStorage(THEME_KEY);
@@ -730,7 +751,7 @@ export default function ChatApp({
       else if (pendingNudge && texts.some((m) => m.role === "user")) {
         nudgeRef.current = pendingNudge;
         setAutoAction("nudge");
-      } else if (texts.some((m) => m.role === "user") && Date.now() - lastAt > RETURN_GAP) setAutoAction("return");
+      } else if (texts.some((m) => m.role === "user") && Math.random() < returnChance(Date.now() - lastAt)) setAutoAction("return");
       else setAutoAction(null);
     },
     [byId, director, setSulk]
@@ -873,6 +894,7 @@ export default function ChatApp({
           sulk: sulkSummary(sulkRef.current),
           memory: memoryRef.current?.facts ?? [],
           ...(kind === "return" && nudge ? { nudge } : {}),
+          ...(readOwnerToken() ? { ownerToken: readOwnerToken() } : {}),
         }),
       }).then(async (res) => {
         if (!res.ok) {
@@ -894,6 +916,9 @@ export default function ChatApp({
           }
         }
         const data = await req;
+        // 🔑 주인 모드 인증/해제 (문구는 서버만 안다. 앱은 토큰만 저장)
+        if (data.ownerToken) writeOwnerToken(data.ownerToken);
+        if (data.ownerExit) writeOwnerToken(null);
 
         // 그사이 다른 대화방으로 옮겼으면: 원래 대화방 저장소에 답장을 기록해 둔다
         if (!same()) {
@@ -1088,9 +1113,17 @@ export default function ChatApp({
   }, [nudgeCandidates]);
 
   /* ── 보내기 ─────────────────────────────────────────────────────────── */
+  // 답장을 기다리는 중에 보낸 말: 화면에는 바로 올리고, 답장이 끝나면 한꺼번에 이어서 답한다
+  const queuedRef = useRef<{ pid: string; fromId: number } | null>(null);
+
   const handleSubmit = useCallback(() => {
+    if (!personaId) return;
+    if (pendingFile) {
+      void sendMediaRef.current(pendingFile);
+      return;
+    }
     const text = input.trim();
-    if (!text || busy || !personaId) return;
+    if (!text) return;
     const userMsg: ChatMessage = { id: nextId.current++, role: "user", kind: "text", text, at: Date.now(), read: false };
     const msgs = [...messages, userMsg];
     setMessages(msgs);
@@ -1101,8 +1134,30 @@ export default function ChatApp({
       const ns = loadNotifySettings();
       if (ns.enabled && !ns.asked) void requestNotifyPermission();
     }
+    if (busy) {
+      if (!queuedRef.current || queuedRef.current.pid !== personaId) queuedRef.current = { pid: personaId, fromId: userMsg.id };
+      return;
+    }
     requestReply(msgs, "text", userMsg.id);
-  }, [input, busy, personaId, messages, requestReply]);
+  }, [input, busy, personaId, messages, requestReply, pendingFile]);
+
+  // 답장이 끝났는데 그 사이에 보낸 말이 있으면 이어서 답을 받는다
+  const messagesLive = useRef(messages);
+  messagesLive.current = messages;
+  useEffect(() => {
+    const q = queuedRef.current;
+    if (busy || !personaId || !q || q.pid !== personaId) return;
+    queuedRef.current = null;
+    const msgs = messagesLive.current;
+    const waiting = msgs.filter((m) => m.id >= q.fromId && m.role === "user" && (m.kind === "text" || m.kind === "media"));
+    const last = waiting[waiting.length - 1];
+    if (!last) return;
+    // 모델에게는 "답장 → 그 사이에 보낸 말들" 순서로 보여 준다 (화면의 순서는 그대로)
+    const ids = new Set(waiting.map((m) => m.id));
+    const ordered = [...msgs.filter((m) => !ids.has(m.id)), ...waiting];
+    const t = setTimeout(() => requestReply(ordered, last.kind === "media" ? "user_media" : "text", last.id), 350);
+    return () => clearTimeout(t);
+  }, [busy, personaId, requestReply]);
 
   const handleReact = useCallback(
     (targetId: number, heart: HeartReactionId) => {
@@ -1223,8 +1278,21 @@ export default function ChatApp({
 
   /* ── 사진·영상 올리기 (AI가 보고 반응) ───────────────────────────────── */
   const [uploading, setUploading] = useState(false);
-  const handleAttach = async (file: File) => {
-    if (!persona || busy || uploading) return;
+  const [pendingUrl, setPendingUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!pendingFile) {
+      setPendingUrl(null);
+      return;
+    }
+    const u = URL.createObjectURL(pendingFile);
+    setPendingUrl(u);
+    return () => URL.revokeObjectURL(u);
+  }, [pendingFile]);
+  useEffect(() => setPendingFile(null), [personaId]);
+
+  // 사진·영상은 먼저 고르고 → 메시지를 같이 쓴 뒤 → 전송 (메시지 없이도 가능)
+  const sendMedia = async (file: File) => {
+    if (!persona || uploading) return;
     setUploading(true);
     try {
       const rec = await importFile(file, persona.id);
@@ -1242,14 +1310,19 @@ export default function ChatApp({
       const msgs = [...messages, msg];
       setMessages(msgs);
       setInput("");
+      setPendingFile(null);
       setConfirmReset(false);
-      requestReply(msgs, "user_media", msg.id);
+      if (busy) {
+        if (!queuedRef.current || queuedRef.current.pid !== persona.id) queuedRef.current = { pid: persona.id, fromId: msg.id };
+      } else requestReply(msgs, "user_media", msg.id);
     } catch (err) {
       addNotice(`⚠️ ${err instanceof UserMediaError ? err.message : "파일을 보낼 수 없어요."}`);
     } finally {
       setUploading(false);
     }
   };
+  const sendMediaRef = useRef(sendMedia);
+  sendMediaRef.current = sendMedia;
 
   /** 💋 매혹 모드 켜기/끄기 */
   const setAllureFor = (id: PersonaId, on: boolean) => {
@@ -1410,7 +1483,7 @@ export default function ChatApp({
   if (!persona) {
     return (
       <main className="h-[100dvh] w-full bg-paper">
-        <PersonaSelector personas={personas} currentId={null} onSelect={handleSelect} previews={previews()} onBackup={() => setBackupOpen(true)} onTheme={() => setThemeOpen(true)} onNotify={() => setNotifyOpen(true)} />
+        <PersonaSelector personas={personas} currentId={null} onSelect={handleSelect} previews={previews()} onBackup={() => setBackupOpen(true)} onTheme={() => setThemeOpen(true)} onNotify={() => setNotifyOpen(true)} gems={cash} onGems={() => setGemOpen(true)} />
         {backupOpen && <BackupModal onClose={() => setBackupOpen(false)} onRestored={() => window.location.reload()} />}
       {themeOpen && (
         <ThemePicker
@@ -1422,6 +1495,17 @@ export default function ChatApp({
         />
       )}
       {notifyOpen && <NotifySettings onClose={() => setNotifyOpen(false)} />}
+      {gemOpen && (
+        <GemShop
+          gems={cash}
+          onClose={() => setGemOpen(false)}
+          onCharge={(pack) => {
+            if (!GEM_TEST_TOPUP) return; // 실제 결제 연동 전에는 테스트 충전만
+            setCash(getCash() + pack.gems);
+            setCashState(getCash());
+          }}
+        />
+      )}
       </main>
     );
   }
@@ -1622,12 +1706,13 @@ export default function ChatApp({
         setConfirmReset(false);
         setSelectorOpen(true);
       }}
-      aria-label="대화 목록"
-      title="대화 목록"
+      aria-label="메인으로 가기"
+      title="메인으로 가기"
       data-chat-list
-      className={`${iconBtn} -ml-1`}
+      className="-ml-1 inline-flex h-9 shrink-0 items-center gap-0.5 rounded-full bg-black/[0.06] pl-1.5 pr-3 text-[13px] font-semibold text-[var(--text,inherit)] transition hover:bg-black/10 active:scale-95"
     >
-      <IconBack className="h-[22px] w-[22px]" />
+      <IconBack className="h-[18px] w-[18px]" />
+      <span>메인</span>
     </button>
   );
 
@@ -1706,8 +1791,10 @@ export default function ChatApp({
       onInputChange={setInput}
       onSubmit={handleSubmit}
       onReact={handleReact}
-      onAttach={handleAttach}
+      onAttach={(f) => setPendingFile(f)}
       uploading={uploading}
+      attachment={pendingFile && pendingUrl ? { url: pendingUrl, isVideo: pendingFile.type.startsWith("video/"), name: pendingFile.name } : null}
+      onClearAttachment={() => setPendingFile(null)}
       variant={kakaoView ? "kakao" : "default"}
       onOpenProfile={() => setProfileOpen(true)}
     />
@@ -1715,6 +1802,7 @@ export default function ChatApp({
 
   return (
     <main className={`relative h-[100dvh] w-full overflow-hidden ${kakaoView ? "bg-chat" : "bg-paper wide:flex"}`} data-view={kakaoView ? "kakao" : "stage"}>
+      {!voiceOpen && <GemBadge gems={cash} onClick={() => setGemOpen(true)} className="absolute left-2 top-[calc(max(0.5rem,env(safe-area-inset-top))+3.5rem)] z-20 bg-white/85 backdrop-blur" />}
       {kakaoView ? (
         /* 💬 카톡 모드: 배경 영상 없이 평범한 메신저 화면 */
         <section className="relative mx-auto flex h-full w-full max-w-3xl flex-col wide:border-x wide:border-ink-line">
@@ -1944,6 +2032,8 @@ export default function ChatApp({
           onBackup={() => setBackupOpen(true)}
           onTheme={() => setThemeOpen(true)}
           onNotify={() => setNotifyOpen(true)}
+          gems={cash}
+          onGems={() => setGemOpen(true)}
           previews={previews()}
         />
       )}
@@ -1957,6 +2047,17 @@ export default function ChatApp({
         />
       )}
       {notifyOpen && <NotifySettings onClose={() => setNotifyOpen(false)} />}
+      {gemOpen && (
+        <GemShop
+          gems={cash}
+          onClose={() => setGemOpen(false)}
+          onCharge={(pack) => {
+            if (!GEM_TEST_TOPUP) return; // 실제 결제 연동 전에는 테스트 충전만
+            setCash(getCash() + pack.gems);
+            setCashState(getCash());
+          }}
+        />
+      )}
     </main>
   );
 }

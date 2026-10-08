@@ -176,7 +176,7 @@
   "cash": {
     "voicePerMinute": 5,
     "photo": 10,
-    "demoStart": 100,
+    "demoStart": 30,
     "demoTopup": 100
   },
 

@@ -33,9 +33,15 @@ export const isNativeApp = (): boolean => {
 
 const inRange = (id: number) => id >= NOTIFY_ID_BASE && id < NOTIFY_ID_BASE + NOTIFY_ID_COUNT;
 
-async function plugin() {
-  return (await import("@capacitor/local-notifications")).LocalNotifications;
+type LN = (typeof import("@capacitor/local-notifications"))["LocalNotifications"];
+let pluginCache: Promise<LN> | null = null;
+
+/** 플러그인은 미리 불러 둔다 — 앱이 백그라운드로 가는 순간에 처음 불러오면 예약이 끊길 수 있다 */
+function plugin(): Promise<LN> {
+  if (!pluginCache) pluginCache = import("@capacitor/local-notifications").then((m) => m.LocalNotifications);
+  return pluginCache;
 }
+if (typeof window !== "undefined" && isNativeApp()) void plugin().catch(() => {});
 
 /* ── 도착한 선톡 목록 (대화방에서 꺼내 쓴다) ──────────────────────────────── */
 export interface Nudge {
@@ -257,6 +263,9 @@ export function startNudgeLifecycle(h: NudgeLifecycleHandlers): () => void {
       }
       subs.push(s1, s2);
       await toForeground();
+      // 처음 실행이면 바로 알림 권한을 묻는다 (기다렸다 묻지 않아야 첫 백그라운드 때 예약된다)
+      const st = loadNotifySettings();
+      if (st.enabled && !st.asked && (await notifyPermission()) === "prompt") await requestNotifyPermission();
     } catch {
       /* 플러그인을 못 불러오면 알림 없이 동작 */
     }
@@ -266,4 +275,55 @@ export function startNudgeLifecycle(h: NudgeLifecycleHandlers): () => void {
     disposed = true;
     for (const s of subs) void s.remove();
   };
+}
+
+/* ── 점검용 (설정 화면) ──────────────────────────────────────────────────── */
+export interface NudgeStatus {
+  permission: NotifyPermission;
+  /** 지금 폰에 예약돼 있는 선톡 알림 수 (앱을 보고 있는 동안은 0이 정상 — 닫으면 예약된다) */
+  pending: number;
+  next: Date | null;
+}
+
+export async function nudgeStatus(): Promise<NudgeStatus> {
+  const permission = await notifyPermission();
+  if (!isNativeApp() || permission === "unsupported") return { permission, pending: 0, next: null };
+  try {
+    const { notifications } = await (await plugin()).getPending();
+    const times = notifications
+      .filter((n) => inRange(n.id))
+      .map((n) => (n.schedule?.at ? new Date(n.schedule.at).getTime() : 0))
+      .filter((t) => t > 0)
+      .sort((a, b) => a - b);
+    return { permission, pending: times.length, next: times.length ? new Date(times[0]) : null };
+  } catch {
+    return { permission, pending: 0, next: null };
+  }
+}
+
+const TEST_ID = NOTIFY_ID_BASE + NOTIFY_ID_COUNT + 1;
+
+/** 5초 뒤에 시험 알림을 보낸다. 앱을 홈 화면으로 보내 두고 기다리면 알림이 온다. */
+export async function sendTestNotification(): Promise<"ok" | "denied" | "unsupported" | "error"> {
+  if (!isNativeApp()) return "unsupported";
+  try {
+    if ((await notifyPermission()) !== "granted") {
+      if ((await requestNotifyPermission()) !== "granted") return "denied";
+    }
+    await ensureChannel();
+    await (await plugin()).schedule({
+      notifications: [
+        {
+          id: TEST_ID,
+          title: NOTIFY_TITLE,
+          body: "알림이 잘 도착했어요",
+          channelId: NOTIFY_CHANNEL.id,
+          schedule: { at: new Date(Date.now() + 5000), allowWhileIdle: true },
+        },
+      ],
+    });
+    return "ok";
+  } catch {
+    return "error";
+  }
 }

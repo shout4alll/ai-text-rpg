@@ -138,6 +138,27 @@ export default function ProfileSheet({
               </div>
             </section>
 
+            {persona.story && (
+              <section data-profile-story>
+                <h3 className="text-xs font-semibold text-ink-mute">{persona.name}의 이야기</h3>
+                <p className="mt-1.5 text-sm leading-relaxed text-ink-soft">{persona.story.background}</p>
+                <div className="mt-3 space-y-2.5">
+                  {persona.story.chapters.map((c) =>
+                    affection >= c.min ? (
+                      <div key={c.title} className="rounded-2xl bg-paper px-3.5 py-3 ring-1 ring-ink-line" data-story-chapter="open">
+                        <p className="text-[13px] font-semibold text-ink">{c.title}</p>
+                        <p className="mt-1 text-[13px] leading-relaxed text-ink-soft">{c.text}</p>
+                      </div>
+                    ) : (
+                      <div key={c.title} className="rounded-2xl bg-paper px-3.5 py-3 text-[13px] text-ink-mute ring-1 ring-ink-line" data-story-chapter="locked">
+                        🔒 호감도 {c.min} 이상이 되면 열려요
+                      </div>
+                    ),
+                  )}
+                </div>
+              </section>
+            )}
+
             {persona.details.lifestyle && (
               <section>
                 <h3 className="text-xs font-semibold text-ink-mute">요즘 일상</h3>

@@ -125,6 +125,7 @@ export function toPublic(p: PersonaFile): Persona {
         }
       : {}),
     voiceName: p.voice?.name ?? (p.gender === "male" ? "Puck" : "Leda"),
+    ...(p.story ? { story: p.story } : {}),
     details: {
       likes: p.traits?.likes ?? [],
       dislikes: p.traits?.dislikes ?? [],

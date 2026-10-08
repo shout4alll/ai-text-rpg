@@ -23,6 +23,9 @@ export interface ChatResponse {
   soothed: boolean;
   /** 유저가 보낸 사진·영상에서 AI가 본 것 (기억용 한 줄) */
   seen: string;
+  /** 주인 모드 인증 토큰 (인증된 턴에만) / 모드 해제 */
+  ownerToken?: string;
+  ownerExit?: boolean;
 }
 
 export interface ChatMessage {
