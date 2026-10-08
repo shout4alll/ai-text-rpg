@@ -21,12 +21,13 @@ export function premiumReactionsUnlocked(): boolean {
 
 /**
  * 유료 실시간 사진(/api/media/photo) 호출 허용 여부.
- * MEDIA_ACCESS: open(개발 기본) | paid(배포 기본 — VOICE_DEV_PASS 와 같은 x-voice-pass 헤더로만 통과) | off
+ * MEDIA_ACCESS: open(기본) | paid(VOICE_DEV_PASS 와 같은 x-voice-pass 헤더로만 통과) | off
+ * 지금은 앱 안에서 💎 보석을 차감하는 것이 결제 단계라 서버 기본값은 open 이다. 서버에서 따로 잠그려면 MEDIA_ACCESS=paid.
  * ▶ 결제 연동 시: 여기서 로그인 사용자 확인 + 서버 잔액 차감을 하도록 바꾼다.
  */
 export function checkMediaAccess(request: Request): { ok: true } | { ok: false; status: 402 | 403; error: string } {
   const v = process.env.MEDIA_ACCESS?.trim();
-  const mode = v === "open" || v === "paid" || v === "off" ? v : process.env.NODE_ENV === "production" ? "paid" : "open";
+  const mode = v === "open" || v === "paid" || v === "off" ? v : "open";
   if (mode === "off") return { ok: false, status: 403, error: "사진 기능이 지금은 꺼져 있어요." };
   if (mode === "open") return { ok: true };
   const pass = process.env.VOICE_DEV_PASS;
