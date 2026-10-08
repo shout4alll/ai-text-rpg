@@ -1,4 +1,4 @@
-import { containsPhrase, isOwnerToken, maskPhrase, ownerToken, OWNER_INSTRUCTIONS, wantsExit } from "@/lib/owner";
+import { containsPhrase, isOwnerToken, maskPhrase, ownerToken, ownerInstructions, wantsExit } from "@/lib/owner";
 import { NextResponse } from "next/server";
 import { generateText, Output } from "ai";
 import { z } from "zod";
@@ -598,7 +598,7 @@ export async function POST(request: Request) {
       model: r.model,
       instructions: {
         role: "system",
-        content: owner ? OWNER_INSTRUCTIONS : buildStaticInstructions(persona, parsed.data.allure === true),
+        content: owner ? ownerInstructions(persona) : buildStaticInstructions(persona, parsed.data.allure === true),
         // Bedrock(Claude): 여기까지를 캐시 (Gemini 는 같은 앞부분을 자동으로 캐시)
         providerOptions: { bedrock: { cachePoint: { type: "default" } } },
       },
