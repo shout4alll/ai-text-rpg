@@ -358,7 +358,21 @@ export default function ChatApp({
   // 🛠 주인님 모드 상태판 (토큰이 있을 때만)
   const [ownerTok, setOwnerTok] = useState<string | null>(null);
   const [lastDebug, setLastDebug] = useState<ChatResponse["debug"] | null>(null);
-  useEffect(() => setOwnerTok(readOwnerToken()), []);
+  useEffect(() => {
+    const t = readOwnerToken();
+    setOwnerTok(t);
+    if (!t) return;
+    // 치트 문구를 바꾸면 예전 토큰은 무효 → 서버에 확인해서 무효면 지운다 (치트룸이 열렸다 닫히는 현상 방지)
+    fetch(apiUrl("/api/owner/verify"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: t }) })
+      .then((r) => r.json())
+      .then((d: { ok?: boolean }) => {
+        if (d.ok === false && readOwnerToken() === t) {
+          writeOwnerToken(null);
+          setOwnerTok(null);
+        }
+      })
+      .catch(() => {});
+  }, []);
   // 🗑 메시지 골라 지우기
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -807,7 +821,8 @@ export default function ChatApp({
       const lastText = texts[texts.length - 1];
       const lastAt = msgs.length ? msgs[msgs.length - 1].at : 0;
       const pendingNudge = peekNudge(id);
-      if (lastText?.role === "user") setAutoAction("unanswered");
+      // 답 없는 마지막 말이 "주인님퇴장"이면 다시 보내지 않는다 (들어오자마자 퇴장되는 것 방지)
+      if (lastText?.role === "user" && !lastText.text.includes("주인님퇴장")) setAutoAction("unanswered");
       else if (pendingNudge) {
         nudgeRef.current = pendingNudge;
         setAutoAction("nudge");
@@ -983,7 +998,11 @@ export default function ChatApp({
         }),
       }).then(async (res) => {
         if (!res.ok) {
-          const err = (await res.json().catch(() => null)) as { error?: string } | null;
+          const err = (await res.json().catch(() => null)) as { error?: string; code?: string } | null;
+          if (res.status === 403 && err?.code === "owner_required") {
+            writeOwnerToken(null);
+            setOwnerTok(null);
+          }
           throw Object.assign(new Error(err?.error ?? `HTTP ${res.status}`), { status: res.status });
         }
         return (await res.json()) as ChatResponse;
@@ -1026,9 +1045,15 @@ export default function ChatApp({
           setOwnerTok(data.ownerToken);
         }
         if (data.ownerExit) {
+          // 퇴장 답장을 대화방에 먼저 저장해 둔다 — 안 그러면 "주인님퇴장"이 답 없는 말로 남아,
+          // 다시 들어올 때 자동으로 재전송되면서 곧바로 또 퇴장되는 문제가 생긴다
+          persistToRoom(pid, data.messages, null, null, 0);
           writeOwnerToken(null);
           setOwnerTok(null);
           setLastDebug(null);
+          setTyping(false);
+          setBusy(false);
+          return;
         }
         if (data.debug) setLastDebug(data.debug);
         // 🔑 주인 모드: 모델이 실패해 다른 모델로 우회했으면 그 경과를 대화창에 그대로 보여 준다 (테스트용 · 대화 기록에는 안 들어감)

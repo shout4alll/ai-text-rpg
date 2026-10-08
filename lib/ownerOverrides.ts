@@ -34,7 +34,7 @@ export const PERSONA_FIELDS: readonly FieldDef[] = [
   { key: "lifestyle", label: "일상", kind: "text" },
   { key: "relationship", label: "관계와 감정 표현", kind: "text" },
   { key: "examples", label: "말투 예시 (한 줄에 하나)", kind: "lines" },
-  { key: "temperature", label: "temperature (0~2)", kind: "number", min: 0, max: 2, step: 0.1, hint: "높을수록 다채로움. Claude 5 계열은 무시" },
+  { key: "temperature", label: "temperature (0~2)", kind: "number", min: 0, max: 2, step: 0.1, hint: "높을수록 다채로움. Claude 5·Grok·GPT-5 계열은 무시" },
   { key: "background", label: "살아온 이야기 (프로필 서사)", kind: "text" },
   { key: "allurePrompt", label: "매혹/설렘 모드 인물 지침", kind: "text", hint: "매혹 모드를 켠 대화방에서만 쓰임" },
   { key: "extra", label: "추가 지시 (자유)", kind: "text", hint: "프롬프트 끝에 [추가 지시]로 붙는다" },

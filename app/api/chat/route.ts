@@ -541,7 +541,7 @@ export async function POST(request: Request) {
   const ownerAuth = !exitNow && (phraseNow || isOwnerToken(parsed.data.ownerToken));
   // 🔑 치트룸은 운영자 인증 없이는 응답하지 않는다 (퇴장 말은 허용 — 앱이 토큰을 지울 수 있게)
   if (basePersona.cheatRoom && !ownerAuth && !exitNow) {
-    return NextResponse.json({ error: "치트룸은 치트 코드로 입장한 운영자만 쓸 수 있어요." }, { status: 403 });
+    return NextResponse.json({ error: "치트 코드가 바뀌었거나 인증이 만료됐어요. 치트 코드로 다시 입장해 주세요.", code: "owner_required" }, { status: 403 });
   }
   const ownerOpts: OwnerOpts | undefined = ownerAuth ? (parsed.data.ownerOpts as OwnerOpts | undefined) : undefined;
   /** 주인님 프롬프트(대화 제한 해제) — 🛠 에서 "서비스 프롬프트"를 고르면 일반 유저와 같은 규칙으로 테스트 */
@@ -693,8 +693,8 @@ export async function POST(request: Request) {
         name: "chat_reply",
         description: "캐릭터의 메신저 답장(말풍선)과 화면 리액션, 마음 리액션, 호감도 변화",
       }),
-      // Claude 5 세대는 temperature 를 받지 않는다
-      temperature: /claude-(sonnet|opus|fable|mythos)-5/.test(r.modelId) ? undefined : persona.prompt.temperature ?? 1.0,
+      // temperature 를 받지 않는 모델(Claude 5 세대·Grok 추론 모델·GPT-5/o 시리즈)은 아예 보내지 않는다
+      temperature: /claude-(sonnet|opus|fable|mythos)-5|grok|gpt-5|(^|[:./])o[134](-|$)/i.test(r.modelId) ? undefined : persona.prompt.temperature ?? 1.0,
       // Grok 같은 추론 모델은 "생각"도 출력 한도에 포함되므로 넉넉히
       maxOutputTokens: Math.max(owner ? 2500 : BALANCE.cost.maxOutputTokens, r.provider === "xai" || /xai\.grok/.test(r.modelId) ? 4000 : 0),
       maxRetries: attemptNo === 0 && !ownerOpts?.model ? 0 : 1,
