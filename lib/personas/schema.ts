@@ -44,6 +44,11 @@ export const personaFileSchema = z.object({
       start: z.number().int().min(0).max(100).optional(),
     })
     .optional(),
+  /**
+   * (선택) 모델 배정. "mature" = 이 인물의 대화는 매혹 모드가 아니어도 전부 성인 모델(AI_MODEL_MATURE·Grok)로 보낸다
+   * (실패하면 우회 목록). 수위 규칙은 모드별 규칙 그대로. 없으면 "auto" (내용에 따라 자동 배분)
+   */
+  modelRoute: z.enum(["auto", "mature"]).optional(),
   /** 🔑 치트룸: 목록에 안 보이고(치트 코드로 입장), 서버도 운영자 인증 없이는 응답하지 않는다. 운영자 프롬프트(제한 해제)가 기본 */
   cheatRoom: z.boolean().default(false),
   /** (치트룸) 🛠 규칙 탭 "주인님 모드 규칙"의 기본 문장 — 이 방의 제한 수위 (미성년자 관련 줄은 코드에 고정) */

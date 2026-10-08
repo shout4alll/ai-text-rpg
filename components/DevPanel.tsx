@@ -226,7 +226,13 @@ export default function DevPanel({
         aria-label="상태판"
       >
         🛠{active && <span className="text-emerald-300">●</span>}{" "}
-        {last ? <span className="max-w-[7.5rem] truncate font-mono text-[10px] text-amber-100">{last.tier}·{shortModel(last.model)}</span> : "상태"}
+        {saved.model ? (
+          <span className="max-w-[7.5rem] truncate font-mono text-[10px] text-amber-100" title="🛠 에서 고정한 모델 (다음 메시지부터)">🔒{shortModel(saved.model.modelId)}</span>
+        ) : last ? (
+          <span className="max-w-[7.5rem] truncate font-mono text-[10px] text-amber-100">{last.tier}·{shortModel(last.model)}</span>
+        ) : (
+          "상태"
+        )}
       </button>
       {open &&
         createPortal(
@@ -500,7 +506,7 @@ export default function DevPanel({
                 {(tab === "model" || tab === "persona" || tab === "rules") && (
                   <div className="sticky bottom-0 flex items-center gap-2 rounded-b-2xl border-t border-slate-700 bg-slate-950/95 px-3 py-2" data-dev-applybar>
                     <span className="min-w-0 flex-1 truncate text-[11px] text-slate-400" data-dev-apply-state>
-                      {appliedAt ? <b className="text-emerald-300">✓ 적용됨 — 다음 메시지부터</b> : dirty ? <b className="text-amber-300">● 수정됨 — 확인을 눌러야 적용돼요</b> : "수정 사항 없음"}
+                      {appliedAt ? <b className="text-emerald-300">✓ 적용됨 — 다음 메시지부터</b> : dirty ? <b className="text-amber-300">● 수정됨 — 확인을 눌러야 적용돼요</b> : tab === "model" ? <span className="text-emerald-300">적용 중: {saved.model ? `🔒 ${saved.model.modelId}` : "자동"} (모델은 누르면 바로 적용)</span> : "수정 사항 없음"}
                     </span>
                     <button type="button" disabled={!dirty} onClick={discard} className="rounded bg-slate-800 px-2.5 py-1.5 disabled:opacity-40" data-dev-discard>되돌리기</button>
                     <button type="button" disabled={!dirty} onClick={apply} className="rounded bg-amber-300 px-4 py-1.5 font-bold text-slate-900 disabled:opacity-40" data-dev-apply>확인</button>

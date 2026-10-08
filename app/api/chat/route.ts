@@ -617,7 +617,9 @@ export async function POST(request: Request) {
     Math.random() < AR.surpriseChanceByStage[Math.min(affectionStageIndex(affection, persona.relationshipType), AR.surpriseChanceByStage.length - 1)];
   /** 이번 턴을 성인 모델로 보낼지 (매혹 모드 안에서) */
   const allureHot = allureMode && (!AR.enabled || !matureId || sticky || (AR.heatToMature && heatHit) || surprise);
-  const category = parsed.data.sulk || ownerAuth || sticky || moodHit || allureHot ? null : poolCategory(last.kind, last.content);
+  /** 인물 설정: 모든 대화를 성인 모델로 (personas/<id>.json modelRoute: "mature") */
+  const personaMature = persona.modelRoute === "mature" && !!matureId && !ownerOpts?.model;
+  const category = parsed.data.sulk || ownerAuth || sticky || moodHit || allureHot || personaMature ? null : poolCategory(last.kind, last.content);
   const pKey = category ? poolKey(persona.id, affectionStageIndex(affection, persona.relationshipType), category, allureEff) : "";
   if (category) {
     const lastAi = [...messages].reverse().find((m) => m.role === "assistant" && m.kind === "text")?.content;
@@ -706,7 +708,8 @@ export async function POST(request: Request) {
       owner ? h : h.map((t, i) => (i === h.length - 1 && t.role === "user" ? { ...t, content: `${ctx}\n\n[유저]\n${t.content}` } : t));
     // 시도마다 시간 제한: 느리거나 멈춘 모델에서 오래 기다리지 않고 다음 모델로 넘어간다 (전체 56초 안에서)
     const attemptSignal = (attemptNo: number, slowFirst = false): AbortSignal | undefined => {
-      if (ownerOpts?.model) return undefined; // 🛠 로 모델을 직접 골랐으면 끝까지 기다린다
+      // 🛠 로 모델을 직접 골랐으면 우회 없이 최대한 기다린다 (Vercel 60초 제한 전에 끊어서 504 대신 원인을 보여 준다)
+      if (ownerOpts?.model) return AbortSignal.timeout(Math.max(3_000, 56_000 - (Date.now() - startedAt)));
       const left = 56_000 - (Date.now() - startedAt);
       if (left < 3_000) throw new Error("응답 시간 초과 (우회할 시간이 남지 않음)");
       return AbortSignal.timeout(Math.min(attemptNo === 0 ? (slowFirst ? 30_000 : 20_000) : 16_000, left - 1_000));
@@ -784,7 +787,7 @@ export async function POST(request: Request) {
       : await runWithFallback(
           "/api/chat",
           // 대화 내용에 따라: 매혹 모드·설렘 분위기 → 성인 모델(Grok 등) / 인사·맞장구 → 가벼운 모델(Haiku·Llama 등) / 그 외 → 메인(Sonnet)
-          allureHot || moodHit ? ["mature", "chat"] : !owner && route.tier === "light" && (!allureMode || AR.lightInAllure) ? ["light", "cheap", "chat"] : ["chat"],
+          allureHot || moodHit || personaMature ? ["mature", "chat"] : !owner && route.tier === "light" && (!allureMode || AR.lightInAllure) ? ["light", "cheap", "chat"] : ["chat"],
           generate,
           // 🔁 우회: 위 모델들이 모두 실패하면 우회 목록(성공률 높은 순)으로 이어서 답한다. 일반 대화방은 오류를 보이지 않는다.
           { extras: settingValue("serviceFallback") === "off" ? [] : resolveFallbacks() }
@@ -865,7 +868,7 @@ export async function POST(request: Request) {
             debug: {
               model: resolved.modelId,
               label: resolved.label,
-              tier: forced ? "forced" : `${owner ? "owner" : ""}${allureMode ? `${owner ? "·" : ""}allure${surprise ? "·surprise" : heatHit ? "·heat" : allureHot ? "" : "·calm"}` : moodHit ? `${owner ? "·" : ""}mood` : owner ? "" : route.tier}` || "owner",
+              tier: forced ? "forced" : `${owner ? "owner" : ""}${allureMode ? `${owner ? "·" : ""}allure${surprise ? "·surprise" : heatHit ? "·heat" : allureHot ? "" : "·calm"}` : moodHit ? `${owner ? "·" : ""}mood` : personaMature ? `${owner ? "·" : ""}persona-mature` : owner ? "" : route.tier}` || "owner",
               reason: forced ? "model-override" : route.reason,
               promptMode: owner ? "owner" : "service",
               overrides: appliedOverrides,
@@ -883,7 +886,7 @@ export async function POST(request: Request) {
         : {}),
       messages: bubbles,
       // 성인 모델이 쓴 답만 mature 로 표시 → 다음에 Sonnet 등이 답할 때 그 부분만 요약해서 넘긴다 (성인 모델이 없으면 매혹 모드 답 전부)
-      ...((allureMode && (!matureId || resolved?.modelId === matureId)) || ((moodHit || allureHot) && !!matureId && resolved?.modelId === matureId) ? { mature: true } : {}),
+      ...((allureMode && (!matureId || resolved?.modelId === matureId)) || ((moodHit || allureHot || personaMature) && !!matureId && resolved?.modelId === matureId) ? { mature: true } : {}),
       reaction: output.reaction,
       // 마음 리액션에 마음으로 답하는 건 어색하므로 text 턴에만 허용
       tapback: last.kind === "text" && output.tapback !== "none" ? output.tapback : null,
@@ -905,7 +908,9 @@ export async function POST(request: Request) {
     // 주인 인증 상태에서는 원인을 그대로 보여 준다 (모델 테스트용)
     const tried = (error as { attempts?: { provider: string; model: string; ok: boolean; ms: number; error?: string }[] } | null)?.attempts;
     const triedText = tried?.length ? `\n시도: ${tried.map((a) => `${a.provider}/${a.model} ✕ ${a.ms}ms (${(a.error ?? "").slice(0, 110)})`).join(" → ")}` : "";
-    const detail = ownerAuth ? `⚠️ ${ownerOpts?.model ? `${ownerOpts.model.provider}/${ownerOpts.model.modelId}` : where} — ${error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300)}${triedText}` : null;
+    const timedOut = /abort|timeout/i.test(error instanceof Error ? `${error.name} ${error.message}` : String(error));
+    const timeoutHint = timedOut ? "\n(56초 안에 답이 오지 않아 끊었어요 — Vercel 함수 제한 60초. Grok 같은 추론 모델은 느릴 수 있어요)" : "";
+    const detail = ownerAuth ? `⚠️ ${ownerOpts?.model ? `${ownerOpts.model.provider}/${ownerOpts.model.modelId}` : where} — ${error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300)}${triedText}${timeoutHint}` : null;
     return NextResponse.json(
       { error: detail ?? `${persona.name}의 답장이 잠시 늦어지고 있어요. 잠시 후 다시 보내 주세요.` },
       { status: 500 }
