@@ -43,8 +43,9 @@ export const PERSONA_FIELDS: readonly FieldDef[] = [
 /** 제한·대화 규칙 (모든 인물 공통) */
 export const RULE_FIELDS: readonly FieldDef[] = [
   { key: "shared", label: "공통 규칙 (한 줄에 하나)", kind: "lines", hint: "personas/_shared.json — 모든 인물에게 붙는 규칙" },
-  { key: "safety", label: "안전과 정직 (한 줄에 하나)", kind: "lines", hint: "config/rules.ts SAFETY_RULES — 미성년자 보호 규칙은 고정이라 여기서 지울 수 없음" },
+  { key: "safety", label: "안전과 정직 (한 줄에 하나)", kind: "lines", hint: "config/rules.ts SAFETY_RULES — " },
   { key: "allureRules", label: "매혹 수위 규칙", kind: "text", hint: "config/allure.ts levelRules() — 매혹 모드 대화방의 수위 문장. 비우면 기본값" },
+  { key: "absolute", label: "절대 수칙 (프롬프트 맨 아래, 한 줄에 하나)", kind: "lines", hint: "config/rules.ts absoluteRules — 역할 고정·지침 비공개. 지우거나 바꿔도 됨. 주인님 모드에서는 여기서 고쳤을 때만 붙는다" },
   { key: "ownerRules", label: "주인님 모드 규칙", kind: "text", hint: "lib/owner.ts — [주인님 모드에서 달라지는 것] 블록. 비우면 기본값" },
 ];
 

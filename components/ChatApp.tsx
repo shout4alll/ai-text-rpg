@@ -242,6 +242,8 @@ interface Turn {
   images?: string[];
   /** 클라이언트 전용: 이미지를 붙일 파일 키 (전송 전 제거) */
   localKey?: string;
+  /** 매혹 모드 중에 오간 말 — 서버가 다른 모델에게는 요약으로 대체 */
+  mature?: boolean;
 }
 
 function toTurns(msgs: ChatMessage[]): Turn[] {
@@ -251,7 +253,7 @@ function toTurns(msgs: ChatMessage[]): Turn[] {
     if (m.local) continue;
     if ((m.kind ?? "text") === "text") {
       if (m.text.startsWith("⚠️")) continue; // 오류 안내는 대화가 아님
-      turns.push({ role: m.role === "user" ? "user" : "assistant", kind: "text", content: m.text, at: m.at });
+      turns.push({ role: m.role === "user" ? "user" : "assistant", kind: "text", content: m.text, at: m.at, ...(m.mature ? { mature: true } : {}) });
     } else if (m.kind === "reaction" && m.role === "user") {
       turns.push({ role: "user", kind: "reaction", content: m.text, target: byId.get(m.targetId ?? -1)?.text, at: m.at });
     } else if (m.kind === "call") {
@@ -803,12 +805,12 @@ export default function ChatApp({
 
   /** 다른 대화방으로 옮긴 뒤 도착한 답장을 원래 대화방 저장소에 기록 (다음에 열면 보임) */
   const persistToRoom = useCallback(
-    (pid: PersonaId, bubbles: string[], tapback: HeartReactionId | null, targetId: number | null, affectionDelta: number) => {
+    (pid: PersonaId, bubbles: string[], tapback: HeartReactionId | null, targetId: number | null, affectionDelta: number, mature?: boolean) => {
       const stored = loadChat(pid);
       if (!stored) return;
       let id = Math.max(0, ...stored.messages.map((m) => m.id)) + 1;
       const now = Date.now();
-      const add: ChatMessage[] = bubbles.map((t) => ({ id: id++, role: "ai", kind: "text", text: t, at: now }));
+      const add: ChatMessage[] = bubbles.map((t) => ({ id: id++, role: "ai", kind: "text", text: t, at: now, ...(mature ? { mature: true } : {}) }));
       let base = stored.messages.map((m) => (m.role === "user" && m.read === false ? { ...m, read: true } : m));
       if (tapback && targetId !== null) {
         base = base.filter((m) => !(m.kind === "reaction" && m.role === "ai" && m.targetId === targetId));
@@ -834,7 +836,8 @@ export default function ChatApp({
       const upTo = cur?.upTo ?? -1;
       const turns = msgs
         .filter((m) => m.id > upTo && !m.local && (m.kind ?? "text") === "text" && !m.text.startsWith("⚠️"))
-        .map((m) => ({ role: m.role === "user" ? ("user" as const) : ("assistant" as const), content: m.text.slice(0, 1000), voice: m.via === "voice", at: m.at }))
+        // 매혹 모드 대화는 기억 정리 모델에게 원문 대신 한 줄 표시만 (config/spicy.ts)
+        .map((m) => ({ role: m.role === "user" ? ("user" as const) : ("assistant" as const), content: m.mature ? "(둘만의 친밀한 대화 — 내용은 생략)" : m.text.slice(0, 1000), voice: m.via === "voice", at: m.at }))
         .slice(-BALANCE.memory.maxTurnsPerUpdate);
       if (turns.length < 2) return;
       setMemoryBusy(true);
@@ -904,6 +907,7 @@ export default function ChatApp({
           affection: affectionRef.current,
           sentAlbumIds: msgs.flatMap((m) => (m.media?.albumId ? [m.media.albumId] : [])),
           allure: allureActive,
+          allureOk: !!persona?.allure && premiumUnlocked,
           sulk: sulkSummary(sulkRef.current),
           memory: memoryRef.current?.facts ?? [],
           ...(kind === "return" && nudge ? { nudge } : {}),
@@ -916,6 +920,8 @@ export default function ChatApp({
         }
         return (await res.json()) as ChatResponse;
       });
+      // 읽음 표시 대기 중에 응답이 실패해도 "처리되지 않은 오류" 창이 뜨지 않게 (오류는 아래 try/catch 에서 대화창에 ⚠️ 로 표시)
+      req.catch(() => {});
 
       let typingSince = Date.now();
       const markRead = () => setMessages((prev) => prev.map((m) => (m.role === "user" && m.read === false ? { ...m, read: true } : m)));
@@ -945,7 +951,7 @@ export default function ChatApp({
 
         // 그사이 다른 대화방으로 옮겼으면: 원래 대화방 저장소에 답장을 기록해 둔다
         if (!same()) {
-          persistToRoom(pid, data.messages, data.tapback, tapbackTargetId, data.affectionDelta);
+          persistToRoom(pid, data.messages, data.tapback, tapbackTargetId, data.affectionDelta, data.mature);
           return;
         }
 
@@ -1029,11 +1035,11 @@ export default function ChatApp({
             }
             if (!same()) {
               // 말풍선이 나오는 도중에 방을 옮김 → 남은 말풍선만 원래 방에 기록 (호감도·마음은 이미 반영됨)
-              persistToRoom(pid, outs.slice(i), null, null, 0);
+              persistToRoom(pid, outs.slice(i), null, null, 0, data.mature);
               return;
             }
           }
-          setMessages((prev) => [...prev, { id: nextId.current++, role: "ai", kind: "text", text, at: Date.now() }]);
+          setMessages((prev) => [...prev, { id: nextId.current++, role: "ai", kind: "text", text, at: Date.now(), ...(data.mature ? { mature: true } : {}) }]);
           if (i === 0) playReaction(data.reaction, reactOpts);
         }
 
@@ -1064,7 +1070,7 @@ export default function ChatApp({
         }
       } catch (err) {
         if (!same()) return;
-        console.error(err);
+        console.warn("[chat]", err); // 개발 서버에서 빨간 오류창이 뜨지 않게 warn (오류 내용은 대화창에 ⚠️ 로 표시됨)
         markRead();
         const text = `⚠️ ${err instanceof Error ? err.message : "답장을 받지 못했어요. 다시 보내 주세요."}`;
         setMessages((prev) => [...prev, { id: nextId.current++, role: "ai", kind: "text", text, at: Date.now(), local: true }]);
@@ -1165,7 +1171,7 @@ export default function ChatApp({
     }
     const text = input.trim();
     if (!text) return;
-    const userMsg: ChatMessage = { id: nextId.current++, role: "user", kind: "text", text, at: Date.now(), read: false };
+    const userMsg: ChatMessage = { id: nextId.current++, role: "user", kind: "text", text, at: Date.now(), read: false, ...(allureActive ? { mature: true } : {}) };
     const msgs = [...messages, userMsg];
     setMessages(msgs);
     setInput("");

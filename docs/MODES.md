@@ -62,6 +62,22 @@
 - 저장은 `lib/overridesStore.ts` 의 `setPersistedOverrides({ personas, rules })` 에 DB 값을 넣으면 **모든 유저에게** 적용. 모델 목록은 `MODEL_CHOICES` 를 DB 로, 운영 스위치는 `setSettingOverrides()`.
 - 우선순위: 파일 기본값 < CMS 저장값 < 🛠 테스트값(주인만). 주인 테스트값 저장소만 `lib/ownerClient.ts`(localStorage) → 서버로 바꾸면 된다.
 
+## 0-2. 🧼 성인 대화 구간 정화 · 연속 라우팅 · 🛡 guardrail 점검
+
+**문제**: 성인 전용 모델(`AI_MODEL_MATURE`: Grok·Mistral 등)과 메인 모델(Claude)을 섞어 쓰면, 메인 모델이 대화 기록 속 수위 높은 원문을 읽고 답을 거부할 수 있다.
+
+**구조** (설정·문구: `config/spicy.ts`, 로직: `lib/historySanitizer.ts`, 적용: `app/api/chat/route.ts`)
+1. **이중 히스토리** — 화면과 이 기기 저장소에는 원문 그대로. 앱이 매혹 모드 중 오간 말에 `mature` 표시를 붙이고, 서버는 **성인 전용 모델이 아닌 모델**에게 보낼 때만 그 구간을 빼고 "이전에 더 가까워지는 친밀한 대화를 나눴다(생략됨)" 한 줄을 기억으로 넣는다. 서버에는 원문을 저장하지 않는다. 기억 정리(`/api/memory`)에도 원문 대신 "(둘만의 친밀한 대화 — 내용은 생략)"만 간다.
+2. **구간 마스킹** — 위와 같음. 마지막(현재) 유저 말은 항상 그대로 보낸다. 성인 모델이 실패해 메인으로 대체될 때도 정화본이 간다.
+3. **연속 라우팅(Sticky)** — 매혹 모드를 끈 직후에도, 최근에 성인 대화가 있었고(마지막 성인 대화 뒤 유저 말 4번 이내) 지금 말이 "아까·어젯밤·그때·어땠…" 같은 회상이면 성인 모델로 계속 답한다. "점심·일정·날씨…" 같은 일상 화제가 섞이면 바로 메인 모델. 단어 목록은 `config/spicy.ts`.
+- 켜고 끄기: `HISTORY_SANITIZE` / `STICKY_ROUTING` (on/off, 기본 on, `config/settings.ts`). `AI_MODEL_MATURE` 가 없으면 둘 다 의미 없음(같은 모델).
+- 확인: 🛠 상태 탭 → "대화 정화 / 연속 라우팅 / 모델에 실제 전달된 대화". 🛠 모델 탭에서 모델을 직접 고른 경우는 정화하지 않는다(원문 그대로 테스트).
+- 한계: 메인 모델이 요약만으로도 스스로 판단해 거절하거나 돌려 말할 수 있다 (100% 보장은 아님). 모델 제공사 이용약관은 운영자가 확인.
+
+**🛡 guardrail 점검** — Bedrock 요청은 `guardrailIdentifier`·`guardrailConfig`·관련 헤더 없이 **순수 모델 ID** 로만 간다. 코드(`config/ai.ts` guardFetch)가 나가는 모든 Bedrock 요청을 검사해 섞이면 전송 전에 막는다.
+- 🛠 → **점검** 탭: ① 요청 확인(전송 없음) ② 실제 호출 1회 ③ 차단 장치 시험. 결과에 URL 속 모델 ID·본문 항목·헤더 이름·guardrail 포함 여부가 나온다.
+- 참고: guardrail 을 안 쓰는 것과 별개로, Claude 모델 자체의 안전 판단은 남아 있다.
+
 ## 1. 💋 매혹 모드 수위 — `ALLURE_LEVEL`
 
 | 위치 | 값 |

@@ -73,7 +73,7 @@ export function fixBedrockModelId(modelId: string, region = bedrockRegion()): st
   return ok ? modelId : `global.${rest}`;
 }
 
-function bedrockClaudeOptions(modelId: string): ProviderOptions | undefined {
+export function bedrockClaudeOptions(modelId: string): ProviderOptions | undefined {
   // Claude 가 아닌 모델(Nova 등)도 구조화 답장은 도구 방식으로 (가장 널리 지원)
   if (!/anthropic\.claude/.test(modelId)) return { bedrock: { structuredOutputMode: "jsonTool" } };
   const cannotDisableThinking = /claude-(sonnet|opus)-5-5|claude-fable-5-1/.test(modelId);
@@ -82,6 +82,90 @@ function bedrockClaudeOptions(modelId: string): ProviderOptions | undefined {
       ? { reasoningConfig: { type: "adaptive", maxReasoningEffort: "low" } }
       : { additionalModelRequestFields: { thinking: { type: "disabled" } }, structuredOutputMode: "jsonTool" },
   };
+}
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/*  🛡 Bedrock 요청 점검 — guardrail(가드레일) 파라미터를 절대 넣지 않는다              */
+/*   · 요청은 "순수 모델 ID"로만 간다: guardrailIdentifier / guardrailConfig /        */
+/*     X-Amzn-Bedrock-GuardrailIdentifier 헤더를 코드에서 설정하지 않는다.            */
+/*   · 아래 guardFetch 가 나가는 모든 Bedrock 요청을 검사해, 혹시 guardrail 이 섞여     */
+/*     있으면 전송 전에 막고 오류를 낸다 (코드 변경 실수 방지). 요약은 마지막 요청으로 기록. */
+/*   · 🛠 상태판 › 점검 탭에서 눈으로 확인할 수 있다 (app/api/owner/probe).           */
+/* ────────────────────────────────────────────────────────────────────────── */
+export interface BedrockRequestRecord {
+  at: number;
+  url: string;
+  modelIdInUrl: string;
+  headerNames: string[];
+  bodyKeys: string[];
+  guardrail: boolean;
+  guardrailWhere: string[];
+}
+let lastBedrock: BedrockRequestRecord | null = null;
+export const lastBedrockRequest = () => lastBedrock;
+export const resetBedrockRequest = () => {
+  lastBedrock = null;
+};
+/** 점검 탭의 기본 모델: 서비스가 Bedrock 을 쓰면 그 메인 모델, 아니면 Bedrock 기본 메인 모델 */
+export const defaultBedrockModelId = (): string => {
+  const env = process.env.AI_MODEL?.trim();
+  const m = (process.env.AI_PROVIDER?.trim() || ACTIVE_PROVIDER) === "bedrock" && env ? env : PROVIDERS.bedrock.model;
+  return fixBedrockModelId(m);
+};
+
+function findGuardrail(v: unknown, path: string, out: string[]) {
+  if (v && typeof v === "object") {
+    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+      if (/guardrail/i.test(k)) out.push(`${path}${k}`);
+      findGuardrail(val, `${path}${k}.`, out);
+    }
+  }
+}
+
+function guardFetch(inner?: typeof fetch): typeof fetch {
+  return async (input, init) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const headers = new Headers(init?.headers ?? (typeof input === "object" && "headers" in input ? (input as Request).headers : undefined));
+    const where: string[] = [];
+    headers.forEach((_v, k) => {
+      if (/guardrail/i.test(k)) where.push(`header:${k}`);
+    });
+    let bodyKeys: string[] = [];
+    if (typeof init?.body === "string") {
+      try {
+        const obj = JSON.parse(init.body) as Record<string, unknown>;
+        bodyKeys = Object.keys(obj);
+        findGuardrail(obj, "body.", where);
+      } catch {
+        if (/guardrail/i.test(init.body)) where.push("body(text)");
+      }
+    }
+    const m = /\/model\/([^/]+)\//.exec(url);
+    const names: string[] = [];
+    headers.forEach((_v, k) => names.push(k));
+    lastBedrock = { at: Date.now(), url: url.replace(/\?.*$/, ""), modelIdInUrl: m ? decodeURIComponent(m[1]) : "", headerNames: names.sort(), bodyKeys, guardrail: where.length > 0, guardrailWhere: where };
+    if (where.length) throw new Error(`[config/ai] Bedrock 요청에 guardrail 항목이 섞여 있어 전송을 막았습니다 (${where.join(", ")}). 순수 모델 ID 로만 호출해야 합니다.`);
+    return (inner ?? fetch)(input, init);
+  };
+}
+
+/** Bedrock 모델 만들기 (점검 가능한 fetch 사용). 테스트용으로 fetch·키를 바꿔 끼울 수 있다 */
+export function createBedrockModel(modelId: string, opt: { fetchImpl?: typeof fetch; apiKey?: string } = {}): LanguageModel {
+  const apiKey = opt.apiKey || process.env.AWS_BEDROCK_API_KEY || process.env.AWS_BEARER_TOKEN_BEDROCK;
+  const useIam = process.env.BEDROCK_USE_IAM === "true" && !opt.apiKey;
+  if (!apiKey && !useIam) {
+    throw new Error(
+      "[config/ai] Bedrock 인증 정보가 없습니다. AWS_BEDROCK_API_KEY 를 설정하세요. " +
+        "(IAM 액세스 키를 쓰려면 BEDROCK_USE_IAM=true 와 AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY 설정)"
+    );
+  }
+  return createAmazonBedrock({
+    // Vercel 은 AWS_REGION 을 함수 실행 리전으로 자동 주입할 수 있어 전용 변수를 먼저 본다.
+    region: bedrockRegion(),
+    apiKey: useIam ? undefined : apiKey,
+    baseURL: process.env.BEDROCK_BASE_URL || undefined, // (선택) 프록시/테스트용
+    fetch: guardFetch(opt.fetchImpl),
+  })(modelId);
 }
 
 const PROVIDERS = {
@@ -107,22 +191,7 @@ const PROVIDERS = {
     // model: "global.anthropic.claude-sonnet-5-5",          // Claude Sonnet 5.5 (생각 기능을 끌 수 없어 조금 느림)
     // model: "global.anthropic.claude-opus-5",              // Claude Opus 5 — 더 똑똑, 비쌈
     // model: "global.anthropic.claude-sonnet-4-6",          // Claude Sonnet 4.6 — 저렴한 대안
-    create: (modelId) => {
-      const apiKey = process.env.AWS_BEDROCK_API_KEY || process.env.AWS_BEARER_TOKEN_BEDROCK;
-      const useIam = process.env.BEDROCK_USE_IAM === "true";
-      if (!apiKey && !useIam) {
-        throw new Error(
-          "[config/ai] Bedrock 인증 정보가 없습니다. AWS_BEDROCK_API_KEY 를 설정하세요. " +
-            "(IAM 액세스 키를 쓰려면 BEDROCK_USE_IAM=true 와 AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY 설정)"
-        );
-      }
-      return createAmazonBedrock({
-        // Vercel 은 AWS_REGION 을 함수 실행 리전으로 자동 주입할 수 있어 전용 변수를 먼저 본다.
-        region: bedrockRegion(),
-        apiKey: useIam ? undefined : apiKey,
-        baseURL: process.env.BEDROCK_BASE_URL || undefined, // (선택) 프록시/테스트용
-      })(modelId);
-    },
+    create: (modelId) => createBedrockModel(modelId),
     // ⚠️ Haiku 4.5 는 계정에서 "Anthropic 사용 사례 양식"을 제출해야 쓸 수 있다.
     //    아직이면 자동으로 cheapModel(Nova 2 Lite) → 메인 순서로 넘어간다 (lib/modelRouter.ts runWithFallback)
     lightModel: "global.anthropic.claude-haiku-4-5-20251001-v1:0", // Claude Haiku 4.5 — 빠르고 저렴, 말투 유지 좋음
@@ -298,4 +367,13 @@ export function resolveModel(purpose: ModelTier = "chat"): ResolvedModel {
   }
   if (purpose === "cheap") modelId = process.env.AI_CHEAP_MODEL?.trim() || entry.cheapModel || light;
   return build(requested, modelId);
+}
+
+/** 성인(매혹) 전용 모델이 따로 설정돼 있으면 그 모델 ID (프로바이더 접두사 처리·리전 보정 포함), 없으면 null — 모델은 만들지 않는다 */
+export function matureModelId(): string | null {
+  const m = settingValue("matureModel");
+  if (!m) return null;
+  const sp = splitProviderPrefix(m);
+  const provider = sp.provider ?? (process.env.AI_PROVIDER?.trim() || ACTIVE_PROVIDER);
+  return provider === "bedrock" ? fixBedrockModelId(sp.modelId) : sp.modelId;
 }

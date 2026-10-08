@@ -53,6 +53,16 @@ export const SERVER_SETTINGS = [
     desc: "비우면 메인 모델. 매혹·설렘 모드를 켠 대화방의 텍스트 톡에만 쓰인다. 다른 프로바이더는 앞에 붙임: xai:grok-4.7 · google:gemini-3.8-flash",
   },
   {
+    key: "historySanitize", label: "성인 대화 구간 정화 (다른 모델 전달용)", group: "수위·모드", type: "enum", options: ["on", "off"],
+    default: "on", env: "HISTORY_SANITIZE", usedIn: "lib/historySanitizer.ts · app/api/chat/route.ts",
+    desc: "on=성인 전용 모델이 따로 있을 때, 매혹 모드 대화는 화면·저장에는 그대로 두고 다른 모델(Claude 등)에게는 원문 대신 '친밀한 대화를 나눴다' 요약만 전달 / off=원문 그대로 전달",
+  },
+  {
+    key: "stickyRouting", label: "회상 대화 연속 라우팅 (지연 복귀)", group: "수위·모드", type: "enum", options: ["on", "off"],
+    default: "on", env: "STICKY_ROUTING", usedIn: "lib/historySanitizer.ts stickyMature()",
+    desc: "on=매혹 모드를 끈 직후에도 '아까 어땠어?' 같은 회상 말이면 몇 턴 동안 성인 전용 모델로 계속 답함 / off=끄면 바로 메인 모델",
+  },
+  {
     key: "premiumAccess", label: "유료 영상·매혹 모드 잠금", group: "이용 권한", type: "enum", options: ["open", "paid"],
     default: "paid", devDefault: "open", env: "PREMIUM_ACCESS", usedIn: "lib/entitlements.ts",
     desc: "open=누구나 / paid=멤버십 필요 (결제 연동 전에는 테스트 구독으로만)",

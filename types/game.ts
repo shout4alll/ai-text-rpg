@@ -26,8 +26,10 @@ export interface ChatResponse {
   /** 주인 모드 인증 토큰 (인증된 턴에만) / 모드 해제 */
   ownerToken?: string;
   ownerExit?: boolean;
+  /** 이번 답장이 매혹 모드(성인 대화)로 만들어졌다 — 앱이 메시지에 표시를 붙여 다른 모델에게는 요약만 보낸다 */
+  mature?: boolean;
   /** 🛠 주인님 모드에서만: 이번 턴에 쓰인 모델·경로 */
-  debug?: { model: string; label: string; tier: string; reason: string; allure: boolean; allureLevel: string; ms: number; fellBack: boolean; promptMode: "owner" | "service"; overrides: string[]; tokens: { in: number; out: number; cache: number } };
+  debug?: { model: string; label: string; tier: string; reason: string; allure: boolean; allureLevel: string; ms: number; fellBack: boolean; promptMode: "owner" | "service"; sticky: boolean; sanitized: number; sent: { role: string; text: string }[]; overrides: string[]; tokens: { in: number; out: number; cache: number } };
 }
 
 export interface ChatMessage {
@@ -42,6 +44,8 @@ export interface ChatMessage {
    * (media + role=user: 유저가 올린 사진·영상 — 파일은 이 기기의 IndexedDB 에 보관, lib/userMedia.ts)
    */
   kind?: "text" | "reaction" | "call" | "media" | "notice" | "gift";
+  /** 매혹 모드 중에 오간 말 (화면에는 그대로, 다른 모델에게는 요약으로 전달 — config/spicy.ts) */
+  mature?: boolean;
   /** kind=media */
   media?: {
     type: MediaType;

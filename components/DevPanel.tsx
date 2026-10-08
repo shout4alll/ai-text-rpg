@@ -31,7 +31,7 @@ interface OwnerCfg {
   rules: { fields: FieldDef[]; defaults: Record<string, OverrideValue | undefined>; hard: string[] };
 }
 
-type Tab = "status" | "model" | "persona" | "rules" | "settings";
+type Tab = "status" | "model" | "persona" | "rules" | "check" | "settings";
 const SRC: Record<string, string> = { env: "환경변수", default: "기본값", cms: "CMS" };
 const POS_KEY = "ai-rpg.dev.ui";
 const OPACITY = [1, 0.8, 0.55];
@@ -176,6 +176,7 @@ export default function DevPanel({
     ["model", `모델${curModel ? " ●" : ""}`],
     ["persona", `캐릭터${nPersona ? ` ${nPersona}` : ""}`],
     ["rules", `규칙${nRules ? ` ${nRules}` : ""}`],
+    ["check", "점검"],
     ["settings", "설정"],
   ];
 
@@ -247,12 +248,21 @@ export default function DevPanel({
                             <Row k="매혹" v={last.allure ? `켜짐 · 수위 ${last.allureLevel}` : "꺼짐"} />
                             <Row k="응답 시간" v={`${(last.ms / 1000).toFixed(1)}초`} />
                             <Row k="토큰" v={last.tokens ? `입력 ${last.tokens.in} (캐시 ${last.tokens.cache}) · 출력 ${last.tokens.out}` : "—"} />
+                            <Row k="대화 정화" v={last.sanitized ? `성인 구간 ${last.sanitized}개를 요약으로 대체해 전달` : "없음 (원문 그대로)"} />
+                            <Row k="연속 라우팅" v={last.sticky ? "회상 대화 → 성인 모델 유지" : "아님"} />
                             <Row k="적용된 편집" v={last.overrides?.length ? last.overrides.join(", ") : "없음"} />
                           </>
                         ) : (
                           <p className="text-slate-400">아직 답장이 없어요. 말을 보내면 표시돼요.</p>
                         )}
                       </Section>
+                      {last?.sent?.length ? (
+                        <Section title="모델에 실제 전달된 대화 (최근 12)">
+                          {last.sent.map((t, i) => (
+                            <p key={i} className="break-all text-[10px] text-slate-400"><b className={t.role === "user" ? "text-sky-300" : "text-emerald-300"}>{t.role === "user" ? "유저" : "AI"}</b> {t.text}</p>
+                          ))}
+                        </Section>
+                      ) : null}
                       <Section title="이 기기 · 이 대화방">
                         {client.map((c) => (
                           <Row key={c.label} k={c.label} v={c.value} />
@@ -365,7 +375,7 @@ export default function DevPanel({
                             onCommit={setRuleField}
                             ver={`rules-${ver}`}
                           />
-                          <Section title="🔒 고정 규칙 (지울 수 없음)">
+                          <Section title="🔒 고정 규칙 (이 한 줄만 고정, 나머지는 모두 수정 가능)">
                             {cfg.rules.hard.map((r) => (<p key={r} className="text-[11px] text-slate-400">• {r}</p>))}
                           </Section>
                         </>
@@ -380,6 +390,8 @@ export default function DevPanel({
                       />
                     </>
                   )}
+
+                  {tab === "check" && <CheckTab token={token} serverMain={data?.models.main ?? ""} choices={cfg?.models.choices ?? []} />}
 
                   {tab === "settings" && data && (
                     <>
@@ -502,5 +514,82 @@ function Row({ k, v }: { k: string; v: string }) {
       <span className="shrink-0 text-slate-400">{k}</span>
       <span className="min-w-0 break-all text-right">{v}</span>
     </div>
+  );
+}
+
+interface ProbeResult {
+  mode: string;
+  requestedModelId: string;
+  ms: number;
+  text: string;
+  error: string;
+  ok: boolean;
+  request: { url: string; modelIdInUrl: string; headerNames: string[]; bodyKeys: string[]; guardrail: boolean; guardrailWhere: string[] } | null;
+}
+
+/** 🛡 Bedrock 요청 점검 — guardrail 없이 순수 모델 ID 로만 가는지 확인 */
+function CheckTab({ token, serverMain, choices }: { token: string; serverMain: string; choices: OwnerCfg["models"]["choices"] }) {
+  const [modelId, setModelId] = useState("");
+  const [busy, setBusy] = useState<"" | "dry" | "live" | "selftest">("");
+  const [res, setRes] = useState<ProbeResult | null>(null);
+  const [err, setErr] = useState("");
+  const bedrock = choices.filter((c) => c.provider === "bedrock");
+  const run = async (mode: "dry" | "live" | "selftest") => {
+    setBusy(mode);
+    setErr("");
+    try {
+      const r = await fetch(apiUrl("/api/owner/probe"), {
+        method: "POST",
+        headers: { "x-owner-token": token, "Content-Type": "application/json" },
+        body: JSON.stringify({ mode, modelId: modelId || undefined }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+      setRes(j as ProbeResult);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "실패");
+    } finally {
+      setBusy("");
+    }
+  };
+  return (
+    <>
+      <p className="mb-2 text-[11px] text-slate-400">Bedrock 으로 나가는 요청에 guardrail(guardrailIdentifier·guardrailConfig·관련 헤더)이 없고 순수 모델 ID 로만 호출되는지 확인해요. 코드에도 안전장치가 있어서, 섞이면 전송 전에 막혀요.</p>
+      <Section title="확인할 모델">
+        <select value={modelId} onChange={(e) => setModelId(e.target.value)} data-dev-probe-model className="w-full rounded bg-slate-800 px-2 py-1 text-base outline-none sm:text-[12px]">
+          <option value="">서버 메인 모델{serverMain ? ` (${serverMain})` : ""}</option>
+          {bedrock.map((c) => (<option key={c.key} value={c.modelId}>{c.label} — {c.modelId}</option>))}
+        </select>
+        <div className="mt-2 flex gap-1.5">
+          <button type="button" disabled={!!busy} onClick={() => void run("dry")} data-dev-probe="dry" className="flex-1 rounded bg-amber-300 px-2 py-1.5 font-bold text-slate-900 disabled:opacity-40">{busy === "dry" ? "확인 중…" : "요청 확인 (전송 없음)"}</button>
+          <button type="button" disabled={!!busy} onClick={() => void run("live")} data-dev-probe="live" className="flex-1 rounded bg-slate-700 px-2 py-1.5 disabled:opacity-40">{busy === "live" ? "호출 중…" : "실제 호출 1회"}</button>
+        </div>
+        <button type="button" disabled={!!busy} onClick={() => void run("selftest")} data-dev-probe="selftest" className="mt-1.5 w-full rounded bg-slate-800 px-2 py-1 text-[11px] disabled:opacity-40">{busy === "selftest" ? "시험 중…" : "차단 장치 시험 (일부러 guardrail 을 섞어 막히는지 확인, 전송 없음)"}</button>
+        <p className="mt-1 text-[10px] text-slate-500">요청 확인은 네트워크로 보내지 않고 ‘보내질 요청’만 만들어 검사해요. 실제 호출은 아주 짧은 인사 1번(토큰 수십 개).</p>
+      </Section>
+      {err && <p className="mb-2 text-red-400">⚠️ {err}</p>}
+      {res && (
+        <Section title={`결과 — ${res.mode === "live" ? "실제 호출" : res.mode === "selftest" ? "차단 장치 시험" : "요청 확인"}`}>
+          <p className={`mb-1 text-[13px] font-bold ${res.ok ? "text-emerald-300" : "text-red-400"}`} data-dev-probe-result>
+            {res.mode === "selftest" ? (res.ok ? "✅ 차단 장치 정상 — guardrail 이 섞이면 전송 전에 막힘" : "❌ 차단 장치가 동작하지 않았어요") : res.ok ? "✅ guardrail 없음 · 순수 모델 ID 요청" : "❌ 문제 있음"}
+          </p>
+          {res.request ? (
+            <>
+              <Row k="요청 URL" v={res.request.url} />
+              <Row k="URL 속 모델 ID" v={res.request.modelIdInUrl} />
+              <Row k="요청한 모델 ID" v={res.requestedModelId} />
+              <Row k="본문 최상위 항목" v={res.request.bodyKeys.join(", ") || "—"} />
+              <Row k="헤더 이름" v={res.request.headerNames.join(", ") || "—"} />
+              <Row k="guardrail 포함" v={res.request.guardrail ? `있음: ${res.request.guardrailWhere.join(", ")}` : "없음"} />
+            </>
+          ) : (
+            <p className="text-slate-400">요청을 만들지 못했어요.</p>
+          )}
+          {res.text && <Row k="응답" v={res.text} />}
+          {res.error && <p className="mt-1 break-all text-[11px] text-red-300">{res.error}</p>}
+          <Row k="걸린 시간" v={`${(res.ms / 1000).toFixed(1)}초`} />
+        </Section>
+      )}
+    </>
   );
 }

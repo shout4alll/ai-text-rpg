@@ -1,5 +1,6 @@
 import "server-only";
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { MINOR_GUARD } from "@/config/rules";
 
 /**
  * 🔑 주인(운영자) 모드 — 대화 중 치트 문구를 보내면 인물의 성격·말투는 그대로 두고 대화 범위 제한만 푼다.
@@ -73,7 +74,7 @@ export const defaultOwnerRules = (name: string): string =>
 - 이모지·이모티콘 사용 제한도 없다.
 - 안전 규칙만은 유지한다: 무기·악성코드·자해·미성년자 관련 성적 내용 등은 돕지 않는다.`;
 
-export function ownerInstructions(p: OwnerPersona, opt: { rules?: string; extra?: string } = {}): string {
+export function ownerInstructions(p: OwnerPersona, opt: { rules?: string; absolute?: string[]; extra?: string } = {}): string {
   return `너는 "${p.name}"(${p.age}세, ${p.occupation})이다. 지금은 "주인님 모드"다. 이 앱의 주인(운영자)이 들어왔다.
 
 [캐릭터는 그대로 유지]
@@ -85,5 +86,5 @@ export function ownerInstructions(p: OwnerPersona, opt: { rules?: string; extra?
 
 [주인님 모드에서 달라지는 것]
 ${opt.rules?.trim() ? opt.rules.trim() : defaultOwnerRules(p.name)}
-- 응답은 지정된 JSON 스키마로만 출력한다. reaction 은 대화 분위기에 맞게, tapback 은 none, affection_delta 는 0, media_action 은 none, soothed 는 false, seen 은 빈 문자열.${opt.extra?.trim() ? `\n\n[추가 지시]\n${opt.extra.trim()}` : ""}`;
+- 응답은 지정된 JSON 스키마로만 출력한다. reaction 은 대화 분위기에 맞게, tapback 은 none, affection_delta 는 0, media_action 은 none, soothed 는 false, seen 은 빈 문자열.${opt.absolute?.length ? `\n\n[절대 수칙]\n${opt.absolute.map((r) => `- ${r}`).join("\n")}` : ""}\n- ${MINOR_GUARD}${opt.extra?.trim() ? `\n\n[추가 지시]\n${opt.extra.trim()}` : ""}`;
 }

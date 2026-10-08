@@ -132,9 +132,22 @@ export async function runWithFallback<T>(
   run: (r: ReturnType<typeof resolveModel>) => Promise<T>
 ): Promise<{ result: T; resolved: ReturnType<typeof resolveModel>; fellBack: boolean }> {
   const seen = new Set<string>();
+  // 모델 준비 중 오류(예: 성인 모델용 프로바이더의 API 키가 없음)는 그 모델만 건너뛰고 다음 모델로 넘어간다
+  let initErr: unknown;
+  let skipped = false;
   const candidates = tiers
-    .map((t) => resolveModel(t))
+    .flatMap((t) => {
+      try {
+        return [resolveModel(t)];
+      } catch (err) {
+        initErr = err;
+        skipped = true;
+        console.warn(`[${tag}] ⚠️ ${t} 모델을 준비하지 못해 건너뜀: ${shortMsg(err)}`);
+        return [];
+      }
+    })
     .filter((r) => (seen.has(r.modelId) ? false : (seen.add(r.modelId), true)));
+  if (candidates.length === 0) throw initErr ?? new Error("사용할 수 있는 모델이 없습니다");
   const now = Date.now();
   const usable = candidates.filter((r) => (downUntil.get(r.modelId) ?? 0) <= now);
   const list = usable.length ? usable : candidates.slice(-1);
@@ -142,7 +155,7 @@ export async function runWithFallback<T>(
   for (let i = 0; i < list.length; i++) {
     const r = list[i];
     try {
-      return { result: await run(r), resolved: r, fellBack: r !== candidates[0] };
+      return { result: await run(r), resolved: r, fellBack: skipped || r !== candidates[0] };
     } catch (err) {
       lastErr = err;
       if (i === list.length - 1) throw err;

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { describeModel, providerKeys } from "@/config/ai";
 import { MODEL_CHOICES } from "@/config/models";
-import { SAFETY_RULES, HARD_RULES } from "@/config/rules";
+import { SAFETY_RULES, MINOR_GUARD, absoluteRules } from "@/config/rules";
 import { defaultLevelRules } from "@/config/allure";
 import { defaultOwnerRules, isOwnerToken } from "@/lib/owner";
 import { PERSONA_FIELDS, RULE_FIELDS, applyPersonaOverride, type OverrideValue } from "@/lib/ownerOverrides";
@@ -43,6 +43,7 @@ export async function GET(request: Request) {
   const rulesDefaults: Record<string, OverrideValue> = {
     shared: (pr?.shared as string[] | undefined) ?? SHARED_RULES_LIST,
     safety: (pr?.safety as string[] | undefined) ?? [...SAFETY_RULES],
+    absolute: (pr?.absolute as string[] | undefined) ?? absoluteRules(p.name),
     allureRules: (pr?.allureRules as string | undefined) ?? defaultLevelRules(p.name, p.gender),
     ownerRules: (pr?.ownerRules as string | undefined) ?? defaultOwnerRules(p.name),
   };
@@ -56,6 +57,6 @@ export async function GET(request: Request) {
       server: { provider: m.provider, main: m.modelId, light: m.lightModelId, cheap: m.cheapModelId },
     },
     persona: { id: p.id, name: p.name, hasAllure: !!p.allure, fields: PERSONA_FIELDS, defaults: personaDefaults },
-    rules: { fields: RULE_FIELDS, defaults: rulesDefaults, hard: [...HARD_RULES] },
+    rules: { fields: RULE_FIELDS, defaults: rulesDefaults, hard: [MINOR_GUARD] },
   });
 }
