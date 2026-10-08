@@ -1,14 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { apiUrl } from "@/lib/apiBase";
+import { loadOwnerOpts, saveOwnerOpts, type StoredOwnerOpts } from "@/lib/ownerClient";
+import { asText, fromText, type FieldDef, type OverrideValue } from "@/lib/ownerOverrides";
 import type { ChatResponse } from "@/types/game";
 
 /**
- * 🛠 주인님 모드 상태판 — 지금 어떤 모델·모드·설정으로 돌아가는지 한눈에.
- * 서버 값: GET /api/status/full (주인 토큰 필요) · 이번 턴 값: /api/chat 응답의 debug
- * 설정을 바꾸는 곳은 각 줄의 "환경변수 / 파일" 표시 참고 (config/settings.ts 에 모두 정리됨)
+ * 🛠 주인님 모드 관리창 — 떠 있는 창(끌어서 이동·접기·투명도)으로 대화를 보면서 작업한다.
+ *   상태 : 이번 턴 모델·경로·토큰, 이 대화방 상태, 서버 모델        (GET /api/status/full)
+ *   모델 : 모델 목록에서 골라 바로 바꿔 테스트 (Grok 포함) · 직접 입력   (config/models.ts)
+ *   캐릭터: 성격·말투·설정을 고쳐 다음 메시지부터 적용               (lib/ownerOverrides.ts PERSONA_FIELDS)
+ *   규칙 : 공통·안전·수위·주인님 모드 규칙                          (RULE_FIELDS · config/rules.ts)
+ *   설정 : 운영 스위치·앱 설정·환경변수 (config/settings.ts)
+ *  테스트 값은 이 기기에만 저장되고 주인 인증된 요청에만 반영된다. CMS 로 옮길 때는 같은 항목 정의를 그대로 쓴다.
  */
 interface FullStatus {
   env: string;
@@ -19,40 +25,159 @@ interface FullStatus {
   modelEnv: { name: string; value: string | null }[];
   secrets: { name: string; set: boolean }[];
 }
+interface OwnerCfg {
+  models: { choices: { key: string; label: string; provider: string; modelId: string; note: string; hasKey: boolean }[]; providers: Record<string, boolean>; server: { provider: string; main: string; light: string; cheap: string } };
+  persona: { id: string; name: string; hasAllure: boolean; fields: FieldDef[]; defaults: Record<string, OverrideValue | undefined> };
+  rules: { fields: FieldDef[]; defaults: Record<string, OverrideValue | undefined>; hard: string[] };
+}
 
+type Tab = "status" | "model" | "persona" | "rules" | "settings";
 const SRC: Record<string, string> = { env: "환경변수", default: "기본값", cms: "CMS" };
+const POS_KEY = "ai-rpg.dev.ui";
+const OPACITY = [1, 0.8, 0.55];
 
 export default function DevPanel({
   token,
   last,
   client,
+  personaId,
   className = "",
 }: {
   token: string;
   last: ChatResponse["debug"] | null;
   /** 이 기기·이 대화방 상태 */
   client: { label: string; value: string }[];
+  personaId: string;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<Tab>("status");
   const [data, setData] = useState<FullStatus | null>(null);
+  const [cfg, setCfg] = useState<OwnerCfg | null>(null);
   const [err, setErr] = useState("");
+  const [opts, setOpts] = useState<StoredOwnerOpts>({ personas: {} });
+  const [ver, setVer] = useState(0);
+  const [ui, setUi] = useState({ x: 8, y: 120, min: false, op: 0 });
+  const boxRef = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ dx: number; dy: number } | null>(null);
 
-  const load = async () => {
+  const headers = { "x-owner-token": token };
+  const loadStatus = useCallback(async () => {
     setErr("");
     try {
-      const r = await fetch(apiUrl("/api/status/full"), { headers: { "x-owner-token": token }, cache: "no-store" });
+      const r = await fetch(apiUrl("/api/status/full"), { headers, cache: "no-store" });
       const j = await r.json();
       if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
       setData(j as FullStatus);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "불러오지 못했어요");
     }
-  };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+  const loadCfg = useCallback(async () => {
+    try {
+      const r = await fetch(apiUrl(`/api/owner/config?persona=${encodeURIComponent(personaId)}`), { headers, cache: "no-store" });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+      setCfg(j as OwnerCfg);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "불러오지 못했어요");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, personaId]);
+
+  // 창 위치·접기·투명도 기억
   useEffect(() => {
-    if (open) void load();
+    try {
+      const v = JSON.parse(localStorage.getItem(POS_KEY) ?? "null");
+      if (v) setUi((u) => ({ ...u, ...v }));
+    } catch {
+      /* 무시 */
+    }
+    setOpts(loadOwnerOpts());
+  }, []);
+  useEffect(() => {
+    if (!open) return;
+    const fit = () => setUi((u) => ({ ...u, ...clamp(u.x, u.y) }));
+    const t = setTimeout(fit, 0);
+    window.addEventListener("resize", fit);
+    return () => { clearTimeout(t); window.removeEventListener("resize", fit); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+  const saveUi = (next: typeof ui) => {
+    setUi(next);
+    try {
+      localStorage.setItem(POS_KEY, JSON.stringify(next));
+    } catch {
+      /* 무시 */
+    }
+  };
+  useEffect(() => {
+    if (!open) return;
+    setOpts(loadOwnerOpts());
+    void loadStatus();
+    void loadCfg();
+  }, [open, loadStatus, loadCfg]);
+
+  const commit = (next: StoredOwnerOpts) => {
+    saveOwnerOpts(next);
+    setOpts(next);
+  };
+
+  const clamp = (x: number, y: number) => {
+    const w = boxRef.current?.offsetWidth ?? 360;
+    return { x: Math.min(Math.max(0, x), Math.max(0, window.innerWidth - w)), y: Math.min(Math.max(0, y), window.innerHeight - 44) };
+  };
+  const onDown = (e: React.PointerEvent) => {
+    if ((e.target as HTMLElement).closest("button")) return;
+    drag.current = { dx: e.clientX - ui.x, dy: e.clientY - ui.y };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onMove = (e: React.PointerEvent) => {
+    if (!drag.current) return;
+    const p = clamp(e.clientX - drag.current.dx, e.clientY - drag.current.dy);
+    setUi((u) => ({ ...u, ...p }));
+  };
+  const onUp = () => {
+    if (drag.current) saveUi(ui);
+    drag.current = null;
+  };
+
+  const personaOv = opts.personas[personaId] ?? {};
+  const nPersona = Object.keys(personaOv).length;
+  const nRules = Object.keys(opts.rules ?? {}).length;
+  const active = !!opts.model || opts.promptMode === "service" || nPersona > 0 || nRules > 0;
+
+  const setPersonaField = (def: FieldDef, text: string) => {
+    const v = fromText(def, text);
+    const def0 = cfg?.persona.defaults[def.key];
+    const same = v === undefined || asText(v) === asText(def0);
+    const cur = { ...(opts.personas[personaId] ?? {}) } as Record<string, OverrideValue>;
+    if (same) delete cur[def.key];
+    else cur[def.key] = v as OverrideValue;
+    commit({ ...opts, personas: { ...opts.personas, [personaId]: cur } });
+  };
+  const setRuleField = (def: FieldDef, text: string) => {
+    const v = fromText(def, text);
+    const def0 = cfg?.rules.defaults[def.key];
+    const same = v === undefined || asText(v) === asText(def0);
+    const cur = { ...(opts.rules ?? {}) } as Record<string, OverrideValue>;
+    if (same) delete cur[def.key];
+    else cur[def.key] = v as OverrideValue;
+    commit({ ...opts, rules: cur });
+  };
+
+  const [custom, setCustom] = useState({ provider: "xai", modelId: "" });
+  const curModel = opts.model;
+  const choiceOf = cfg?.models.choices.find((c) => curModel && c.provider === curModel.provider && c.modelId === curModel.modelId);
+
+  const tabs: [Tab, string][] = [
+    ["status", "상태"],
+    ["model", `모델${curModel ? " ●" : ""}`],
+    ["persona", `캐릭터${nPersona ? ` ${nPersona}` : ""}`],
+    ["rules", `규칙${nRules ? ` ${nRules}` : ""}`],
+    ["settings", "설정"],
+  ];
 
   return (
     <>
@@ -63,92 +188,298 @@ export default function DevPanel({
         className={`inline-flex h-8 items-center gap-1 rounded-full bg-slate-900/85 px-2.5 text-[12px] font-bold text-amber-300 shadow-sm ring-1 ring-amber-300/40 backdrop-blur active:scale-95 ${className}`}
         aria-label="상태판"
       >
-        🛠 {last ? <span className="max-w-[7.5rem] truncate font-mono text-[10px] text-amber-100">{last.tier}·{shortModel(last.model)}</span> : "상태"}
+        🛠{active && <span className="text-emerald-300">●</span>}{" "}
+        {last ? <span className="max-w-[7.5rem] truncate font-mono text-[10px] text-amber-100">{last.tier}·{shortModel(last.model)}</span> : "상태"}
       </button>
       {open &&
         createPortal(
-        <div className="fixed inset-0 z-[80] flex items-start justify-center bg-black/50 p-3 pt-[max(1rem,env(safe-area-inset-top))]" onClick={() => setOpen(false)} data-dev-panel>
-          <div className="max-h-[88dvh] w-full max-w-md overflow-y-auto rounded-2xl bg-slate-950 p-4 font-mono text-[12px] leading-relaxed text-slate-200 shadow-xl ring-1 ring-amber-300/30" onClick={(e) => e.stopPropagation()}>
-            <div className="mb-2 flex items-center justify-between">
-              <b className="text-amber-300">🛠 주인님 상태판</b>
-              <span className="flex gap-2">
-                <button type="button" onClick={() => void load()} className="rounded bg-slate-800 px-2 py-0.5">새로고침</button>
-                <button type="button" onClick={() => setOpen(false)} className="rounded bg-slate-800 px-2 py-0.5">닫기</button>
+          <div
+            ref={boxRef}
+            data-dev-panel
+            style={{ left: ui.x, top: ui.y, opacity: OPACITY[ui.op] }}
+            className="fixed z-[80] w-[min(94vw,25rem)] rounded-2xl bg-slate-950 font-mono text-[12px] leading-relaxed text-slate-200 shadow-2xl ring-1 ring-amber-300/40"
+          >
+            {/* 끌어서 옮기는 손잡이 */}
+            <div
+              onPointerDown={onDown}
+              onPointerMove={onMove}
+              onPointerUp={onUp}
+              onPointerCancel={onUp}
+              data-dev-drag
+              className="flex cursor-grab touch-none select-none items-center justify-between rounded-t-2xl bg-slate-900 px-3 py-2 active:cursor-grabbing"
+            >
+              <b className="text-amber-300">⠿ 🛠 주인님 관리창</b>
+              <span className="flex gap-1">
+                <button type="button" onClick={() => saveUi({ ...ui, op: (ui.op + 1) % OPACITY.length })} className="rounded bg-slate-800 px-2 py-0.5" title="투명도">◐</button>
+                <button type="button" onClick={() => saveUi({ ...ui, min: !ui.min })} className="rounded bg-slate-800 px-2 py-0.5" data-dev-min>{ui.min ? "▢" : "–"}</button>
+                <button type="button" onClick={() => setOpen(false)} className="rounded bg-slate-800 px-2 py-0.5">✕</button>
               </span>
             </div>
 
-            <Section title="이번 턴">
-              {last ? (
-                <>
-                  <Row k="모델" v={`${last.model}`} />
-                  <Row k="경로" v={`${last.tier} (${last.reason})${last.fellBack ? " · 대체됨" : ""}`} />
-                  <Row k="매혹" v={last.allure ? `켜짐 · 수위 ${last.allureLevel}` : "꺼짐"} />
-                  <Row k="응답 시간" v={`${(last.ms / 1000).toFixed(1)}초`} />
-                </>
-              ) : (
-                <p className="text-slate-400">아직 답장이 없어요. 말을 보내면 표시돼요.</p>
-              )}
-            </Section>
-
-            <Section title="이 기기 · 이 대화방">
-              {client.map((c) => (
-                <Row key={c.label} k={c.label} v={c.value} />
-              ))}
-            </Section>
-
-            {err && <p className="my-2 text-red-400">⚠️ {err}</p>}
-            {data && (
+            {!ui.min && (
               <>
-                <Section title={`서버 모델 (${data.env}${data.deploy ? ` · ${data.deploy}` : ""})`}>
-                  <Row k="프로바이더" v={`${data.models.provider} · ${data.models.label}${data.models.region ? ` · ${data.models.region}` : ""}`} />
-                  <Row k="메인" v={data.models.main} />
-                  <Row k="가벼운 대화" v={`${data.models.light}${data.models.routing ? "" : " (라우팅 꺼짐)"}`} />
-                  <Row k="기억 정리" v={data.models.cheap} />
-                  <Row k="성인(매혹)" v={data.models.mature} />
-                </Section>
+                <div className="flex gap-1 overflow-x-auto px-2 pt-2">
+                  {tabs.map(([k, label]) => (
+                    <button
+                      key={k}
+                      type="button"
+                      data-dev-tab={k}
+                      onClick={() => setTab(k)}
+                      className={`shrink-0 rounded-full px-2.5 py-1 ${tab === k ? "bg-amber-300 font-bold text-slate-900" : "bg-slate-800 text-slate-300"}`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                  <button type="button" onClick={() => { void loadStatus(); void loadCfg(); }} className="ml-auto shrink-0 rounded-full bg-slate-800 px-2.5 py-1" title="새로고침">↻</button>
+                </div>
 
-                <Section title="운영 스위치 — config/settings.ts">
-                  {data.settings.map((s) => (
-                    <div key={s.key} className="border-b border-slate-800 py-1.5 last:border-0">
-                      <div className="flex justify-between gap-2">
-                        <span className="text-slate-300">{s.label}</span>
-                        <span className={s.source === "env" ? "text-emerald-300" : "text-sky-300"}>
-                          {s.value || "—"} <span className="text-[10px] text-slate-500">({SRC[s.source]})</span>
-                        </span>
-                      </div>
-                      <div className="text-[10px] text-slate-500">
-                        env {s.env}
-                        {s.options ? ` = ${s.options.join(" | ")}` : ""} · {s.desc}
-                      </div>
-                    </div>
-                  ))}
-                </Section>
+                <div className="max-h-[62dvh] overflow-y-auto p-2.5">
+                  {err && <p className="mb-2 text-red-400">⚠️ {err}</p>}
 
-                <Section title="앱 설정 (파일 수정 후 배포)">
-                  {data.app.map((a) => (
-                    <div key={a.label} className="border-b border-slate-800 py-1.5 last:border-0">
-                      <Row k={a.label} v={a.value} />
-                      <div className="text-[10px] text-slate-500">{a.file}</div>
-                    </div>
-                  ))}
-                </Section>
+                  {tab === "status" && (
+                    <>
+                      <Section title="이번 턴">
+                        {last ? (
+                          <>
+                            <Row k="모델" v={last.model} />
+                            <Row k="경로" v={`${last.tier} (${last.reason})${last.fellBack ? " · 대체됨" : ""}`} />
+                            <Row k="프롬프트" v={last.promptMode === "service" ? "서비스(일반 유저와 동일)" : "주인님(제한 해제)"} />
+                            <Row k="매혹" v={last.allure ? `켜짐 · 수위 ${last.allureLevel}` : "꺼짐"} />
+                            <Row k="응답 시간" v={`${(last.ms / 1000).toFixed(1)}초`} />
+                            <Row k="토큰" v={last.tokens ? `입력 ${last.tokens.in} (캐시 ${last.tokens.cache}) · 출력 ${last.tokens.out}` : "—"} />
+                            <Row k="적용된 편집" v={last.overrides?.length ? last.overrides.join(", ") : "없음"} />
+                          </>
+                        ) : (
+                          <p className="text-slate-400">아직 답장이 없어요. 말을 보내면 표시돼요.</p>
+                        )}
+                      </Section>
+                      <Section title="이 기기 · 이 대화방">
+                        {client.map((c) => (
+                          <Row key={c.label} k={c.label} v={c.value} />
+                        ))}
+                      </Section>
+                      {data && (
+                        <Section title={`서버 모델 (${data.env}${data.deploy ? ` · ${data.deploy}` : ""})`}>
+                          <Row k="프로바이더" v={`${data.models.provider} · ${data.models.label}${data.models.region ? ` · ${data.models.region}` : ""}`} />
+                          <Row k="메인" v={data.models.main} />
+                          <Row k="가벼운 대화" v={`${data.models.light}${data.models.routing ? "" : " (라우팅 꺼짐)"}`} />
+                          <Row k="기억 정리" v={data.models.cheap} />
+                          <Row k="성인(매혹)" v={data.models.mature} />
+                        </Section>
+                      )}
+                    </>
+                  )}
 
-                <Section title="환경변수">
-                  {data.modelEnv.map((e) => (
-                    <Row key={e.name} k={e.name} v={e.value ?? "— (기본값)"} />
-                  ))}
-                  {data.secrets.map((e) => (
-                    <Row key={e.name} k={e.name} v={e.set ? "🔒 설정됨" : "없음"} />
-                  ))}
-                </Section>
+                  {tab === "model" && (
+                    <>
+                      <p className="mb-2 text-[11px] text-slate-400">고르면 다음 메시지부터 이 모델만 사용 (가벼운 대화·성인 라우팅 무시, 실패해도 대체하지 않고 오류를 보여 줌). 이 기기 · 주인님 모드에서만.</p>
+                      <Section title="프롬프트">
+                        <div className="flex gap-1">
+                          {([["owner", "주인님 (제한 해제)"], ["service", "서비스 (유저와 동일)"]] as const).map(([k, l]) => (
+                            <button
+                              key={k}
+                              type="button"
+                              data-dev-mode={k}
+                              onClick={() => commit({ ...opts, promptMode: k === "owner" ? undefined : k })}
+                              className={`flex-1 rounded px-2 py-1 ${(opts.promptMode ?? "owner") === k ? "bg-amber-300 font-bold text-slate-900" : "bg-slate-800"}`}
+                            >
+                              {l}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="mt-1 text-[10px] text-slate-500">서비스 = 일반 유저 규칙·말투·호감도·사진 흐름 그대로 (모델·캐릭터·규칙 편집만 적용)</p>
+                      </Section>
+                      <Section title="모델 선택">
+                        <button
+                          type="button"
+                          data-dev-model="auto"
+                          onClick={() => commit({ ...opts, model: undefined })}
+                          className={`mb-1 w-full rounded px-2 py-1.5 text-left ${!curModel ? "bg-amber-300 font-bold text-slate-900" : "bg-slate-800"}`}
+                        >
+                          자동 (서버 설정){cfg ? <span className="block text-[10px] opacity-70">{cfg.models.server.provider} · {cfg.models.server.main}</span> : null}
+                        </button>
+                        {cfg?.models.choices.map((c) => {
+                          const sel = !!curModel && c.provider === curModel.provider && c.modelId === curModel.modelId;
+                          return (
+                            <button
+                              key={c.key}
+                              type="button"
+                              data-dev-model={c.key}
+                              onClick={() => commit({ ...opts, model: { provider: c.provider, modelId: c.modelId } })}
+                              className={`mb-1 w-full rounded px-2 py-1.5 text-left ${sel ? "bg-amber-300 font-bold text-slate-900" : "bg-slate-800"} ${c.hasKey ? "" : "opacity-50"}`}
+                            >
+                              <span className="flex justify-between gap-2"><span>{c.label}</span><span className="text-[10px] opacity-70">{c.provider}{c.hasKey ? "" : " · 키 없음"}</span></span>
+                              <span className="block break-all text-[10px] opacity-70">{c.modelId}</span>
+                              <span className="block text-[10px] opacity-70">{c.note}</span>
+                            </button>
+                          );
+                        })}
+                      </Section>
+                      <Section title="직접 입력">
+                        <div className="flex gap-1">
+                          <select value={custom.provider} onChange={(e) => setCustom({ ...custom, provider: e.target.value })} className="rounded bg-slate-800 px-1 py-1">
+                            {["xai", "bedrock", "google"].map((p) => (<option key={p}>{p}</option>))}
+                          </select>
+                          <input value={custom.modelId} onChange={(e) => setCustom({ ...custom, modelId: e.target.value })} placeholder="모델 ID (예: grok-4.6)" className="min-w-0 flex-1 rounded bg-slate-800 px-2 py-1 text-base outline-none sm:text-[12px]" />
+                          <button type="button" disabled={!custom.modelId.trim()} onClick={() => commit({ ...opts, model: { provider: custom.provider, modelId: custom.modelId.trim() } })} className="rounded bg-amber-300 px-2 py-1 font-bold text-slate-900 disabled:opacity-40">적용</button>
+                        </div>
+                        {curModel && !choiceOf && <p className="mt-1 text-[10px] text-emerald-300">지금: {curModel.provider} · {curModel.modelId}</p>}
+                      </Section>
+                    </>
+                  )}
+
+                  {tab === "persona" && (
+                    <>
+                      <p className="mb-2 text-[11px] text-slate-400">
+                        {cfg ? `${cfg.persona.name}(${cfg.persona.id})` : personaId} 의 설정. 고치면 다음 메시지부터 적용 — 기본값과 같거나 비우면 원래대로. 인물마다 따로 저장돼요.
+                      </p>
+                      {cfg ? (
+                        <FieldList
+                          defs={cfg.persona.fields.filter((f) => f.key !== "allurePrompt" || cfg.persona.hasAllure)}
+                          defaults={cfg.persona.defaults}
+                          values={personaOv as Record<string, OverrideValue | undefined>}
+                          onCommit={setPersonaField}
+                          ver={`${personaId}-${ver}`}
+                        />
+                      ) : (
+                        <p className="text-slate-400">불러오는 중…</p>
+                      )}
+                      <ResetBar
+                        n={nPersona}
+                        label="이 인물 편집 모두 되돌리기"
+                        onReset={() => { commit({ ...opts, personas: { ...opts.personas, [personaId]: {} } }); setVer((v) => v + 1); }}
+                        json={JSON.stringify({ [personaId]: personaOv }, null, 2)}
+                      />
+                    </>
+                  )}
+
+                  {tab === "rules" && (
+                    <>
+                      <p className="mb-2 text-[11px] text-slate-400">모든 인물에 적용되는 규칙. 고치면 다음 메시지부터 적용 — 비우면 기본값.</p>
+                      {cfg ? (
+                        <>
+                          <FieldList
+                            defs={cfg.rules.fields}
+                            defaults={cfg.rules.defaults}
+                            values={(opts.rules ?? {}) as Record<string, OverrideValue | undefined>}
+                            onCommit={setRuleField}
+                            ver={`rules-${ver}`}
+                          />
+                          <Section title="🔒 고정 규칙 (지울 수 없음)">
+                            {cfg.rules.hard.map((r) => (<p key={r} className="text-[11px] text-slate-400">• {r}</p>))}
+                          </Section>
+                        </>
+                      ) : (
+                        <p className="text-slate-400">불러오는 중…</p>
+                      )}
+                      <ResetBar
+                        n={nRules}
+                        label="규칙 편집 모두 되돌리기"
+                        onReset={() => { commit({ ...opts, rules: {} }); setVer((v) => v + 1); }}
+                        json={JSON.stringify(opts.rules ?? {}, null, 2)}
+                      />
+                    </>
+                  )}
+
+                  {tab === "settings" && data && (
+                    <>
+                      <Section title="운영 스위치 — config/settings.ts">
+                        {data.settings.map((s) => (
+                          <div key={s.key} className="border-b border-slate-800 py-1.5 last:border-0">
+                            <div className="flex justify-between gap-2">
+                              <span className="text-slate-300">{s.label}</span>
+                              <span className={s.source === "env" ? "text-emerald-300" : "text-sky-300"}>
+                                {s.value || "—"} <span className="text-[10px] text-slate-500">({SRC[s.source]})</span>
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-slate-500">
+                              env {s.env}
+                              {s.options ? ` = ${s.options.join(" | ")}` : ""} · {s.desc}
+                            </div>
+                          </div>
+                        ))}
+                      </Section>
+                      <Section title="앱 설정 (파일 수정 후 배포)">
+                        {data.app.map((a) => (
+                          <div key={a.label} className="border-b border-slate-800 py-1.5 last:border-0">
+                            <Row k={a.label} v={a.value} />
+                            <div className="text-[10px] text-slate-500">{a.file}</div>
+                          </div>
+                        ))}
+                      </Section>
+                      <Section title="환경변수">
+                        {data.modelEnv.map((e) => (<Row key={e.name} k={e.name} v={e.value ?? "— (기본값)"} />))}
+                        {data.secrets.map((e) => (<Row key={e.name} k={e.name} v={e.set ? "🔒 설정됨" : "없음"} />))}
+                      </Section>
+                      <p className="text-[10px] text-slate-500">값 바꾸기: Vercel › Settings › Environment Variables → Redeploy. 기본값은 config/settings.ts. 전체 표 docs/MODES.md</p>
+                    </>
+                  )}
+                </div>
               </>
             )}
-            <p className="mt-2 text-[10px] text-slate-500">값 바꾸기: Vercel › Settings › Environment Variables → Redeploy. 기본값은 config/settings.ts. 전체 표 docs/MODES.md</p>
-          </div>
-        </div>,
+          </div>,
           document.body,
         )}
     </>
+  );
+}
+
+function FieldList({
+  defs,
+  defaults,
+  values,
+  onCommit,
+  ver,
+}: {
+  defs: FieldDef[];
+  defaults: Record<string, OverrideValue | undefined>;
+  values: Record<string, OverrideValue | undefined>;
+  onCommit: (def: FieldDef, text: string) => void;
+  ver: string;
+}) {
+  return (
+    <>
+      {defs.map((d) => {
+        const changed = values[d.key] !== undefined;
+        const text = asText(changed ? values[d.key] : defaults[d.key]);
+        const cls = `w-full rounded bg-slate-800 px-2 py-1 text-base outline-none focus:ring-1 focus:ring-amber-300 sm:text-[12px] ${changed ? "ring-1 ring-emerald-400/60" : ""}`;
+        return (
+          <label key={`${ver}-${d.key}-${changed}`} className="mb-2.5 block" data-dev-field={d.key}>
+            <span className="mb-0.5 flex justify-between text-[11px] text-slate-400">
+              <span>{d.label}{changed && <b className="ml-1 text-emerald-300">● 수정됨</b>}</span>
+              {changed && (
+                <button type="button" onClick={() => onCommit(d, "")} className="text-amber-300 underline">기본값</button>
+              )}
+            </span>
+            {d.kind === "line" || d.kind === "number" ? (
+              <input defaultValue={text} inputMode={d.kind === "number" ? "decimal" : undefined} onBlur={(e) => e.target.value !== text && onCommit(d, e.target.value)} className={cls} />
+            ) : (
+              <textarea defaultValue={text} rows={d.kind === "lines" ? 5 : 4} onBlur={(e) => e.target.value !== text && onCommit(d, e.target.value)} className={`${cls} resize-y leading-snug`} />
+            )}
+            {d.hint && <span className="mt-0.5 block text-[10px] text-slate-500">{d.hint}</span>}
+          </label>
+        );
+      })}
+    </>
+  );
+}
+
+function ResetBar({ n, label, onReset, json }: { n: number; label: string; onReset: () => void; json: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <div className="mt-1 flex gap-1.5">
+      <button type="button" disabled={!n} onClick={onReset} className="rounded bg-slate-800 px-2 py-1 disabled:opacity-40">{label}</button>
+      <button
+        type="button"
+        disabled={!n}
+        onClick={() => {
+          void navigator.clipboard?.writeText(json).then(() => { setDone(true); setTimeout(() => setDone(false), 1500); });
+        }}
+        className="rounded bg-slate-800 px-2 py-1 disabled:opacity-40"
+      >
+        {done ? "복사됨" : "JSON 복사"}
+      </button>
+    </div>
   );
 }
 

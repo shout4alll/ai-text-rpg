@@ -34,6 +34,34 @@
 
 ---
 
+## 0-1. 🛠 주인님 관리창 — 모델 바꾸기 · 캐릭터/규칙 즉시 수정
+
+주인님 모드에서 보이는 🛠 버튼을 누르면 **떠 있는 창**이 열린다. 제목줄(⠿)을 끌어 옮기고, `–` 접기, `◐` 투명도 3단계. 창이 열려 있어도 대화는 그대로 할 수 있다. (위치·접힘·투명도는 기억)
+
+| 탭 | 하는 일 | 정의 파일 |
+|---|---|---|
+| 상태 | 이번 턴 모델·경로·토큰·적용된 편집, 대화방 상태, 서버 모델 | `app/api/status/full/route.ts` |
+| 모델 | 목록에서 골라 **다음 메시지부터 그 모델만** 사용(Grok 4.7 포함) · 직접 입력 · 프롬프트 모드(주인님/서비스) | `config/models.ts` |
+| 캐릭터 | 직업·나이·성격·말투·일상·말투 예시·temperature·서사·매혹 지침·추가 지시 (인물마다 저장) | `lib/ownerOverrides.ts` PERSONA_FIELDS |
+| 규칙 | 공통 규칙·안전과 정직·매혹 수위 규칙·주인님 모드 규칙 | `lib/ownerOverrides.ts` RULE_FIELDS · `config/rules.ts` |
+| 설정 | 운영 스위치·앱 설정·환경변수 | `config/settings.ts` |
+
+- **모델**: 고른 모델만 호출한다(가벼운 대화·성인 모델 자동 선택 무시). 실패해도 다른 모델로 바꾸지 않고 오류 원인을 그대로 말풍선 자리에 보여 준다. 키가 없는 프로바이더는 목록에 "키 없음"으로 흐리게 표시.
+- **프롬프트 모드**: `주인님`(기본)은 대화 제한 해제. `서비스`는 일반 유저와 똑같은 규칙·호감도·사진 흐름으로 돌려, 모델·캐릭터·규칙 수정이 실제 서비스에서 어떻게 보일지 테스트한다.
+- **캐릭터/규칙 수정**: 칸을 고치고 바깥을 누르면 저장 → 다음 메시지부터 반영. 초록 `● 수정됨` 표시, `기본값` 버튼으로 되돌림, `JSON 복사`로 내보내기(→ 마음에 들면 `personas/<id>.json` · `config/rules.ts` 에 옮겨 서비스에 반영).
+- 이 편집값은 **이 기기 + 주인 인증된 요청**에만 적용된다. 일반 유저에게는 영향 없음. 서비스에 반영하려면 파일을 고쳐 `git push` (또는 나중에 CMS).
+- 🔒 **고정 규칙**(미성년자로 보이는 상대와는 연애·성적 대화 금지)은 규칙 탭에서 지울 수 없다 — `config/rules.ts` HARD_RULES.
+
+### Grok(xAI) 쓰기
+1. console.x.ai 에서 API 키 발급 → Vercel 환경변수 `XAI_API_KEY` 추가 → Redeploy
+2. 주인님 모드 → 🛠 → 모델 → **Grok 4.7** 선택 (최신 2026-09, 모델 ID `grok-4.7`). 다른 버전은 "직접 입력"에 `xai` + 모델 ID.
+3. 서비스에도 쓰려면: 성인 전용만 `AI_MODEL_MATURE=xai:grok-4.7` (프로바이더 접두사) · 전체는 `AI_PROVIDER=xai` (+ `AI_MODEL=grok-4.7`)
+
+### CMS 로 옮길 때
+- 항목 정의(`PERSONA_FIELDS`·`RULE_FIELDS`·`MODEL_CHOICES`·`SERVER_SETTINGS`)로 편집 폼을 자동 생성.
+- 저장은 `lib/overridesStore.ts` 의 `setPersistedOverrides({ personas, rules })` 에 DB 값을 넣으면 **모든 유저에게** 적용. 모델 목록은 `MODEL_CHOICES` 를 DB 로, 운영 스위치는 `setSettingOverrides()`.
+- 우선순위: 파일 기본값 < CMS 저장값 < 🛠 테스트값(주인만). 주인 테스트값 저장소만 `lib/ownerClient.ts`(localStorage) → 서버로 바꾸면 된다.
+
 ## 1. 💋 매혹 모드 수위 — `ALLURE_LEVEL`
 
 | 위치 | 값 |

@@ -50,7 +50,7 @@ export const SERVER_SETTINGS = [
   {
     key: "matureModel", label: "성인(매혹 모드) 전용 모델", group: "모델", type: "string",
     default: "", env: "AI_MODEL_MATURE", usedIn: "config/ai.ts resolveModel('mature')",
-    desc: "비우면 메인 모델. 매혹·설렘 모드를 켠 대화방의 텍스트 톡에만 쓰인다",
+    desc: "비우면 메인 모델. 매혹·설렘 모드를 켠 대화방의 텍스트 톡에만 쓰인다. 다른 프로바이더는 앞에 붙임: xai:grok-4.7 · google:gemini-3.8-flash",
   },
   {
     key: "premiumAccess", label: "유료 영상·매혹 모드 잠금", group: "이용 권한", type: "enum", options: ["open", "paid"],
@@ -87,10 +87,10 @@ export const SERVER_SETTINGS = [
 export type ServerSettingKey = (typeof SERVER_SETTINGS)[number]["key"];
 
 /** 비밀 환경변수 — 값은 절대 화면에 내보내지 않고 "있음/없음"만 */
-export const SECRET_ENV = ["AWS_BEDROCK_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "VOICE_DEV_PASS", "OWNER_CHEAT_PHRASE"] as const;
+export const SECRET_ENV = ["AWS_BEDROCK_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "XAI_API_KEY", "VOICE_DEV_PASS", "OWNER_CHEAT_PHRASE"] as const;
 
 /** 모델 관련 환경변수 (값을 보여 줘도 되는 것) */
-export const MODEL_ENV = ["AI_PROVIDER", "AI_MODEL", "AI_MODEL_LIGHT", "AI_CHEAP_MODEL", "BEDROCK_REGION", "GEMINI_IMAGE_MODEL", "GEMINI_TTS_MODEL"] as const;
+export const MODEL_ENV = ["AI_PROVIDER", "AI_MODEL", "AI_MODEL_LIGHT", "AI_CHEAP_MODEL", "BEDROCK_REGION", "XAI_BASE_URL", "GEMINI_IMAGE_MODEL", "GEMINI_TTS_MODEL"] as const;
 
 /**
  * CMS 덮어쓰기 자리. 나중에 DB 에서 읽은 값을 여기에 채운다 (지금은 비어 있음).

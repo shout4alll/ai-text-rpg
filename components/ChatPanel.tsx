@@ -270,6 +270,14 @@ export default function ChatPanel({
   const settledRoom = useRef<string | null>(null);
   const settleTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+  // 줄 수에 맞춰 입력칸 높이 자동 조절 (최대 약 4줄)
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 112)}px`;
+  }, [input]);
   const pickerRef = useRef<HTMLDivElement>(null);
   const [pickerFor, setPickerFor] = useState<number | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -622,7 +630,7 @@ export default function ChatPanel({
           </div>
         )}
         <form
-          className={`flex items-center gap-1.5 px-3 pt-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] ${S.form}`}
+          className={`flex items-end gap-1.5 px-3 pt-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] ${S.form}`}
           onSubmit={(e) => {
             e.preventDefault();
             setPaletteOpen(false);
@@ -666,14 +674,23 @@ export default function ChatPanel({
               />
             </>
           )}
-          <input
+          <textarea
+            ref={inputRef}
+            rows={1}
             value={input}
             onChange={(e) => onInputChange(e.target.value)}
             onFocus={() => setPaletteOpen(false)}
-            placeholder={attachment ? "사진·영상과 함께 보낼 말 (생략 가능)" : "메시지를 입력하세요"}
+            onKeyDown={(e) => {
+              // Enter = 전송 / Shift+Enter = 줄바꿈 (한글 조합 중 Enter 는 무시)
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                e.currentTarget.form?.requestSubmit();
+              }
+            }}
+            placeholder={attachment ? "사진·영상과 함께 보낼 말 (생략 가능)" : "메시지를 입력하세요 (Shift+Enter 줄바꿈)"}
             maxLength={1000}
             enterKeyHint="send"
-            className={`h-10 min-w-0 flex-1 px-4 text-base outline-none transition wide:text-[14.5px] ${S.input}`}
+            className={`max-h-28 min-h-10 min-w-0 flex-1 resize-none px-4 py-[9px] text-base leading-[22px] outline-none transition wide:text-[14.5px] ${S.input} !rounded-[1.25rem]`}
           />
           <button
             type="submit"

@@ -27,7 +27,7 @@ export interface ChatResponse {
   ownerToken?: string;
   ownerExit?: boolean;
   /** 🛠 주인님 모드에서만: 이번 턴에 쓰인 모델·경로 */
-  debug?: { model: string; label: string; tier: string; reason: string; allure: boolean; allureLevel: string; ms: number; fellBack: boolean };
+  debug?: { model: string; label: string; tier: string; reason: string; allure: boolean; allureLevel: string; ms: number; fellBack: boolean; promptMode: "owner" | "service"; overrides: string[]; tokens: { in: number; out: number; cache: number } };
 }
 
 export interface ChatMessage {

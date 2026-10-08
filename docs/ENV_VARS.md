@@ -14,6 +14,8 @@ Vercel 화면에는 변수 **이름만** 보이고 값은 가려져 있어서(�
 | `PREMIUM_ACCESS` | | ✅ | 배포 환경은 `paid` | `open` 이면 유료 영상·매혹 모드 잠금 해제 |
 | `VOICE_ACCESS` | | ✅ | `lib/voice/access.ts` 참고 | 보이스톡 이용 권한 |
 | `VOICE_MAX_MINUTES` | | ✅ | `lib/voice/access.ts` 참고 | 보이스톡 최대 분 |
+| `XAI_API_KEY` | 🔒 | | 없음 | xAI(Grok) 키 — console.x.ai 에서 발급. 🛠 모델 탭의 Grok 테스트·`AI_MODEL_MATURE=xai:grok-4.7` 에 필요 |
+| `XAI_BASE_URL` | | | `https://api.x.ai/v1` | (선택) Grok 주소. 미국 리전 `https://us.api.x.ai/v1` |
 | `GEMINI_LIVE_MODEL` | | ✅ | `gemini-3.8-live` | 보이스톡 모델 |
 
 Vercel 에 **없는** 변수는 모두 코드 기본값이 쓰입니다. 대화 모델은 `AI_MODEL` 이 없으니 `config/ai.ts` 의 값,

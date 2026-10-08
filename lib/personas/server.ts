@@ -47,6 +47,8 @@ if (!sharedParsed.success) {
 
 /** 모든 페르소나에 공통으로 붙는 규칙 (프롬프트용 문자열) */
 export const SHARED_RULES = sharedParsed.data.rules.map((r) => `- ${r}`).join("\n");
+/** 같은 규칙의 목록 형태 (🛠 규칙 탭 기본값) */
+export const SHARED_RULES_LIST: string[] = [...sharedParsed.data.rules];
 
 const BY_ID = new Map(FILES.map((p) => [p.id, p]));
 

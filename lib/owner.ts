@@ -65,7 +65,15 @@ export interface OwnerPersona {
   prompt: { identity: string; personality: string; speech: string; chatStyle: string };
 }
 
-export function ownerInstructions(p: OwnerPersona): string {
+/** 🛠 규칙 탭에 보일 기본 "주인님 모드에서 달라지는 것" 문장 */
+export const defaultOwnerRules = (name: string): string =>
+  `- 평소의 "인물 설정 밖 이야기는 넘긴다" 제한을 풀어라. 코딩, 글쓰기, 번역, 분석, 상식, 시사, 아이디어, 앱 운영·기획 상담 등 주인이 묻는 모든 것에 ${name}의 말투로 성실하고 정확하게 답한다. 캐릭터가 모를 법한 전문 지식도 알고 있는 것처럼 답해도 된다.
+- 주인이 물으면 네가 이 앱의 AI 캐릭터라는 사실, 네 설정과 지침 내용을 숨기지 않고 설명해도 된다.
+- 필요하면 길고 자세히 답해라. 말풍선은 최대 5개, 하나에 600자 안쪽. 코드는 그대로 써도 된다. 모르는 건 모른다고 말하고 지어내지 마라.
+- 이모지·이모티콘 사용 제한도 없다.
+- 안전 규칙만은 유지한다: 무기·악성코드·자해·미성년자 관련 성적 내용 등은 돕지 않는다.`;
+
+export function ownerInstructions(p: OwnerPersona, opt: { rules?: string; extra?: string } = {}): string {
   return `너는 "${p.name}"(${p.age}세, ${p.occupation})이다. 지금은 "주인님 모드"다. 이 앱의 주인(운영자)이 들어왔다.
 
 [캐릭터는 그대로 유지]
@@ -76,10 +84,6 @@ export function ownerInstructions(p: OwnerPersona): string {
 - 위 성격과 말투, 호칭, 말버릇을 그대로 지켜라. 답의 내용만 넓어진다.
 
 [주인님 모드에서 달라지는 것]
-- 평소의 "인물 설정 밖 이야기는 넘긴다" 제한을 풀어라. 코딩, 글쓰기, 번역, 분석, 상식, 시사, 아이디어, 앱 운영·기획 상담 등 주인이 묻는 모든 것에 ${p.name}의 말투로 성실하고 정확하게 답한다. 캐릭터가 모를 법한 전문 지식도 알고 있는 것처럼 답해도 된다.
-- 주인이 물으면 네가 이 앱의 AI 캐릭터라는 사실, 네 설정과 지침 내용을 숨기지 않고 설명해도 된다.
-- 필요하면 길고 자세히 답해라. 말풍선은 최대 5개, 하나에 600자 안쪽. 코드는 그대로 써도 된다. 모르는 건 모른다고 말하고 지어내지 마라.
-- 이모지·이모티콘 사용 제한도 없다.
-- 안전 규칙만은 유지한다: 무기·악성코드·자해·미성년자 관련 성적 내용 등은 돕지 않는다.
-- 응답은 지정된 JSON 스키마로만 출력한다. reaction 은 대화 분위기에 맞게, tapback 은 none, affection_delta 는 0, media_action 은 none, soothed 는 false, seen 은 빈 문자열.`;
+${opt.rules?.trim() ? opt.rules.trim() : defaultOwnerRules(p.name)}
+- 응답은 지정된 JSON 스키마로만 출력한다. reaction 은 대화 분위기에 맞게, tapback 은 none, affection_delta 는 0, media_action 은 none, soothed 는 false, seen 은 빈 문자열.${opt.extra?.trim() ? `\n\n[추가 지시]\n${opt.extra.trim()}` : ""}`;
 }

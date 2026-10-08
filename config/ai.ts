@@ -26,7 +26,7 @@ export type ProviderOptions = Record<string, Record<string, unknown>>;
 
 import { createAmazonBedrock } from "@ai-sdk/amazon-bedrock";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
-// import { createOpenAI } from "@ai-sdk/openai";       // OpenAI 사용 시 주석 해제
+import { createOpenAI } from "@ai-sdk/openai"; // xAI(Grok)는 OpenAI 호환 API 라 이 패키지로 연결한다
 // import { createAnthropic } from "@ai-sdk/anthropic"; // Anthropic 직접 API 사용 시 주석 해제
 
 /** ✅ 현재 사용 중인 프로바이더 */
@@ -153,6 +153,24 @@ const PROVIDERS = {
   },
 
   /* ------------------------------------------------------------------------ */
+  /*  xAI Grok  (대기 — AI_PROVIDER=xai 로 전환하거나, 주인님 모드 🛠 › 모델 에서 골라 테스트) */
+  /*    인증: XAI_API_KEY  (console.x.ai 에서 발급)                              */
+  /*    주소: 기본 https://api.x.ai/v1 (XAI_BASE_URL 로 바꾸기, 미국 리전: https://us.api.x.ai/v1) */
+  /*    모델 ID 는 docs.x.ai › Models 참고 (2026-10 기준 최신: grok-4.7)          */
+  /* ------------------------------------------------------------------------ */
+  xai: {
+    label: "xAI Grok",
+    model: "grok-4.7", // 최신 플래그십 (500k 컨텍스트)
+    create: (modelId) => {
+      const apiKey = process.env.XAI_API_KEY?.trim();
+      if (!apiKey) throw new Error("[config/ai] XAI_API_KEY 가 없습니다. Vercel 환경변수(또는 .env.local)에 XAI_API_KEY 를 추가하세요.");
+      return createOpenAI({ apiKey, baseURL: process.env.XAI_BASE_URL?.trim() || "https://api.x.ai/v1" }).chat(modelId);
+    },
+    lightModel: "grok-4.7",
+    cheapModel: "grok-4.7",
+  },
+
+  /* ------------------------------------------------------------------------ */
   /*  OpenAI  (비활성 — 쓰려면 위 import 와 함께 주석 해제)                       */
   /*    인증: OPENAI_API_KEY                                                    */
   /* ------------------------------------------------------------------------ */
@@ -224,6 +242,35 @@ export function describeModel(): {
  */
 export type ModelTier = "chat" | "light" | "cheap" | "mature";
 
+/** 모델 이름 앞에 "프로바이더:" 를 붙이면 그 프로바이더로 호출한다. 예) AI_MODEL_MATURE=xai:grok-4.7 */
+export function splitProviderPrefix(spec: string): { provider?: ProviderId; modelId: string } {
+  const m = /^([a-z]+):(.+)$/.exec(spec.trim());
+  if (m && isProviderId(m[1])) return { provider: m[1], modelId: m[2] };
+  return { modelId: spec.trim() };
+}
+
+function build(provider: ProviderId, modelId: string): ResolvedModel {
+  const entry: ProviderEntry = PROVIDERS[provider];
+  const id = provider === "bedrock" ? fixBedrockModelId(modelId) : modelId;
+  return { provider, label: entry.label, modelId: id, model: entry.create(id), providerOptions: entry.options?.(id) };
+}
+
+/** 🛠 주인님 모드: 프로바이더·모델 ID 를 직접 지정해 호출 (설정과 무관, 주인 토큰을 확인한 뒤에만 쓸 것) */
+export function resolveOverrideModel(provider: string, modelId: string): ResolvedModel {
+  if (!isProviderId(provider)) throw new Error(`알 수 없는 프로바이더: ${provider} (사용 가능: ${Object.keys(PROVIDERS).join(", ")})`);
+  return build(provider, modelId.trim());
+}
+
+/** 프로바이더별 인증 정보가 설정돼 있는지 (값은 내보내지 않음) */
+export function providerKeys(): Record<ProviderId, boolean> {
+  const has = (k: string) => !!process.env[k]?.trim();
+  return {
+    bedrock: has("AWS_BEDROCK_API_KEY") || has("AWS_BEARER_TOKEN_BEDROCK") || process.env.BEDROCK_USE_IAM === "true",
+    google: has("GOOGLE_GENERATIVE_AI_API_KEY"),
+    xai: has("XAI_API_KEY"),
+  };
+}
+
 export function resolveModel(purpose: ModelTier = "chat"): ResolvedModel {
   const requested = process.env.AI_PROVIDER?.trim() || ACTIVE_PROVIDER;
   if (!isProviderId(requested)) {
@@ -237,18 +284,18 @@ export function resolveModel(purpose: ModelTier = "chat"): ResolvedModel {
   // 프로바이더와 맞지 않는 모델 이름이면(예: google 인데 Claude 이름) 설정 파일 기본값으로
   if (requested === "google" && !/^gemini|^models\//.test(modelId)) modelId = entry.model;
   if (requested === "bedrock" && /^gemini/.test(modelId)) modelId = entry.model;
+  if (requested === "xai" && !/^grok/.test(modelId)) modelId = entry.model;
   const light = process.env.AI_MODEL_LIGHT?.trim() || entry.lightModel || modelId;
   if (purpose === "light") modelId = light;
   // 🔞 mature: 성인 확인을 마친 유저가 매혹(설렘) 모드를 켠 대화에만 쓰는 모델. 환경변수 AI_MODEL_MATURE 가 없으면 메인 모델.
-  //    예) Bedrock: AI_MODEL_MATURE=mistral.mistral-large-2407-v1:0  (docs/MODES.md 4번)
-  if (purpose === "mature") modelId = settingValue("matureModel") || modelId; // config/settings.ts matureModel
+  //    예) Bedrock: AI_MODEL_MATURE=mistral.mistral-large-2407-v1:0 · 다른 프로바이더: AI_MODEL_MATURE=xai:grok-4.7  (docs/MODES.md 4번)
+  if (purpose === "mature") {
+    const m = settingValue("matureModel");
+    if (m) {
+      const sp = splitProviderPrefix(m);
+      return build(sp.provider ?? requested, sp.modelId);
+    }
+  }
   if (purpose === "cheap") modelId = process.env.AI_CHEAP_MODEL?.trim() || entry.cheapModel || light;
-  if (requested === "bedrock") modelId = fixBedrockModelId(modelId);
-  return {
-    provider: requested,
-    label: entry.label,
-    modelId,
-    model: entry.create(modelId),
-    providerOptions: entry.options?.(modelId),
-  };
+  return build(requested, modelId);
 }

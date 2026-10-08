@@ -43,6 +43,7 @@ import { deleteMediaFor, deleteMediaKeys, getMedia, importFile, mediaUrl, UserMe
 import { DEMO_TOPUP, MEDIA_COST } from "@/config/media";
 import { GemBadge, GemShop } from "@/components/GemShop";
 import DevPanel from "@/components/DevPanel";
+import { buildOwnerOpts } from "@/lib/ownerClient";
 import { TYPING } from "@/config/typing";
 import { withTypo } from "@/lib/typos";
 import { returnChance } from "@/config/returnNudge";
@@ -906,7 +907,7 @@ export default function ChatApp({
           sulk: sulkSummary(sulkRef.current),
           memory: memoryRef.current?.facts ?? [],
           ...(kind === "return" && nudge ? { nudge } : {}),
-          ...(readOwnerToken() ? { ownerToken: readOwnerToken() } : {}),
+          ...(readOwnerToken() ? { ownerToken: readOwnerToken(), ownerOpts: buildOwnerOpts(pid) } : {}),
         }),
       }).then(async (res) => {
         if (!res.ok) {
@@ -1885,6 +1886,7 @@ export default function ChatApp({
         <div className="absolute left-[5.4rem] top-[calc(max(0.5rem,env(safe-area-inset-top))+3.5rem)] z-20">
           <DevPanel
             token={ownerTok}
+            personaId={persona.id}
             last={lastDebug}
             client={[
               { label: "주인님 모드", value: "켜짐 (해제: 주인님퇴장)" },
