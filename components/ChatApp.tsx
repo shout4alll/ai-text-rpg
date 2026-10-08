@@ -39,7 +39,7 @@ import { downloadBackup } from "@/lib/backup";
 import { ALLURE_STORAGE } from "@/config/allure";
 import { BALANCE, sulkLevelDef } from "@/config/balance";
 import { checkRelease, giftCost, sulkExpired, sulkStartLevel, sulkSummary, touchSulk, type SulkState } from "@/lib/sulk";
-import { deleteMediaFor, getMedia, importFile, mediaUrl, UserMediaError } from "@/lib/userMedia";
+import { deleteMediaFor, deleteMediaKeys, getMedia, importFile, mediaUrl, UserMediaError } from "@/lib/userMedia";
 import { DEMO_TOPUP, MEDIA_COST } from "@/config/media";
 import { GemBadge, GemShop } from "@/components/GemShop";
 import { returnChance } from "@/config/returnNudge";
@@ -347,6 +347,9 @@ export default function ChatApp({
   const [themeOpen, setThemeOpen] = useState(false);
   const [notifyOpen, setNotifyOpen] = useState(false);
   const [gemOpen, setGemOpen] = useState(false);
+  // 🗑 메시지 골라 지우기
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
   useEffect(() => {
     setKakaoMode(readStorage(KAKAO_KEY) === "1");
     const t = readStorage(THEME_KEY);
@@ -1159,6 +1162,31 @@ export default function ChatApp({
     return () => clearTimeout(t);
   }, [busy, personaId, requestReply]);
 
+  /* ── 🗑 메시지 삭제 (내 말·상대 말·사진·영상 골라서) ─────────────────────── */
+  const deletable = (m: ChatMessage) => m.kind !== "reaction" && m.kind !== "notice";
+  const toggleSelect = (id: number) =>
+    setSelected((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const exitSelect = () => {
+    setSelectMode(false);
+    setSelected(new Set());
+  };
+  useEffect(exitSelect, [personaId]);
+  const deleteSelected = () => {
+    if (selected.size === 0) return;
+    const gone = new Set(selected);
+    const keys = messages.flatMap((m) => (gone.has(m.id) && m.media?.localKey ? [m.media.localKey] : []));
+    // 지운 말풍선에 달린 마음 리액션도 같이 지운다
+    setMessages((prev) => prev.filter((m) => !gone.has(m.id) && !(m.kind === "reaction" && m.targetId !== undefined && gone.has(m.targetId))));
+    void deleteMediaKeys(keys);
+    exitSelect();
+    addNotice(`🗑 ${gone.size}개를 지웠어요`);
+  };
+
   const handleReact = useCallback(
     (targetId: number, heart: HeartReactionId) => {
       if (busy || !personaId) return;
@@ -1688,6 +1716,13 @@ export default function ChatApp({
           <MenuItem icon={<IconBackup className="h-[18px] w-[18px]" />} label="대화 기록 백업" data="backup" onClick={() => { setMenuOpen(false); setBackupOpen(true); }} />
           <MenuItem
             icon={<IconTrash className="h-[18px] w-[18px]" />}
+            label="메시지 골라서 삭제"
+            data="delete-select"
+            disabled={!hasConversation}
+            onClick={() => { setMenuOpen(false); setSelected(new Set()); setSelectMode(true); }}
+          />
+          <MenuItem
+            icon={<IconTrash className="h-[18px] w-[18px]" />}
             label="대화 초기화"
             data="reset"
             danger
@@ -1791,6 +1826,12 @@ export default function ChatApp({
       onInputChange={setInput}
       onSubmit={handleSubmit}
       onReact={handleReact}
+      selectMode={selectMode}
+      selected={selected}
+      onToggleSelect={toggleSelect}
+      onSelectAll={() => setSelected(new Set(messages.filter(deletable).map((m) => m.id)))}
+      onDeleteSelected={deleteSelected}
+      onCancelSelect={exitSelect}
       onAttach={(f) => setPendingFile(f)}
       uploading={uploading}
       attachment={pendingFile && pendingUrl ? { url: pendingUrl, isVideo: pendingFile.type.startsWith("video/"), name: pendingFile.name } : null}

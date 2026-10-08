@@ -52,6 +52,26 @@ interface ProviderEntry {
  *    메신저 답장에는 필요 없으므로 끈다. (5.5 처럼 끌 수 없는 모델은 가장 낮은 단계로)
  *  - 답장 형식(JSON)은 도구 호출 방식으로 받는다 (Sonnet 5 는 Bedrock 네이티브 structured output 미지원).
  */
+const bedrockRegion = () => process.env.BEDROCK_REGION?.trim() || process.env.AWS_REGION?.trim() || "us-east-1";
+
+/**
+ * 리전과 맞지 않는 교차 리전 접두사를 바로잡는다.
+ *  예) 서울 리전인데 "us.anthropic…" → "global.anthropic…" (us. 프로파일은 미국 리전에서만 호출 가능)
+ */
+export function fixBedrockModelId(modelId: string, region = bedrockRegion()): string {
+  const m = /^(us|eu|apac|jp|au|ca)\.(.+)$/.exec(modelId);
+  if (!m) return modelId;
+  const [, geo, rest] = m;
+  const ok =
+    (geo === "us" && region.startsWith("us-")) ||
+    (geo === "eu" && region.startsWith("eu-")) ||
+    (geo === "apac" && region.startsWith("ap-")) ||
+    (geo === "jp" && region === "ap-northeast-1") ||
+    (geo === "au" && region.startsWith("ap-southeast-")) ||
+    (geo === "ca" && region.startsWith("ca-"));
+  return ok ? modelId : `global.${rest}`;
+}
+
 function bedrockClaudeOptions(modelId: string): ProviderOptions | undefined {
   // Claude 가 아닌 모델(Nova 등)도 구조화 답장은 도구 방식으로 (가장 널리 지원)
   if (!/anthropic\.claude/.test(modelId)) return { bedrock: { structuredOutputMode: "jsonTool" } };
@@ -80,12 +100,12 @@ const PROVIDERS = {
   bedrock: {
     label: "Amazon Bedrock",
     // 아래 중 하나만 주석 해제 (또는 .env 의 AI_MODEL 로 덮어쓰기)
-    model: "us.anthropic.claude-sonnet-5", // ✅ Claude Sonnet 5 — 미국 교차 리전 추론 프로파일 (BEDROCK_REGION=us-east-1 등 미국 리전)
-    // model: "global.anthropic.claude-sonnet-5",            // Claude Sonnet 5 — 전 세계 교차 리전 (어느 리전에서나)
-    // model: "anthropic.claude-sonnet-5",                   // Claude Sonnet 5 — 서울 리전 직접 호출 (BEDROCK_REGION=ap-northeast-2)
-    // model: "us.anthropic.claude-sonnet-5-5",              // Claude Sonnet 5.5 (2026-09 출시, 생각 기능을 끌 수 없어 조금 느림)
-    // model: "us.anthropic.claude-haiku-4-5-20251001-v1:0", // Claude Haiku 4.5 — 빠르고 저렴
-    // model: "amazon.nova-lite-v1:0",                       // Amazon Nova Lite — 가장 저렴 (이전 기본값)
+    // global. = 전 세계 교차 리전 추론 프로파일 → 서울(ap-northeast-2)·미국 어느 리전에서 호출해도 된다.
+    // (이 계정 서울 리전 목록 기준, 2026-10)
+    model: "global.anthropic.claude-sonnet-5", // ✅ Claude Sonnet 5 — 메인
+    // model: "global.anthropic.claude-sonnet-5-5",          // Claude Sonnet 5.5 (생각 기능을 끌 수 없어 조금 느림)
+    // model: "global.anthropic.claude-opus-5",              // Claude Opus 5 — 더 똑똑, 비쌈
+    // model: "global.anthropic.claude-sonnet-4-6",          // Claude Sonnet 4.6 — 저렴한 대안
     create: (modelId) => {
       const apiKey = process.env.AWS_BEDROCK_API_KEY || process.env.AWS_BEARER_TOKEN_BEDROCK;
       const useIam = process.env.BEDROCK_USE_IAM === "true";
@@ -97,14 +117,17 @@ const PROVIDERS = {
       }
       return createAmazonBedrock({
         // Vercel 은 AWS_REGION 을 함수 실행 리전으로 자동 주입할 수 있어 전용 변수를 먼저 본다.
-        region: process.env.BEDROCK_REGION || process.env.AWS_REGION || "us-east-1",
+        region: bedrockRegion(),
         apiKey: useIam ? undefined : apiKey,
         baseURL: process.env.BEDROCK_BASE_URL || undefined, // (선택) 프록시/테스트용
       })(modelId);
     },
-    lightModel: "us.anthropic.claude-haiku-4-5-20251001-v1:0", // Claude Haiku 4.5 — 빠르고 저렴, 말투 유지 좋음
-    // lightModel: "us.amazon.nova-2-lite-v1:0",                // Amazon Nova 2 Lite — 더 저렴
-    cheapModel: "us.amazon.nova-2-lite-v1:0", // Amazon Nova 2 Lite — 기억 정리용
+    // ⚠️ Haiku 4.5 는 계정에서 "Anthropic 사용 사례 양식"을 제출해야 쓸 수 있다.
+    //    아직이면 자동으로 cheapModel(Nova 2 Lite) → 메인 순서로 넘어간다 (lib/modelRouter.ts runWithFallback)
+    lightModel: "global.anthropic.claude-haiku-4-5-20251001-v1:0", // Claude Haiku 4.5 — 빠르고 저렴, 말투 유지 좋음
+    // lightModel: "global.amazon.nova-2-lite-v1:0",                // Amazon Nova 2 Lite — 더 저렴
+    // lightModel: "apac.amazon.nova-micro-v1:0",                   // Amazon Nova Micro — 가장 저렴 (APAC)
+    cheapModel: "global.amazon.nova-2-lite-v1:0", // Amazon Nova 2 Lite — 기억 정리용
     options: bedrockClaudeOptions,
   },
 
@@ -182,14 +205,15 @@ export function describeModel(): {
   const entry: ProviderEntry | undefined = isProviderId(requested) ? PROVIDERS[requested] : undefined;
   const main = process.env.AI_MODEL?.trim() || entry?.model || "";
   const light = process.env.AI_MODEL_LIGHT?.trim() || entry?.lightModel || main;
+  const fix = (id: string) => (requested === "bedrock" ? fixBedrockModelId(id) : id);
   return {
     provider: requested,
     label: entry?.label ?? "(알 수 없음)",
-    modelId: main,
-    lightModelId: light,
-    cheapModelId: process.env.AI_CHEAP_MODEL?.trim() || entry?.cheapModel || light,
+    modelId: fix(main),
+    lightModelId: fix(light),
+    cheapModelId: fix(process.env.AI_CHEAP_MODEL?.trim() || entry?.cheapModel || light),
     routing: process.env.AI_ROUTING?.trim() !== "off",
-    ...(requested === "bedrock" ? { region: process.env.BEDROCK_REGION || process.env.AWS_REGION || "us-east-1" } : {}),
+    ...(requested === "bedrock" ? { region: bedrockRegion() } : {}),
   };
 }
 
@@ -197,7 +221,7 @@ export function describeModel(): {
  * 환경변수 > 설정 파일 순으로 프로바이더/모델을 결정해 모델 인스턴스를 만든다.
  * @param purpose "cheap" 이면 보조 작업용 저렴한 모델 (AI_CHEAP_MODEL > cheapModel)
  */
-export type ModelTier = "chat" | "light" | "cheap";
+export type ModelTier = "chat" | "light" | "cheap" | "mature";
 
 export function resolveModel(purpose: ModelTier = "chat"): ResolvedModel {
   const requested = process.env.AI_PROVIDER?.trim() || ACTIVE_PROVIDER;
@@ -214,7 +238,11 @@ export function resolveModel(purpose: ModelTier = "chat"): ResolvedModel {
   if (requested === "bedrock" && /^gemini/.test(modelId)) modelId = entry.model;
   const light = process.env.AI_MODEL_LIGHT?.trim() || entry.lightModel || modelId;
   if (purpose === "light") modelId = light;
+  // 🔞 mature: 성인 확인을 마친 유저가 매혹(설렘) 모드를 켠 대화에만 쓰는 모델. 환경변수 AI_MODEL_MATURE 가 없으면 메인 모델.
+  //    예) Bedrock: AI_MODEL_MATURE=mistral.mistral-large-2407-v1:0  (docs/MODES.md 4번)
+  if (purpose === "mature") modelId = process.env.AI_MODEL_MATURE?.trim() || modelId;
   if (purpose === "cheap") modelId = process.env.AI_CHEAP_MODEL?.trim() || entry.cheapModel || light;
+  if (requested === "bedrock") modelId = fixBedrockModelId(modelId);
   return {
     provider: requested,
     label: entry.label,

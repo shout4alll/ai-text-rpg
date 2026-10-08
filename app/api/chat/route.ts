@@ -615,7 +615,7 @@ export async function POST(request: Request) {
       ...(r.providerOptions ? { providerOptions: r.providerOptions as never } : {}),
     });
     // 가벼운 턴: lightModel → cheapModel → 메인 순서로 (권한 없는 모델은 자동으로 건너뜀)
-    const ran = await runWithFallback("/api/chat", route.tier === "light" ? ["light", "cheap", "chat"] : ["chat"], generate);
+    const ran = await runWithFallback("/api/chat", owner ? ["chat"] : allure && persona.allure ? ["mature", "chat"] : route.tier === "light" ? ["light", "cheap", "chat"] : ["chat"], generate);
     resolved = ran.resolved;
     const result = ran.result;
     const { output, usage } = result;

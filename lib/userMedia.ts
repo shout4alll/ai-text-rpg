@@ -101,6 +101,29 @@ export async function deleteMediaFor(personaId: string): Promise<void> {
   }
 }
 
+/** 고른 파일만 지운다 (메시지 삭제 시) */
+export async function deleteMediaKeys(keys: string[]): Promise<void> {
+  if (keys.length === 0) return;
+  try {
+    const db = await openDb();
+    await new Promise<void>((resolve, reject) => {
+      const t = db.transaction(STORE, "readwrite");
+      for (const k of keys) t.objectStore(STORE).delete(k);
+      t.oncomplete = () => resolve();
+      t.onerror = () => reject(t.error);
+    });
+  } catch {
+    /* 저장소 없음 */
+  }
+  for (const k of keys) {
+    const u = urlCache.get(k);
+    if (u) {
+      URL.revokeObjectURL(u);
+      urlCache.delete(k);
+    }
+  }
+}
+
 /** 화면 표시용 주소 (같은 파일은 한 번만 만든다) */
 const urlCache = new Map<string, string>();
 export async function mediaUrl(key: string): Promise<string | null> {

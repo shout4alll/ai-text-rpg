@@ -62,3 +62,17 @@
 | `config/balance.json` `cash.demoStart` | 새 사용자 시작 보석 (지금 30) |
 | `config/returnNudge.ts` `RETURN_CHANCE` | 대화방 재입장 시 먼저 말 걸 확률 |
 | `config/notifications.ts` | 선톡 알림 시간대(9~22시)·하루 횟수(3~4) |
+
+## 4. 🔞 성인 전용 모델 — `AI_MODEL_MATURE`
+
+| 위치 | 값 |
+| --- | --- |
+| 환경변수 | `AI_MODEL_MATURE=<모델 ID>` (현재 `AI_PROVIDER` 의 모델이어야 함. 예: Bedrock `mistral.mistral-large-2407-v1:0`) |
+| 코드 | `config/ai.ts` 의 `resolveModel("mature")`, 호출은 `app/api/chat/route.ts` |
+
+- 매혹(🌙)모드가 **켜진 대화방의 텍스트 톡**에만 이 모델이 쓰입니다. 19세 확인 + 모드 켬이 이미 전제입니다. 환경변수가 없거나 모델을 쓸 수 없으면 메인 모델로 자동 대체됩니다.
+- 모델을 바꿔도 **수위 문장은 그대로**입니다. 수위 문장은 `config/allure.ts` 의 `levelRules()` 한 곳이고, 그 위의 `ALLURE_LEVEL` 로 단계를 고릅니다.
+- 알아 둘 점
+  - 구조화 응답(JSON)을 못 지키는 모델은 답이 비거나 "…" 로 나올 수 있습니다. 모델을 바꾼 뒤 대화를 직접 확인하세요.
+  - 19세 확인은 지금 기기 안의 체크(누르면 통과)일 뿐이라 서버가 신뢰할 수 있는 증명이 아닙니다. 실제 서비스에서 성인 전용 모델을 쓰려면 서버에서 확인되는 본인인증이 필요합니다.
+  - 보이스톡은 이 모델을 쓰지 않습니다.

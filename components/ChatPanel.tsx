@@ -184,6 +184,13 @@ interface ChatPanelProps {
   typing: boolean;
   /** 답장을 기다리는 중 (전송·리액션 잠금) */
   busy: boolean;
+  /** 🗑 삭제할 메시지 고르기 */
+  selectMode?: boolean;
+  selected?: Set<number>;
+  onToggleSelect?: (id: number) => void;
+  onSelectAll?: () => void;
+  onDeleteSelected?: () => void;
+  onCancelSelect?: () => void;
   /** 보낼 사진·영상을 골라 둔 상태 (메시지를 더 쓰고 전송) */
   attachment?: { url: string; isVideo: boolean; name: string } | null;
   onClearAttachment?: () => void;
@@ -237,6 +244,12 @@ export default function ChatPanel({
   input,
   typing,
   busy,
+  selectMode,
+  selected,
+  onToggleSelect,
+  onSelectAll,
+  onDeleteSelected,
+  onCancelSelect,
   attachment,
   onClearAttachment,
   onInputChange,
@@ -260,6 +273,8 @@ export default function ChatPanel({
   const pickerRef = useRef<HTMLDivElement>(null);
   const [pickerFor, setPickerFor] = useState<number | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(false);
+  useEffect(() => { if (!selectMode) setConfirmDel(false); }, [selectMode]);
   /** 크게 보기 */
   const [viewer, setViewer] = useState<ChatMessage["media"] | null>(null);
 
@@ -358,6 +373,7 @@ export default function ChatPanel({
           onLoadedMetadataCapture={() => stick.current && toBottom(false)}
         >
           {bubbles.map((m, i) => {
+            const row = (() => {
             const prev = bubbles[i - 1];
             const next = bubbles[i + 1];
             const newDay = !prev || dayKey(prev.at) !== dayKey(m.at);
@@ -514,6 +530,21 @@ export default function ChatPanel({
                 </div>
               </div>
             );
+            })();
+            if (!selectMode || m.kind === "notice") return row;
+            const picked = selected?.has(m.id) ?? false;
+            return (
+              <div key={m.id} className={`relative rounded-xl ${picked ? "bg-brand-400/15" : ""}`} data-select-row={picked ? "on" : "off"}>
+                <span
+                  className={`absolute left-1 top-1/2 z-10 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full border-2 text-[11px] font-bold ${picked ? "border-brand-500 bg-brand-500 text-white" : "border-ink-mute/50 bg-white/70 text-transparent"}`}
+                  aria-hidden
+                >
+                  ✓
+                </span>
+                <div className="pointer-events-none pl-7">{row}</div>
+                <button type="button" className="absolute inset-0 z-20 cursor-pointer" aria-label={picked ? "선택 해제" : "선택"} aria-pressed={picked} data-select-toggle={m.id} onClick={() => onToggleSelect?.(m.id)} />
+              </div>
+            );
           })}
 
           {typing && (
@@ -551,7 +582,25 @@ export default function ChatPanel({
         </div>
       )}
 
-      <div className="pointer-events-auto relative">
+      {selectMode && (
+        <div className={`pointer-events-auto flex items-center gap-2 px-3 pt-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] ${S.form}`} data-select-bar>
+          {confirmDel ? (
+            <>
+              <span className="min-w-0 flex-1 truncate text-sm font-semibold text-ink">{selected?.size ?? 0}개를 지울까요? 되돌릴 수 없어요</span>
+              <button type="button" onClick={() => setConfirmDel(false)} className="h-10 rounded-full px-4 text-sm text-ink-soft">아니요</button>
+              <button type="button" onClick={() => { setConfirmDel(false); onDeleteSelected?.(); }} data-select-confirm className="h-10 rounded-full bg-red-500 px-4 text-sm font-semibold text-white">삭제</button>
+            </>
+          ) : (
+            <>
+              <button type="button" onClick={onCancelSelect} data-select-cancel className="h-10 rounded-full px-3 text-sm text-ink-soft">취소</button>
+              <button type="button" onClick={onSelectAll} data-select-all className="h-10 rounded-full px-3 text-sm text-ink-soft">전체</button>
+              <span className="min-w-0 flex-1 text-center text-sm font-semibold text-ink" data-select-count>{selected?.size ?? 0}개 선택</span>
+              <button type="button" disabled={!selected?.size} onClick={() => setConfirmDel(true)} data-select-delete className="h-10 rounded-full bg-red-500 px-4 text-sm font-semibold text-white disabled:opacity-40">삭제</button>
+            </>
+          )}
+        </div>
+      )}
+      <div className={`pointer-events-auto relative ${selectMode ? "hidden" : ""}`}>
         {paletteOpen && lastAiId !== null && (
           <div className="absolute bottom-full left-3 z-10 mb-2">
             <HeartPicker S={S} className="max-w-[19rem]" onPick={(h) => react(lastAiId, h)} />
