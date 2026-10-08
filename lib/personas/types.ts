@@ -44,6 +44,8 @@ export interface Persona {
   relationshipType: "romance" | "friendship";
   /** 첫 메시지 (LLM 호출 없이 바로 표시) */
   greeting: string;
+  /** 이 인물만의 호감도 난이도 (personas/<id>.json balance) */
+  balance?: { gainMultiplier?: number; lossMultiplier?: number; start?: number };
   /** 🔑 치트룸 (치트 코드를 친 운영자에게만 목록에 보인다) */
   cheatRoom?: boolean;
   accent: string;

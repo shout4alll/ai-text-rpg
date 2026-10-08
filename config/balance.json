@@ -216,6 +216,14 @@
     "heartChance": 0.8,
     "touchChance": 0.45
   },
+  "allureRouting": {
+    "_readme": "매혹·설렘 모드 대화의 모델 배분. 분위기가 달아오르면(config/spicy.ts moodWords) 성인 모델(AI_MODEL_MATURE·Grok)로 수위 끝선까지, 평이한 말은 메인(Sonnet)·가벼운 모델(Haiku). surprise = 가끔 먼저 선을 넘는 신선한 턴(관계 단계별 확률, 최근 N턴 안에 성인 모델이 답했으면 쉼)",
+    "enabled": true,
+    "heatToMature": true,
+    "lightInAllure": true,
+    "surpriseChanceByStage": [0.04, 0.08, 0.14, 0.2],
+    "surpriseCooldownTurns": 4
+  },
   "userMedia": {
     "maxImageSide": 1280,
     "modelImageSide": 768,

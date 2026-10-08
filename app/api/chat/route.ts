@@ -597,7 +597,27 @@ export async function POST(request: Request) {
     !!matureId && !ownerOpts?.model && !allureEff && last.kind === "text" && settingValue("moodRouting") === "on" &&
     (owner || (parsed.data.allureOk === true && !!persona.allure)) &&
     SPICY.moodWords.some((w) => last.content.includes(w));
-  const category = parsed.data.sulk || ownerAuth || sticky || moodHit ? null : poolCategory(last.kind, last.content);
+  // 🔥 매혹·설렘 모드 대화 배분 (balance.json allureRouting):
+  //   분위기가 달아오른 말(heat) → 성인 모델로 수위 끝선까지 / 가끔(surprise) 먼저 선을 넘는 신선한 턴 → 성인 모델
+  //   그 외 평이한 말 → 메인(Sonnet)·가벼운 모델(Haiku). 성인 모델이 없으면 기존처럼 메인 모델이 다 한다.
+  const AR = BALANCE.allureRouting;
+  const allureMode = allureEff && !!persona.allure;
+  const heatHit = allureMode && last.kind === "text" && SPICY.moodWords.some((w) => last.content.includes(w));
+  const aiSinceMature = (() => {
+    let n = 0;
+    for (let i = recent.length - 1; i >= 0; i--) {
+      if (recent[i].role === "assistant" && recent[i].mature) return n;
+      if (recent[i].role === "assistant") n++;
+    }
+    return Infinity;
+  })();
+  const surprise =
+    allureMode && AR.enabled && !!matureId && !ownerOpts?.model && !heatHit && !sticky && last.kind === "text" &&
+    aiSinceMature >= AR.surpriseCooldownTurns &&
+    Math.random() < AR.surpriseChanceByStage[Math.min(affectionStageIndex(affection, persona.relationshipType), AR.surpriseChanceByStage.length - 1)];
+  /** 이번 턴을 성인 모델로 보낼지 (매혹 모드 안에서) */
+  const allureHot = allureMode && (!AR.enabled || !matureId || sticky || (AR.heatToMature && heatHit) || surprise);
+  const category = parsed.data.sulk || ownerAuth || sticky || moodHit || allureHot ? null : poolCategory(last.kind, last.content);
   const pKey = category ? poolKey(persona.id, affectionStageIndex(affection, persona.relationshipType), category, allureEff) : "";
   if (category) {
     const lastAi = [...messages].reverse().find((m) => m.role === "assistant" && m.kind === "text")?.content;
@@ -699,11 +719,20 @@ export async function POST(request: Request) {
       if (ownerAuth) sentPreview = hist.slice(-12).map((t) => ({ role: t.role, text: t.content.replace(/\s+/g, " ").slice(0, 90) }));
       // Llama·Grok 등 (Bedrock 의 도구 강제 미지원): 구조화 출력 대신 글로 쓴 JSON 을 받아 읽는다
       const textJson = usesTextJson(r.provider, r.modelId);
+      // 🔥 매혹 모드에서 성인 모델이 맡은 턴: 수위를 끌어올리는 연출 지시 (수위의 끝선은 config/allure.ts 규칙 그대로)
+      const heatNote =
+        allureMode && matureId && r.modelId === matureId
+          ? surprise
+            ? `\n\n[이번 턴 연출 — 신선함] 지금까지의 흐름보다 한 걸음 더 대담하게, 먼저 선을 넘어 유저를 놀라게 해라. 매혹 모드 수위 규칙이 허락하는 끝선까지 가되 ${persona.name}의 성격과 말투로.`
+            : heatHit
+              ? `\n\n[이번 턴 연출 — 달아오름] 분위기가 뜨거워졌다. 유저의 흐름을 피하지 말고 받아서, 매혹 모드 수위 규칙이 허락하는 범위 끝까지 반응해라.`
+              : ""
+          : "";
       return generateText({
       model: r.model,
       instructions: {
         role: "system",
-        content: (owner ? ownerInstructions(persona, { rules: typeof rulesOv?.ownerRules === "string" ? rulesOv.ownerRules : persona.cheatRules, absolute: Array.isArray(rulesOv?.absolute) ? (rulesOv.absolute as string[]) : undefined, extra: personaExtra }) : buildStaticInstructions(persona, allureEff, { extra: personaExtra, rules: rulesOv })) + (textJson ? TEXT_JSON_GUIDE : ""),
+        content: (owner ? ownerInstructions(persona, { rules: typeof rulesOv?.ownerRules === "string" ? rulesOv.ownerRules : persona.cheatRules, absolute: Array.isArray(rulesOv?.absolute) ? (rulesOv.absolute as string[]) : undefined, extra: personaExtra }) : buildStaticInstructions(persona, allureEff, { extra: personaExtra, rules: rulesOv })) + heatNote + (textJson ? TEXT_JSON_GUIDE : ""),
         // Bedrock(Claude): 여기까지를 캐시 (Gemini 는 같은 앞부분을 자동으로 캐시)
         // (Claude·Nova 만 — Llama·Grok 등은 cachePoint 를 보내면 오류)
         ...(r.provider !== "bedrock" || supportsBedrockCache(r.modelId) ? { providerOptions: { bedrock: { cachePoint: { type: "default" as const } } } } : {}),
@@ -755,7 +784,7 @@ export async function POST(request: Request) {
       : await runWithFallback(
           "/api/chat",
           // 대화 내용에 따라: 매혹 모드·설렘 분위기 → 성인 모델(Grok 등) / 인사·맞장구 → 가벼운 모델(Haiku·Llama 등) / 그 외 → 메인(Sonnet)
-          (owner ? moodHit : (allureEff && persona.allure) || moodHit) ? ["mature", "chat"] : !owner && route.tier === "light" ? ["light", "cheap", "chat"] : ["chat"],
+          allureHot || moodHit ? ["mature", "chat"] : !owner && route.tier === "light" && (!allureMode || AR.lightInAllure) ? ["light", "cheap", "chat"] : ["chat"],
           generate,
           // 🔁 우회: 위 모델들이 모두 실패하면 우회 목록(성공률 높은 순)으로 이어서 답한다. 일반 대화방은 오류를 보이지 않는다.
           { extras: settingValue("serviceFallback") === "off" ? [] : resolveFallbacks() }
@@ -793,7 +822,9 @@ export async function POST(request: Request) {
     // 관계 단계별 난이도: 가까울수록 오르기 어렵고(gain↓) 상처는 더 크다(loss↑)
     const si = affectionStageIndex(affection, persona.relationshipType);
     const at = <T,>(a: T[]) => a[Math.min(si, a.length - 1)];
-    raw = raw > 0 ? raw * A.gainMultiplier * at(A.gainByStage) : raw * A.lossMultiplier * at(A.lossByStage);
+    // 인물별 난이도 (personas/<id>.json balance)
+    const PB = persona.balance ?? {};
+    raw = raw > 0 ? raw * A.gainMultiplier * (PB.gainMultiplier ?? 1) * at(A.gainByStage) : raw * A.lossMultiplier * (PB.lossMultiplier ?? 1) * at(A.lossByStage);
     if (raw > 0 && parsed.data.sulk) raw *= A.gainWhileSulking;
     if (raw > 0 && last.kind === "reaction") raw = Math.min(raw, A.heartReactionMaxGain);
     if (raw > 0 && last.kind === "user_media") raw = Math.min(raw, BALANCE.userMedia.affectionMaxGain);
@@ -834,7 +865,7 @@ export async function POST(request: Request) {
             debug: {
               model: resolved.modelId,
               label: resolved.label,
-              tier: forced ? "forced" : moodHit ? (owner ? "owner·mood" : "mood") : owner ? "owner" : allureEff && persona.allure ? "mature" : route.tier,
+              tier: forced ? "forced" : `${owner ? "owner" : ""}${allureMode ? `${owner ? "·" : ""}allure${surprise ? "·surprise" : heatHit ? "·heat" : allureHot ? "" : "·calm"}` : moodHit ? `${owner ? "·" : ""}mood` : owner ? "" : route.tier}` || "owner",
               reason: forced ? "model-override" : route.reason,
               promptMode: owner ? "owner" : "service",
               overrides: appliedOverrides,
@@ -851,7 +882,8 @@ export async function POST(request: Request) {
           }
         : {}),
       messages: bubbles,
-      ...((allureEff && persona.allure) || (moodHit && !!matureId && resolved?.modelId === matureId) ? { mature: true } : {}),
+      // 성인 모델이 쓴 답만 mature 로 표시 → 다음에 Sonnet 등이 답할 때 그 부분만 요약해서 넘긴다 (성인 모델이 없으면 매혹 모드 답 전부)
+      ...((allureMode && (!matureId || resolved?.modelId === matureId)) || ((moodHit || allureHot) && !!matureId && resolved?.modelId === matureId) ? { mature: true } : {}),
       reaction: output.reaction,
       // 마음 리액션에 마음으로 답하는 건 어색하므로 text 턴에만 허용
       tapback: last.kind === "text" && output.tapback !== "none" ? output.tapback : null,

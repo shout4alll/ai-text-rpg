@@ -10,3 +10,6 @@ npm-debug.log*
 
 # 📱 앱 빌드 (docs/MOBILE_APP.md)
 .mobile-stash
+
+# 🎬 영상 원본 (docs/VIDEO_PROMPTS.md)
+video-src/*/raw/

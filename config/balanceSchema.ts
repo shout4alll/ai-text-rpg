@@ -117,6 +117,14 @@ export const balanceSchema = z.object({
     teaserGapMs: ms,
   }),
   allure: z.object({ gapMs: ms, sameClipGapMs: ms, aiChance: chance, heartChance: chance, touchChance: chance }),
+  allureRouting: z.object({
+    _readme: z.string().optional(),
+    enabled: z.boolean(),
+    heatToMature: z.boolean(),
+    lightInAllure: z.boolean(),
+    surpriseChanceByStage: z.array(chance).min(1),
+    surpriseCooldownTurns: z.number().int().min(0).max(50),
+  }),
   userMedia: z.object({
     maxImageSide: z.number().int().min(256).max(4096),
     modelImageSide: z.number().int().min(256).max(2048),

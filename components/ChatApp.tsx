@@ -782,9 +782,10 @@ export default function ChatApp({
       } else {
         nextId.current = 0;
         msgs = [{ id: nextId.current++, role: "ai", kind: "text", text: p.greeting, at: Date.now(), local: true }];
-        setAffection(AFFECTION_START);
-        affectionRef.current = AFFECTION_START;
-        bestStage.current = affectionStageIndex(AFFECTION_START, p.relationshipType);
+        const start = p.balance?.start ?? AFFECTION_START; // 인물별 시작 호감도
+        setAffection(start);
+        affectionRef.current = start;
+        bestStage.current = affectionStageIndex(start, p.relationshipType);
       }
       // 삐짐 이어가기: 말로 삐진 것만, 시간이 지났으면 풀림
       if (sulkTimer.current) clearTimeout(sulkTimer.current);
