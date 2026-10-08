@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { generateText } from "ai";
-import { bedrockClaudeOptions, createBedrockModel, defaultBedrockModelId, fixBedrockModelId, lastBedrockRequest, resetBedrockRequest } from "@/config/ai";
+import { bedrockClaudeOptions, supportsBedrockCache, createBedrockModel, defaultBedrockModelId, fixBedrockModelId, lastBedrockRequest, resetBedrockRequest } from "@/config/ai";
 import { isOwnerToken } from "@/lib/owner";
 
 /**
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
     const r = await generateText({
       model,
       // 실제 대화와 같은 모양: 시스템 지침 + 캐시 지점 + 모델별 옵션
-      instructions: { role: "system", content: "한 단어로 짧게 인사해라.", providerOptions: { bedrock: { cachePoint: { type: "default" } } } },
+      instructions: { role: "system", content: "한 단어로 짧게 인사해라.", ...(supportsBedrockCache(modelId) ? { providerOptions: { bedrock: { cachePoint: { type: "default" as const } } } } : {}) },
       messages: [{ role: "user", content: "안녕" }],
       maxOutputTokens: 40,
       maxRetries: 0,

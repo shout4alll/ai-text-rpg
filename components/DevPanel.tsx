@@ -26,7 +26,7 @@ interface FullStatus {
   secrets: { name: string; set: boolean }[];
 }
 interface OwnerCfg {
-  models: { choices: { key: string; label: string; provider: string; modelId: string; note: string; hasKey: boolean }[]; providers: Record<string, boolean>; server: { provider: string; main: string; light: string; cheap: string } };
+  models: { choices: { key: string; label: string; provider: string; modelId: string; note: string; hasKey: boolean }[]; providers: Record<string, boolean>; server: { provider: string; main: string; light: string; cheap: string }; fallback?: { spec: string; provider: string; modelId: string; usable: boolean; ok: number; fail: number; rate: number }[]; fallbackOn?: boolean };
   persona: { id: string; name: string; hasAllure: boolean; fields: FieldDef[]; defaults: Record<string, OverrideValue | undefined> };
   rules: { fields: FieldDef[]; defaults: Record<string, OverrideValue | undefined>; hard: string[] };
 }
@@ -67,7 +67,10 @@ export default function DevPanel({
   const [data, setData] = useState<FullStatus | null>(null);
   const [cfg, setCfg] = useState<OwnerCfg | null>(null);
   const [err, setErr] = useState("");
+  // opts = 편집 중인 값(초안), saved = 실제로 적용된 값. 하단 [확인]을 눌러야 saved 가 되어 다음 메시지부터 적용된다
   const [opts, setOpts] = useState<StoredOwnerOpts>({ personas: {} });
+  const [saved, setSaved] = useState<StoredOwnerOpts>({ personas: {} });
+  const [appliedAt, setAppliedAt] = useState(0);
   const [ver, setVer] = useState(0);
   const [ui, setUi] = useState({ x: 8, y: 120, min: false, op: 0 });
   const boxRef = useRef<HTMLDivElement>(null);
@@ -106,7 +109,9 @@ export default function DevPanel({
     } catch {
       /* 무시 */
     }
-    setOpts(loadOwnerOpts());
+    const o = loadOwnerOpts();
+    setOpts(o);
+    setSaved(o);
   }, []);
   useEffect(() => {
     if (!open) return;
@@ -126,15 +131,24 @@ export default function DevPanel({
   };
   useEffect(() => {
     if (!open) return;
-    setOpts(loadOwnerOpts());
+    const o = loadOwnerOpts();
+    setOpts(o);
+    setSaved(o);
     void loadStatus();
     void loadCfg();
   }, [open, loadStatus, loadCfg]);
 
-  const commit = (next: StoredOwnerOpts) => {
-    saveOwnerOpts(next);
-    setOpts(next);
+  /** 편집 값을 초안에 반영 (아직 적용 전) */
+  const commit = (next: StoredOwnerOpts) => setOpts(next);
+  const dirty = JSON.stringify(opts) !== JSON.stringify(saved);
+  /** [확인] — 초안을 저장해 바로 적용 (다음 메시지부터) */
+  const apply = () => {
+    saveOwnerOpts(opts);
+    setSaved(opts);
+    setAppliedAt(Date.now());
+    setTimeout(() => setAppliedAt(0), 2200);
   };
+  const discard = () => setOpts(saved);
 
   const clamp = (x: number, y: number) => {
     const w = boxRef.current?.offsetWidth ?? 360;
@@ -158,7 +172,7 @@ export default function DevPanel({
   const personaOv = opts.personas[personaId] ?? {};
   const nPersona = Object.keys(personaOv).length;
   const nRules = Object.keys(opts.rules ?? {}).length;
-  const active = !!opts.model || opts.promptMode === "service" || nPersona > 0 || nRules > 0;
+  const active = !!saved.model || saved.promptMode === "service" || Object.keys(saved.personas[personaId] ?? {}).length > 0 || Object.keys(saved.rules ?? {}).length > 0;
 
   const setPersonaField = (def: FieldDef, text: string) => {
     const v = fromText(def, text);
@@ -211,7 +225,7 @@ export default function DevPanel({
             ref={boxRef}
             data-dev-panel
             style={{ left: ui.x, top: ui.y, opacity: OPACITY[ui.op] }}
-            className="fixed z-[80] w-[min(94vw,25rem)] rounded-2xl bg-slate-950 font-mono text-[12px] leading-relaxed text-slate-200 shadow-2xl ring-1 ring-amber-300/40"
+            className="fixed z-[80] w-[min(96vw,34rem)] rounded-2xl bg-slate-950 font-mono text-[12px] leading-relaxed text-slate-200 shadow-2xl ring-1 ring-amber-300/40"
           >
             {/* 끌어서 옮기는 손잡이 */}
             <div
@@ -247,7 +261,7 @@ export default function DevPanel({
                   <button type="button" onClick={() => { void loadStatus(); void loadCfg(); }} className="ml-auto shrink-0 rounded-full bg-slate-800 px-2.5 py-1" title="새로고침">↻</button>
                 </div>
 
-                <div className="max-h-[62dvh] overflow-y-auto p-2.5">
+                <div className="max-h-[66dvh] overflow-y-auto p-3">
                   {err && <p className="mb-2 text-red-400">⚠️ {err}</p>}
 
                   {tab === "status" && (
@@ -295,7 +309,19 @@ export default function DevPanel({
 
                   {tab === "model" && (
                     <>
-                      <p className="mb-2 text-[11px] text-slate-400">고르면 다음 메시지부터 이 모델만 사용 (가벼운 대화·성인 라우팅 무시, 실패해도 대체하지 않고 오류를 보여 줌). 이 기기 · 주인님 모드에서만.</p>
+                      <p className="mb-2 text-[11px] text-slate-400">모델을 고르고 맨 아래 [확인]을 누르면 다음 메시지부터 이 모델만 사용 (가벼운 대화·성인 라우팅 무시, 실패해도 대체하지 않고 오류를 그대로 보여 줌). ‘자동’이면 서비스와 같은 순서로 시도하고, 실패 시 아래 우회 목록으로 넘어가며 그 경과를 대화창에 보여 줍니다. 이 기기 · 주인님 모드에서만.</p>
+                      {cfg?.models.fallback && (
+                        <Section title={`🔁 우회 목록 (서비스 대화방) — ${cfg.models.fallbackOn === false ? "꺼짐" : "켜짐"}`}>
+                          {cfg.models.fallback.length === 0 && <p className="text-slate-500">우회 모델 없음</p>}
+                          {cfg.models.fallback.map((f, i) => (
+                            <div key={f.spec} className={`flex items-center justify-between gap-2 border-b border-slate-800 py-1 last:border-0 ${f.usable ? "" : "opacity-40"}`}>
+                              <span className="min-w-0 truncate"><b className="text-amber-300">{i + 1}</b> {f.provider}/{f.modelId}</span>
+                              <span className="shrink-0 text-[10px] text-slate-400">{f.usable ? `성공 ${f.ok} · 실패 ${f.fail} · ${f.rate}%` : "키 없음"}</span>
+                            </div>
+                          ))}
+                          <p className="mt-1 text-[10px] text-slate-500">성공률이 높은 모델이 앞으로 옵니다. 순서·목록은 환경변수 AI_FALLBACK_MODELS, 끄기 SERVICE_FALLBACK=off.</p>
+                        </Section>
+                      )}
                       <Section title="프롬프트">
                         <div className="flex gap-1">
                           {([["owner", "주인님 (제한 해제)"], ["service", "서비스 (유저와 동일)"]] as const).map(([k, l]) => (
@@ -344,7 +370,7 @@ export default function DevPanel({
                             {["xai", "bedrock", "google"].map((p) => (<option key={p}>{p}</option>))}
                           </select>
                           <input value={custom.modelId} onChange={(e) => setCustom({ ...custom, modelId: e.target.value })} placeholder="모델 ID (예: grok-4.6)" className="min-w-0 flex-1 rounded bg-slate-800 px-2 py-1 text-base outline-none sm:text-[12px]" />
-                          <button type="button" disabled={!custom.modelId.trim()} onClick={() => commit({ ...opts, model: { provider: custom.provider, modelId: custom.modelId.trim() } })} className="rounded bg-amber-300 px-2 py-1 font-bold text-slate-900 disabled:opacity-40">적용</button>
+                          <button type="button" disabled={!custom.modelId.trim()} onClick={() => commit({ ...opts, model: { provider: custom.provider, modelId: custom.modelId.trim() } })} className="rounded bg-amber-300 px-2 py-1 font-bold text-slate-900 disabled:opacity-40">담기</button>
                         </div>
                         {curModel && !choiceOf && <p className="mt-1 text-[10px] text-emerald-300">지금: {curModel.provider} · {curModel.modelId}</p>}
                       </Section>
@@ -461,6 +487,16 @@ export default function DevPanel({
                     </>
                   )}
                 </div>
+
+                {(tab === "model" || tab === "persona" || tab === "rules") && (
+                  <div className="sticky bottom-0 flex items-center gap-2 rounded-b-2xl border-t border-slate-700 bg-slate-950/95 px-3 py-2" data-dev-applybar>
+                    <span className="min-w-0 flex-1 truncate text-[11px] text-slate-400" data-dev-apply-state>
+                      {appliedAt ? <b className="text-emerald-300">✓ 적용됨 — 다음 메시지부터</b> : dirty ? <b className="text-amber-300">● 수정됨 — 확인을 눌러야 적용돼요</b> : "수정 사항 없음"}
+                    </span>
+                    <button type="button" disabled={!dirty} onClick={discard} className="rounded bg-slate-800 px-2.5 py-1.5 disabled:opacity-40" data-dev-discard>되돌리기</button>
+                    <button type="button" disabled={!dirty} onClick={apply} className="rounded bg-amber-300 px-4 py-1.5 font-bold text-slate-900 disabled:opacity-40" data-dev-apply>확인</button>
+                  </div>
+                )}
               </>
             )}
           </div>,

@@ -122,43 +122,85 @@ const shortMsg = (err: unknown) => {
   return `${e?.statusCode ?? ""} ${(e?.message ?? String(err)).slice(0, 160)}`.trim();
 };
 
+/** 모델별 성공·실패 횟수 (서버 메모리) — 우회 순서를 "성공률 높은 순"으로 정하는 데 쓴다 */
+const stats = new Map<string, { ok: number; fail: number }>();
+const rate = (id: string) => {
+  const s = stats.get(id) ?? { ok: 0, fail: 0 };
+  return (s.ok + 1) / (s.ok + s.fail + 2); // 기록이 없으면 0.5, 성공이 쌓일수록 1 에 가깝다
+};
+const record = (id: string, ok: boolean) => {
+  const s = stats.get(id) ?? { ok: 0, fail: 0 };
+  if (ok) s.ok += 1;
+  else s.fail += 1;
+  // 최근 일을 더 반영 (오래된 기록은 반으로)
+  if (s.ok + s.fail > 60) {
+    s.ok = Math.round(s.ok / 2);
+    s.fail = Math.round(s.fail / 2);
+  }
+  stats.set(id, s);
+};
+/** 🛠 표시용: 모델별 성공/실패 */
+export const modelStats = () => [...stats.entries()].map(([id, v]) => ({ id, ok: v.ok, fail: v.fail, rate: Math.round(rate(id) * 100) }));
+
+export interface Attempt {
+  provider: string;
+  model: string;
+  ok: boolean;
+  ms: number;
+  /** 실패 사유 (짧게) */
+  error?: string;
+}
+
 /**
- * tiers 순서대로 모델을 시도한다. 권한 문제로 실패한 모델은 15분 동안 건너뛴다
- * (매 턴 실패 호출로 시간·비용을 버리지 않도록). 마지막 모델의 오류는 그대로 던진다.
+ * tiers 순서대로 모델을 시도하고, 모두 실패하면 extras(우회 모델)를 "성공률 높은 순"으로 이어서 시도한다.
+ * 권한 문제로 실패한 모델은 15분 동안 건너뛴다. 모든 시도는 attempts 로 돌려준다 (🛠 에서 확인).
+ * 마지막 모델의 오류는 그대로 던지고, 던진 오류에도 attempts 가 붙는다.
  */
 export async function runWithFallback<T>(
   tag: string,
   tiers: ModelTier[],
-  run: (r: ReturnType<typeof resolveModel>) => Promise<T>
-): Promise<{ result: T; resolved: ReturnType<typeof resolveModel>; fellBack: boolean }> {
+  run: (r: ReturnType<typeof resolveModel>, attemptNo: number) => Promise<T>,
+  opts: { extras?: ReturnType<typeof resolveModel>[] } = {}
+): Promise<{ result: T; resolved: ReturnType<typeof resolveModel>; fellBack: boolean; attempts: Attempt[] }> {
   const seen = new Set<string>();
   // 모델 준비 중 오류(예: 성인 모델용 프로바이더의 API 키가 없음)는 그 모델만 건너뛰고 다음 모델로 넘어간다
   let initErr: unknown;
   let skipped = false;
-  const candidates = tiers
-    .flatMap((t) => {
-      try {
-        return [resolveModel(t)];
-      } catch (err) {
-        initErr = err;
-        skipped = true;
-        console.warn(`[${tag}] ⚠️ ${t} 모델을 준비하지 못해 건너뜀: ${shortMsg(err)}`);
-        return [];
-      }
-    })
-    .filter((r) => (seen.has(r.modelId) ? false : (seen.add(r.modelId), true)));
+  const primary = tiers.flatMap((t) => {
+    try {
+      return [resolveModel(t)];
+    } catch (err) {
+      initErr = err;
+      skipped = true;
+      console.warn(`[${tag}] ⚠️ ${t} 모델을 준비하지 못해 건너뜀: ${shortMsg(err)}`);
+      return [];
+    }
+  });
+  // 우회 모델: 성공률 높은 순 (동률이면 설정한 순서 유지)
+  const extras = [...(opts.extras ?? [])].map((r, i) => ({ r, i })).sort((a, b) => rate(b.r.modelId) - rate(a.r.modelId) || a.i - b.i).map((x) => x.r);
+  const candidates = [...primary, ...extras].filter((r) => (seen.has(r.modelId) ? false : (seen.add(r.modelId), true)));
   if (candidates.length === 0) throw initErr ?? new Error("사용할 수 있는 모델이 없습니다");
   const now = Date.now();
   const usable = candidates.filter((r) => (downUntil.get(r.modelId) ?? 0) <= now);
   const list = usable.length ? usable : candidates.slice(-1);
+  const attempts: Attempt[] = [];
   let lastErr: unknown;
   for (let i = 0; i < list.length; i++) {
     const r = list[i];
+    const t0 = Date.now();
     try {
-      return { result: await run(r), resolved: r, fellBack: skipped || r !== candidates[0] };
+      const result = await run(r, i);
+      record(r.modelId, true);
+      attempts.push({ provider: r.provider, model: r.modelId, ok: true, ms: Date.now() - t0 });
+      return { result, resolved: r, fellBack: skipped || r !== candidates[0], attempts };
     } catch (err) {
       lastErr = err;
-      if (i === list.length - 1) throw err;
+      record(r.modelId, false);
+      attempts.push({ provider: r.provider, model: r.modelId, ok: false, ms: Date.now() - t0, error: shortMsg(err) });
+      if (i === list.length - 1) {
+        if (err && typeof err === "object") (err as { attempts?: Attempt[] }).attempts = attempts;
+        throw err;
+      }
       if (isAccessError(err)) {
         downUntil.set(r.modelId, Date.now() + DOWN_MS);
         console.warn(

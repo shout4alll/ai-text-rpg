@@ -965,7 +965,7 @@ export default function ChatApp({
         if (rec) lastMedia.images = rec.frames;
       }
       const sendTurns = turns.map(({ localKey: _k, ...t }) => t);
-      const req = fetch(apiUrl("/api/chat"), {
+      const attemptOnce = (): Promise<ChatResponse> => fetch(apiUrl("/api/chat"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -984,10 +984,25 @@ export default function ChatApp({
       }).then(async (res) => {
         if (!res.ok) {
           const err = (await res.json().catch(() => null)) as { error?: string } | null;
-          throw new Error(err?.error ?? `HTTP ${res.status}`);
+          throw Object.assign(new Error(err?.error ?? `HTTP ${res.status}`), { status: res.status });
         }
         return (await res.json()) as ChatResponse;
       });
+      // 일반 대화방: 서버가 다른 모델로 우회해도 안 될 때는 손님에게 오류를 보이지 않고 조용히 다시 시도한다 (입력 중 표시 유지).
+      // 🔑 주인(치트) 모드에서는 원인을 그대로 보여 주려고 재시도 없이 바로 오류를 낸다.
+      const req: Promise<ChatResponse> = (async () => {
+        const waits = readOwnerToken() ? [] : [2500, 5000];
+        for (let n = 0; ; n++) {
+          try {
+            return await attemptOnce();
+          } catch (e) {
+            const status = (e as { status?: number }).status;
+            const retryable = status === undefined || status >= 500;
+            if (n >= waits.length || !retryable) throw e;
+            await sleep(waits[n]);
+          }
+        }
+      })();
       // 읽음 표시 대기 중에 응답이 실패해도 "처리되지 않은 오류" 창이 뜨지 않게 (오류는 아래 try/catch 에서 대화창에 ⚠️ 로 표시)
       req.catch(() => {});
 
@@ -1016,6 +1031,11 @@ export default function ChatApp({
           setLastDebug(null);
         }
         if (data.debug) setLastDebug(data.debug);
+        // 🔑 주인 모드: 모델이 실패해 다른 모델로 우회했으면 그 경과를 대화창에 그대로 보여 준다 (테스트용 · 대화 기록에는 안 들어감)
+        if (data.debug?.attempts?.some((a) => !a.ok) && same()) {
+          const trace = data.debug.attempts.map((a) => `${a.ok ? "✅" : "✕"} ${a.provider}/${a.model} ${a.ms}ms${a.ok ? "" : ` (${(a.error ?? "").slice(0, 100)})`}`).join("\n↪ ");
+          setMessages((prev) => [...prev, { id: nextId.current++, role: "ai", kind: "text", text: `⚠️ 모델 우회 경과\n${trace}`, at: Date.now(), local: true }]);
+        }
 
         // 그사이 다른 대화방으로 옮겼으면: 원래 대화방 저장소에 답장을 기록해 둔다
         if (!same()) {
@@ -1140,7 +1160,10 @@ export default function ChatApp({
         if (!same()) return;
         console.warn("[chat]", err); // 개발 서버에서 빨간 오류창이 뜨지 않게 warn (오류 내용은 대화창에 ⚠️ 로 표시됨)
         markRead();
-        const text = `⚠️ ${err instanceof Error ? err.message : "답장을 받지 못했어요. 다시 보내 주세요."}`;
+        // 일반 대화방은 기술적인 오류 문구 대신 부드러운 안내만 (주인 모드는 원인 그대로)
+        const text = readOwnerToken()
+          ? `⚠️ ${err instanceof Error ? err.message : "답장을 받지 못했어요. 다시 보내 주세요."}`
+          : `⚠️ ${persona?.name ?? "상대"}의 답장이 잠시 늦어지고 있어요. 잠시 후 다시 보내 주세요.`;
         setMessages((prev) => [...prev, { id: nextId.current++, role: "ai", kind: "text", text, at: Date.now(), local: true }]);
       } finally {
         if (same()) {

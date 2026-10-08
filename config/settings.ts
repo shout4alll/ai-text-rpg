@@ -53,6 +53,16 @@ export const SERVER_SETTINGS = [
     desc: "비우면 메인 모델. 매혹·설렘 모드를 켠 대화방의 텍스트 톡에만 쓰인다. 다른 프로바이더는 앞에 붙임: xai:grok-4.7 · google:gemini-3.8-flash",
   },
   {
+    key: "serviceFallback", label: "일반 대화방 모델 우회", group: "모델", type: "enum", options: ["on", "off"],
+    default: "on", env: "SERVICE_FALLBACK", usedIn: "app/api/chat/route.ts · lib/modelRouter.ts",
+    desc: "on=모델이 실패·지연되면 손님에게 오류를 보이지 않고 다른 모델(우회 목록)로 이어서 답함 / off=기존처럼 해당 모델만 시도",
+  },
+  {
+    key: "fallbackModels", label: "우회 모델 목록", group: "모델", type: "string",
+    default: "", env: "AI_FALLBACK_MODELS", usedIn: "config/ai.ts fallbackSpecs()",
+    desc: "비우면 기본 순서(Sonnet 5.5 → Haiku → GPT(Bedrock gpt-oss) → GPT(OpenAI) → Gemini → Nova). 쉼표로 구분, 앞에 프로바이더: 를 붙일 수 있음. off=우회 없음. 성공률이 높았던 모델이 자동으로 앞으로 옴",
+  },
+  {
     key: "historySanitize", label: "성인 대화 구간 정화 (다른 모델 전달용)", group: "수위·모드", type: "enum", options: ["on", "off"],
     default: "on", env: "HISTORY_SANITIZE", usedIn: "lib/historySanitizer.ts · app/api/chat/route.ts",
     desc: "on=성인 전용 모델이 따로 있을 때, 매혹 모드 대화는 화면·저장에는 그대로 두고 다른 모델(Claude 등)에게는 원문 대신 '친밀한 대화를 나눴다' 요약만 전달 / off=원문 그대로 전달",
@@ -97,7 +107,7 @@ export const SERVER_SETTINGS = [
 export type ServerSettingKey = (typeof SERVER_SETTINGS)[number]["key"];
 
 /** 비밀 환경변수 — 값은 절대 화면에 내보내지 않고 "있음/없음"만 */
-export const SECRET_ENV = ["AWS_BEDROCK_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "XAI_API_KEY", "VOICE_DEV_PASS", "OWNER_CHEAT_PHRASE"] as const;
+export const SECRET_ENV = ["AWS_BEDROCK_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "XAI_API_KEY", "OPENAI_API_KEY", "VOICE_DEV_PASS", "OWNER_CHEAT_PHRASE"] as const;
 
 /** 모델 관련 환경변수 (값을 보여 줘도 되는 것) */
 export const MODEL_ENV = ["AI_PROVIDER", "AI_MODEL", "AI_MODEL_LIGHT", "AI_CHEAP_MODEL", "BEDROCK_REGION", "XAI_BASE_URL", "GEMINI_IMAGE_MODEL", "GEMINI_TTS_MODEL"] as const;

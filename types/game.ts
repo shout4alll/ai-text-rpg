@@ -29,7 +29,7 @@ export interface ChatResponse {
   /** 이번 답장이 매혹 모드(성인 대화)로 만들어졌다 — 앱이 메시지에 표시를 붙여 다른 모델에게는 요약만 보낸다 */
   mature?: boolean;
   /** 🛠 주인님 모드에서만: 이번 턴에 쓰인 모델·경로 */
-  debug?: { model: string; label: string; tier: string; reason: string; allure: boolean; allureLevel: string; ms: number; fellBack: boolean; promptMode: "owner" | "service"; sticky: boolean; sanitized: number; sent: { role: string; text: string }[]; overrides: string[]; tokens: { in: number; out: number; cache: number } };
+  debug?: { model: string; label: string; tier: string; reason: string; allure: boolean; allureLevel: string; ms: number; fellBack: boolean; attempts: { provider: string; model: string; ok: boolean; ms: number; error?: string }[]; promptMode: "owner" | "service"; sticky: boolean; sanitized: number; sent: { role: string; text: string }[]; overrides: string[]; tokens: { in: number; out: number; cache: number } };
 }
 
 export interface ChatMessage {

@@ -15,7 +15,7 @@ import {
 import type { AlbumItem, MediaDirective } from "@/config/media";
 import { allureInstructions } from "@/config/allure";
 import type { PersonaFile } from "@/lib/personas/schema";
-import { resolveModel, resolveOverrideModel, matureModelId } from "@/config/ai";
+import { resolveModel, resolveOverrideModel, resolveFallbacks, matureModelId, supportsBedrockCache } from "@/config/ai";
 import { sanitizeHistory, stickyMature } from "@/lib/historySanitizer";
 import { SAFETY_RULES, MINOR_GUARD, absoluteRules } from "@/config/rules";
 import { PERSONA_FIELDS, RULE_FIELDS, applyPersonaOverride, mergeOverride, type OwnerOpts, type RulesOverride } from "@/lib/ownerOverrides";
@@ -37,7 +37,7 @@ import {
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 30; // Vercel 함수 최대 실행 시간(초)
+export const maxDuration = 60; // Vercel 함수 최대 실행 시간(초)
 
 /* 모델 선택: config/ai.ts 에서 프로바이더/모델을 관리한다. (AI_PROVIDER / AI_MODEL 로 덮어쓰기 가능) */
 
@@ -665,7 +665,14 @@ export async function POST(request: Request) {
     let sentPreview: { role: string; text: string }[] = [];
     const contextFor = (h: typeof history, ctx: string) =>
       owner ? h : h.map((t, i) => (i === h.length - 1 && t.role === "user" ? { ...t, content: `${ctx}\n\n[유저]\n${t.content}` } : t));
-    const generate = (r: NonNullable<typeof resolved>) => {
+    // 시도마다 시간 제한: 느리거나 멈춘 모델에서 오래 기다리지 않고 다음 모델로 넘어간다 (전체 56초 안에서)
+    const attemptSignal = (attemptNo: number): AbortSignal | undefined => {
+      if (ownerOpts?.model) return undefined; // 🛠 로 모델을 직접 골랐으면 끝까지 기다린다
+      const left = 56_000 - (Date.now() - startedAt);
+      if (left < 3_000) throw new Error("응답 시간 초과 (우회할 시간이 남지 않음)");
+      return AbortSignal.timeout(Math.min(attemptNo === 0 ? 20_000 : 16_000, left - 1_000));
+    };
+    const generate = (r: NonNullable<typeof resolved>, attemptNo = 0) => {
       // 성인 전용 모델이 아닌 모델(메인·가벼운·대체)에는 정화한 대화를 보낸다
       usedSafe = !!historySafe && r.modelId !== matureId;
       const hist = usedSafe ? historySafe! : history;
@@ -677,7 +684,8 @@ export async function POST(request: Request) {
         role: "system",
         content: owner ? ownerInstructions(persona, { rules: typeof rulesOv?.ownerRules === "string" ? rulesOv.ownerRules : persona.cheatRules, absolute: Array.isArray(rulesOv?.absolute) ? (rulesOv.absolute as string[]) : undefined, extra: personaExtra }) : buildStaticInstructions(persona, allureEff, { extra: personaExtra, rules: rulesOv }),
         // Bedrock(Claude): 여기까지를 캐시 (Gemini 는 같은 앞부분을 자동으로 캐시)
-        providerOptions: { bedrock: { cachePoint: { type: "default" } } },
+        // (Claude·Nova 만 — Llama·Grok 등은 cachePoint 를 보내면 오류)
+        ...(r.provider !== "bedrock" || supportsBedrockCache(r.modelId) ? { providerOptions: { bedrock: { cachePoint: { type: "default" as const } } } } : {}),
       },
       messages: toSdkMessages(withContext),
       output: Output.object({
@@ -689,7 +697,8 @@ export async function POST(request: Request) {
       temperature: /claude-(sonnet|opus|fable|mythos)-5/.test(r.modelId) ? undefined : persona.prompt.temperature ?? 1.0,
       // Grok 같은 추론 모델은 "생각"도 출력 한도에 포함되므로 넉넉히
       maxOutputTokens: Math.max(owner ? 2500 : BALANCE.cost.maxOutputTokens, r.provider === "xai" || /xai\.grok/.test(r.modelId) ? 4000 : 0),
-      maxRetries: 1,
+      maxRetries: attemptNo === 0 && !ownerOpts?.model ? 0 : 1,
+      abortSignal: attemptSignal(attemptNo),
       ...(r.providerOptions ? { providerOptions: r.providerOptions as never } : {}),
     });
     };
@@ -698,7 +707,13 @@ export async function POST(request: Request) {
     const forced = ownerOpts?.model ? resolveOverrideModel(ownerOpts.model.provider, ownerOpts.model.modelId) : null;
     const ran = forced
       ? { result: await generate(forced), resolved: forced, fellBack: false }
-      : await runWithFallback("/api/chat", owner ? (persona.cheatRoom ? ["mature", "chat"] : ["chat"]) : allureEff && persona.allure ? ["mature", "chat"] : route.tier === "light" ? ["light", "cheap", "chat"] : ["chat"], generate);
+      : await runWithFallback(
+          "/api/chat",
+          owner ? (persona.cheatRoom ? ["mature", "chat"] : ["chat"]) : allureEff && persona.allure ? ["mature", "chat"] : route.tier === "light" ? ["light", "cheap", "chat"] : ["chat"],
+          generate,
+          // 🔁 우회: 위 모델들이 모두 실패하면 우회 목록(성공률 높은 순)으로 이어서 답한다. 일반 대화방은 오류를 보이지 않는다.
+          { extras: settingValue("serviceFallback") === "off" ? [] : resolveFallbacks() }
+        );
     resolved = ran.resolved;
     const result = ran.result;
     const { output, usage } = result;
@@ -785,6 +800,7 @@ export async function POST(request: Request) {
               allureLevel: settingValue("allureLevel"),
               ms: Date.now() - startedAt,
               fellBack: ran.fellBack,
+              attempts: "attempts" in ran ? ran.attempts : [],
             },
           }
         : {}),
@@ -809,7 +825,9 @@ export async function POST(request: Request) {
     const where = resolved ? `${resolved.label} / ${resolved.modelId}` : "model init";
     console.error(`[/api/chat] LLM error (${where}):`, error);
     // 주인 인증 상태에서는 원인을 그대로 보여 준다 (모델 테스트용)
-    const detail = ownerAuth ? `⚠️ ${ownerOpts?.model ? `${ownerOpts.model.provider}/${ownerOpts.model.modelId}` : where} — ${error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300)}` : null;
+    const tried = (error as { attempts?: { provider: string; model: string; ok: boolean; ms: number; error?: string }[] } | null)?.attempts;
+    const triedText = tried?.length ? `\n시도: ${tried.map((a) => `${a.provider}/${a.model} ✕ ${a.ms}ms (${(a.error ?? "").slice(0, 110)})`).join(" → ")}` : "";
+    const detail = ownerAuth ? `⚠️ ${ownerOpts?.model ? `${ownerOpts.model.provider}/${ownerOpts.model.modelId}` : where} — ${error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300)}${triedText}` : null;
     return NextResponse.json(
       { error: detail ?? `${persona.name}의 답장이 잠시 늦어지고 있어요. 잠시 후 다시 보내 주세요.` },
       { status: 500 }

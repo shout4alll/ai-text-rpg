@@ -75,6 +75,15 @@ export function fixBedrockModelId(modelId: string, region = bedrockRegion()): st
   return ok ? modelId : `global.${rest}`;
 }
 
+/**
+ * Bedrock 프롬프트 캐시(cachePoint)를 지원하는 모델인가.
+ * Claude·Nova 만 지원한다. Llama·Grok·Mistral 등에 cachePoint 를 보내면
+ * "You invoked an unsupported model or your request did not allow prompt caching" 오류가 나므로 빼고 보낸다.
+ */
+export function supportsBedrockCache(modelId: string): boolean {
+  return /anthropic\.claude|amazon\.nova/.test(modelId);
+}
+
 export function bedrockClaudeOptions(modelId: string): ProviderOptions | undefined {
   // Claude 가 아닌 모델(Nova·Llama·Mistral 등)도 구조화 답장은 도구 방식으로 (가장 널리 지원)
   if (!/anthropic\.claude/.test(modelId)) return { bedrock: { structuredOutputMode: "jsonTool" } };
@@ -242,14 +251,19 @@ const PROVIDERS = {
   },
 
   /* ------------------------------------------------------------------------ */
-  /*  OpenAI  (비활성 — 쓰려면 위 import 와 함께 주석 해제)                       */
-  /*    인증: OPENAI_API_KEY                                                    */
+  /*  OpenAI GPT  (대기 — 우회(fallback) 모델 또는 🛠 › 모델 에서 사용)             */
+  /*    인증: OPENAI_API_KEY (선택 OPENAI_BASE_URL)                              */
+  /*    Bedrock 으로 쓰는 GPT(gpt-oss)는 이 항목이 아니라 Bedrock 모델 ID 로 부른다  */
   /* ------------------------------------------------------------------------ */
-  // openai: {
-  //   label: "OpenAI",
-  //   model: "gpt-4o-mini",
-  //   create: (modelId) => createOpenAI()(modelId),
-  // },
+  openai: {
+    label: "OpenAI GPT",
+    model: "gpt-5",
+    create: (modelId) => {
+      const apiKey = process.env.OPENAI_API_KEY?.trim();
+      if (!apiKey) throw new Error("[config/ai] OPENAI_API_KEY 가 없습니다. Vercel 환경변수(또는 .env.local)에 OPENAI_API_KEY 를 추가하세요.");
+      return createOpenAI({ apiKey, baseURL: process.env.OPENAI_BASE_URL?.trim() || undefined }).chat(modelId);
+    },
+  },
 
   /* ------------------------------------------------------------------------ */
   /*  Anthropic 직접 API  (비활성 — 쓰려면 위 import 와 함께 주석 해제)           */
@@ -339,6 +353,7 @@ export function providerKeys(): Record<ProviderId, boolean> {
     bedrock: has("AWS_BEDROCK_API_KEY") || has("AWS_BEARER_TOKEN_BEDROCK") || process.env.BEDROCK_USE_IAM === "true",
     google: has("GOOGLE_GENERATIVE_AI_API_KEY"),
     xai: has("XAI_API_KEY"),
+    openai: has("OPENAI_API_KEY"),
   };
 }
 
@@ -378,4 +393,65 @@ export function matureModelId(): string | null {
   const sp = splitProviderPrefix(m);
   const provider = sp.provider ?? (process.env.AI_PROVIDER?.trim() || ACTIVE_PROVIDER);
   return provider === "bedrock" ? fixBedrockModelId(sp.modelId) : sp.modelId;
+}
+
+
+/* ────────────────────────────────────────────────────────────────────────── */
+/*  🔁 우회(fallback) 모델 — 일반 대화방에서 모델이 실패하면 손님에게 오류를 보이지 않고      */
+/*     아래 순서로 다른 모델이 대신 답한다 (성공률이 높았던 모델이 앞으로 올라온다).        */
+/*   · 환경변수 AI_FALLBACK_MODELS (쉼표로 구분, "off" 면 끔)가 있으면 그 목록을 쓴다.     */
+/*   · 앞에 "프로바이더:" 를 붙이면 그 프로바이더, 없으면 Bedrock.                       */
+/*     예) AI_FALLBACK_MODELS=global.anthropic.claude-sonnet-5-5,openai:gpt-5,google:gemini-3.8-flash */
+/*   · 키가 없는 프로바이더는 조용히 건너뛴다.                                        */
+/* ────────────────────────────────────────────────────────────────────────── */
+export const DEFAULT_FALLBACK_MODELS: readonly string[] = [
+  "global.anthropic.claude-sonnet-5-5", // Sonnet 계열 (가장 성공률 높음)
+  "global.anthropic.claude-haiku-4-5-20251001-v1:0",
+  "openai.gpt-oss-120b-1:0", // GPT (Bedrock gpt-oss)
+  "openai:gpt-5", // GPT (OpenAI 직접 — OPENAI_API_KEY 가 있을 때만)
+  "google:gemini-3.8-flash", // GOOGLE_GENERATIVE_AI_API_KEY 가 있을 때만
+  "global.amazon.nova-2-lite-v1:0",
+];
+
+export function fallbackSpecs(): string[] {
+  const raw = settingValue("fallbackModels").trim();
+  if (raw.toLowerCase() === "off") return [];
+  if (!raw) return [...DEFAULT_FALLBACK_MODELS];
+  return raw.split(/[,\n]/).map((x) => x.trim()).filter(Boolean);
+}
+
+export interface FallbackEntry {
+  spec: string;
+  provider: ProviderId;
+  modelId: string;
+  /** 키가 있어 실제로 쓸 수 있는가 */
+  usable: boolean;
+}
+
+/** 우회 목록 (🛠 표시용) */
+export function describeFallbacks(): FallbackEntry[] {
+  const keys = providerKeys();
+  return fallbackSpecs().flatMap((spec) => {
+    const sp = splitProviderPrefixAny(spec);
+    return [{ spec, provider: sp.provider, modelId: sp.modelId, usable: keys[sp.provider] }];
+  });
+}
+
+function splitProviderPrefixAny(spec: string): { provider: ProviderId; modelId: string } {
+  const sp = splitProviderPrefix(spec);
+  return { provider: sp.provider ?? "bedrock", modelId: sp.modelId };
+}
+
+/** 실제로 호출 가능한 우회 모델 인스턴스들 (키 없거나 만들기 실패한 것은 제외) */
+export function resolveFallbacks(): ResolvedModel[] {
+  const out: ResolvedModel[] = [];
+  for (const e of describeFallbacks()) {
+    if (!e.usable) continue;
+    try {
+      out.push(build(e.provider, e.modelId));
+    } catch (err) {
+      console.warn(`[fallback] ${e.spec} 준비 실패: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  return out;
 }
