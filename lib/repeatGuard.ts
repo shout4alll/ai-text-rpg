@@ -170,20 +170,25 @@ function repeatedWords(turns: TextTurn[]): string[] {
  */
 export function repeatGuardLines(turns: TextTurn[], tz: string, userText: string, opts: { seeds?: boolean } = {}): string[] {
   const lines: string[] = [];
+  // 유저가 최근에 직접 꺼낸 화제(예: 책 얘기 중)는 "반복"이 아니라 지금 나누는 주제다 → 막지 않는다
+  const userRecent = [userText, ...turns.filter((t) => t.role === "user" && (t.kind === undefined || t.kind === "text")).slice(-6).map((t) => t.content)].join("\n");
+  // 지금 주제에 대한 대화가 이어지는 중이면 AI 자신이 꺼낸 말이어도 그 주제 단어는 허용
+  const topicText = [userRecent, ...turns.filter((t) => t.role === "assistant").slice(-2).map((t) => t.content)].join("\n");
   const asked = (label: string) => {
     const sc = SCENES.find((s) => s.label === label);
-    return !!sc && sc.re.test(userText);
+    return !!sc && sc.re.test(userRecent);
   };
   const scenes = recentScenes(turns).filter((s) => !asked(s.label));
   const hot = scenes.filter((s) => s.recent || s.count >= 2);
   if (hot.length > 0) {
     lines.push(
-      `- 반복 금지(상황·행동): 최근 네 답장에서 이미 ${hot.map((s) => `${s.label}(${s.count}번)`).join(", ")} 이야기를 했다. 같은 행동·장소·음식을 또 "하고 있다/했다"고 말하지 마라. 유저가 직접 그 얘기를 꺼내면 그때만 짧게 받아라. 네가 지금 뭘 하고 있는지는 지금까지와 다른 걸로 하거나, 아예 말하지 마라.`
+      `- 반복 금지(상황·행동): 최근 네 답장에서 이미 ${hot.map((s) => `${s.label}(${s.count}번)`).join(", ")} 이야기를 했다. 같은 행동·장소·음식을 또 "하고 있다/했다"고 말하지 마라. 네가 지금 뭘 하고 있는지는 지금까지와 다른 걸로 하거나, 아예 말하지 마라. (유저가 하는 이야기·질문에는 이 제한 없이 충실히 답해라)`
     );
   }
-  const rep = repeatedWords(turns).filter((w) => !words(userText).includes(w));
+  const userWords = new Set(words(topicText));
+  const rep = repeatedWords(turns).filter((w) => !userWords.has(w));
   if (rep.length > 0) {
-    lines.push(`- 최근 답장마다 자꾸 나온 단어: ${rep.map((w) => `"${w}"`).join(", ")}. 이번 답장에서는 이 말을 쓰지 말고 다른 화제·표현으로 말해라.`);
+    lines.push(`- 최근 답장마다 자꾸 나온 단어: ${rep.map((w) => `"${w}"`).join(", ")}. 같은 표현을 되풀이하지 말고 다른 말로 바꿔 써라(지금 나누는 주제에서 벗어나라는 뜻은 아니다).`);
   }
   const avoid = new Set<string>();
   for (const s of scenes) for (const k of s.label.split(/[·]/)) avoid.add(k);

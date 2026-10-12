@@ -26,7 +26,7 @@ import { categoryById, classifyIntent, explicitHit, type Classified } from "@/li
 import { SAFETY_RULES, MINOR_GUARD, absoluteRules } from "@/config/rules";
 import { PERSONA_FIELDS, RULE_FIELDS, applyPersonaOverride, mergeOverride, type OwnerOpts, type RulesOverride } from "@/lib/ownerOverrides";
 import { persistedPersona, persistedRules } from "@/lib/overridesStore";
-import { continuityReason } from "@/lib/continuity";
+import { continuityReason, insistedAsks } from "@/lib/continuity";
 import { addToPool, poolCategory, poolKey, routeTier, runWithFallback, takeFromPool } from "@/lib/modelRouter";
 import { pickLengthGuide } from "@/lib/replyLength";
 import { BALANCE } from "@/config/balance";
@@ -363,6 +363,8 @@ interface InstructionContext {
   recentTurns?: Turn[];
   /** 앞 대화가 있어야 이해되는 말이면 그 이유 (lib/continuity.ts) */
   continuity?: string | null;
+  /** 유저가 거듭한 질문·요청 (continuity === "insist" 일 때) */
+  asks?: string[];
 }
 
 /**
@@ -498,6 +500,9 @@ ${traitsSection(persona)}
 - 유저의 말은 혼자 떨어진 문장이 아니라 앞 대화의 이어짐이다. 매번 답하기 전에 직전 대화를 읽고 지금 주제, 유저가 방금 한 말이 가리키는 것, 아직 답이 안 된 질문을 파악해라.
 - 유저가 말한 단어·이름은 그 문맥의 뜻으로 받아라(책 얘기 중의 제목은 책, 영화 얘기 중이면 영화). 모르는 건 아는 척하지 말고 짧게 되물어라. 엉뚱한 뜻으로 받아 딴소리를 하지 마라.
 - 유저가 "무슨 소리야", "~라고 했잖아", "아니"처럼 되묻거나 바로잡으면 네가 놓친 것이다. 인정하고 유저가 말하던 주제로 돌아와라. 화제를 바꾸거나 얼버무리지 마라.
+- 누가 무엇을 했는지 섞지 마라: 유저가 한 일·읽은 책·겪은 일과 네 일은 다르다. 네가 유저에게 물은 질문에 유저가 되물으면("~말이지?") 그건 확인일 뿐이니 네 경험으로 바꿔 답하지 말고 유저의 답을 기다리거나 다시 물어라.
+- 유저가 무언가를 알려 달라거나 추천해 달라고 하면 구체적으로 답해라(이름·제목·방법). 캐릭터 취향을 핑계로 거절하거나 "분위기만" 말하며 버티지 마라. 같은 요청을 두 번 받게 만들었다면 네가 답을 피한 것이다.
+- 고집을 부리거나 장난으로 튕기는 건 한 번이면 충분하다. 유저가 진지하게 다시 요청하면 바로 들어줘라(정책·수위 규칙에 걸리는 것만 예외).
 - 진행 중인 주제(예: 유저가 읽는 책)는 몇 턴이고 붙들고 깊게 이어 가라: 내용·느낀 점·인상 깊은 부분을 구체적으로 묻고, 유저가 답한 것에 네 생각을 덧붙여라. 주제를 가볍게 훑고 네 일상으로 넘어가지 마라.
 
 [반복하지 않기 — 아주 중요]
@@ -592,6 +597,9 @@ function buildTurnContext(c: InstructionContext): string {
     `- 호감도 ${Math.round(c.affection)}/100 → "${stage.label}": ${stage.guide}${prog.next ? ` (다음 "${prog.next.label}"까지 ${prog.toNext})` : ""}`,
     c.recentOpenings.length > 0
       ? `- 최근 답장들은 이렇게 시작했다: ${c.recentOpenings.map((o) => `"${o}…"`).join(", ")}. 같은 말이나 같은 구조로 시작하지 마라.`
+      : null,
+    c.asks?.length
+      ? `- ⚠️ 유저가 같은 걸 거듭 묻고 있다: ${c.asks.map((a) => `「${a}」`).join(" → ")}. 네 직전 답이 얼버무리거나 거절해서 유저가 답을 못 받았다. 이번에는 이유를 늘어놓거나 버티지 말고 첫 말풍선에서 바로 구체적으로 답해라(추천이면 실제 제목·작가처럼 이름까지). 필요하면 "아 미안, 그냥 말해줄게"처럼 짧게 풀고 답해라.`
       : null,
     c.continuity
       ? `- 맥락 우선(${c.continuity === "confusion" ? "유저가 되묻거나 바로잡는 중" : "앞 대화에 이어지는 말"}): 유저의 이번 말은 바로 앞 대화에 기대어 해석해야 한다. 답하기 전에 직전 대여섯 턴을 읽고 (1) 지금 무슨 주제인지 (2) "그거·거기·그때" 같은 말이 무엇을 가리키는지 (3) 네가 방금 한 말을 유저가 어떻게 받았는지 먼저 파악해라. 유저가 못 알아듣겠다고 하거나 바로잡으면 네가 잘못 이해했거나 엉뚱한 말을 한 것이다 — 변명하거나 새 화제로 넘어가지 말고 "아 내가 잘못 짚었네"처럼 인정하고 유저가 말한 그 주제로 돌아와라. 유저가 말한 단어는 그 뜻 그대로 받아라(예: 책 제목이면 책으로). 네 근황·일상 얘기를 꺼내지 마라.`
@@ -787,7 +795,7 @@ export async function POST(request: Request) {
     freedomRoll < (freedomTrial ? FREEDOM.trialChance : FREEDOM.chanceByStage[Math.min(stageIdx, FREEDOM.chanceByStage.length - 1)]);
   // 🧠 대화가 꼬인 턴(유저가 되묻거나 바로잡는 중)에는 고성능 모델 → 실패하면 메인
   const deepOn = !ownerOpts?.model && !!settingValue("deepModel") && settingValue("deepModel").toLowerCase() !== "off";
-  const deepTurn = deepOn && continuity === "confusion";
+  const deepTurn = deepOn && (continuity === "confusion" || continuity === "insist");
   const toMature = allureHot || moodHit || personaMature || explicit || freedom;
   // 2단계: 남은 말은 초경량 모델이 의도를 분류 (인사·맞장구·고민 키워드는 규칙으로 바로)
   let intent: Classified | null = null;
@@ -796,7 +804,8 @@ export async function POST(request: Request) {
     else if (route.reason === "sulking" || EMOTION_RE.test(last.content)) intent = { category: categoryById("emotion"), by: "rule", ms: 0 };
     else intent = await classifyIntent(last.content, 2500, [...recent].reverse().find((m) => m.role === "assistant" && (m.kind ?? "text") === "text")?.content ?? "");
     // 🧵 앞 대화를 읽어야 하는 말은 분류가 "일상"이어도 메인 모델(감정·상담 칸)로
-    if (continuity && intent?.category.id === "daily") intent = { category: categoryById("emotion"), by: "continuity", ms: 0 };
+    // (지식 모델은 검색형이라 캐릭터 말투·앞 대화 이어가기가 약하다 → 대화가 이어지는 중이면 메인 모델이 답한다)
+    if (continuity && (intent?.category.id === "daily" || intent?.category.id === "knowledge")) intent = { category: categoryById("emotion"), by: "continuity", ms: 0 };
   }
 
   let resolved: ReturnType<typeof resolveModel> | null = null;
@@ -827,6 +836,7 @@ export async function POST(request: Request) {
       touches: parsed.data.touches,
       recentTurns: recent,
       continuity,
+      asks: continuity === "insist" ? insistedAsks(last.content, recent) : undefined,
       album,
       sentAlbumIds: parsed.data.sentAlbumIds ?? [],
       allure: allureEff,

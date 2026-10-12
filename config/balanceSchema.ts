@@ -170,6 +170,10 @@ export const balanceSchema = z.object({
       minSubstantive: z.number().int().min(1).max(10),
       confusionPatterns: z.array(z.string()),
       referencePatterns: z.array(z.string()),
+      /** 질문·요청으로 보는 말 — 최근 유저 말 중 이런 말이 거듭되면 "같은 걸 또 묻는 중"(insist) */
+      requestPatterns: z.array(z.string()),
+      /** 직전 AI 답이 얼버무림·거절로 보이는 말 — 그 뒤에 또 물으면 insist */
+      evasionPatterns: z.array(z.string()),
     }),
   }),
   replyPool: z.object({
