@@ -10,7 +10,7 @@ import { deleteMediaFor, listAllMedia, putMedia, type UserMediaRecord } from "@/
 
 const PREFIX = "ai-rpg.";
 /** 백업에 넣지 않는 키 (개발용 비밀번호 등) */
-const SKIP = new Set(["ai-rpg.voicePass"]);
+const SKIP = new Set(["ai-rpg.voicePass", "ai-rpg.deviceId"]);
 
 export interface BackupFile {
   app: "charactalk";

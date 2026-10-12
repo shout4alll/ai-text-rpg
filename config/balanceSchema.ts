@@ -174,6 +174,17 @@ export const balanceSchema = z.object({
       requestPatterns: z.array(z.string()),
       /** 직전 AI 답이 얼버무림·거절로 보이는 말 — 그 뒤에 또 물으면 insist */
       evasionPatterns: z.array(z.string()),
+      /** 라벨링용 기록 개수 (🛠 /api/owner/ctxlog) */
+      logSize: z.number().int().min(0).max(5000),
+      /** 맥락 의존도 점수: 피처 가중치 합 ≥ highAt → 메인 모델, ≥ lowBelow → 분류 모델에게 확인, 그 아래 → 가벼운 모델 */
+      score: z.object({
+        highAt: z.number().min(0).max(1),
+        lowBelow: z.number().min(0).max(1),
+        weights: z.object({
+          veryShort: z.number(), short: z.number(), reference: z.number(), noSubject: z.number(), interjection: z.number(),
+          closing: z.number(), answer: z.number(), overlapAi: z.number(), overlapTopic: z.number(), topic: z.number(),
+        }),
+      }),
     }),
   }),
   replyPool: z.object({

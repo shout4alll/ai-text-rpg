@@ -26,7 +26,8 @@ import { categoryById, classifyIntent, explicitHit, type Classified } from "@/li
 import { SAFETY_RULES, MINOR_GUARD, absoluteRules } from "@/config/rules";
 import { PERSONA_FIELDS, RULE_FIELDS, applyPersonaOverride, mergeOverride, type OwnerOpts, type RulesOverride } from "@/lib/ownerOverrides";
 import { persistedPersona, persistedRules } from "@/lib/overridesStore";
-import { continuityReason, insistedAsks } from "@/lib/continuity";
+import { contextDependency, insistedAsks, logCtx } from "@/lib/continuity";
+import { pushLive } from "@/lib/liveFeed";
 import { addToPool, poolCategory, poolKey, routeTier, runWithFallback, takeFromPool } from "@/lib/modelRouter";
 import { pickLengthGuide } from "@/lib/replyLength";
 import { BALANCE } from "@/config/balance";
@@ -120,6 +121,8 @@ const requestSchema = z.object({
   memory: z.array(z.string().max(300)).max(60).optional(),
   /** 👤 유저 정보 (첫 입장 때 받은 호칭·성별) */
   user: z.object({ name: z.string().max(20).optional(), gender: z.enum(["male", "female"]).optional() }).optional(),
+  /** 기기 무작위 id (🛠 실시간 대화 모니터에서 손님 구분용) */
+  device: z.string().max(40).optional(),
   /** 🎁 이번 턴 선물 (kind=gift) — good: 이 인물이 좋아하는 선물인지 */
   gift: z.object({ name: z.string().max(40), good: z.boolean() }).optional(),
   /** 👆 최근 화면 터치 (대화 흐름에 이어서 반응하도록) 예) "볼 2번 (3분 전)" */
@@ -739,8 +742,24 @@ export async function POST(request: Request) {
   /** 인물 설정: 모든 대화를 성인 모델로 (personas/<id>.json modelRoute: "mature") */
   const personaMature = persona.modelRoute === "mature" && !!matureId && !ownerOpts?.model;
   // 🧵 앞 대화가 있어야 이해되는 말이면 미리 만든 답장·가벼운 모델 대신 메인 모델로
-  const continuity = !owner && last.kind === "text" ? continuityReason(last.content, recent) : null;
-  const category = continuity || parsed.data.sulk || ownerAuth || sticky || moodHit || allureHot || personaMature ? null : poolCategory(last.kind, last.content);
+  //    맥락 의존도 점수(lib/continuity.ts): high → 메인 / mid → 분류 모델이 앞 대화와 함께 판단 / low → 가벼운 모델
+  // (주인님 프롬프트 모드에서도 점수는 계산해 🛠 실시간 창에 보여 주되, 라우팅에는 쓰지 않는다)
+  const depAll = last.kind === "text" ? contextDependency(last.content, recent) : null;
+  const dep = owner ? null : depAll;
+  const continuity = dep?.level === "high" ? dep.reason ?? "context" : null;
+  const ctxRow = dep
+    ? logCtx({
+        at: Date.now(),
+        persona: persona.id,
+        text: last.content.slice(0, 200),
+        prevAi: ([...recent].reverse().find((m) => m.role === "assistant" && (m.kind ?? "text") === "text")?.content ?? "").slice(-160),
+        score: dep.score,
+        level: dep.level,
+        reason: dep.reason,
+        features: dep.features,
+      })
+    : null;
+  const category = (dep && dep.level !== "low") || parsed.data.sulk || ownerAuth || sticky || moodHit || allureHot || personaMature ? null : poolCategory(last.kind, last.content);
   const pKey = category ? poolKey(persona.id, affectionStageIndex(affection, persona.relationshipType), category, allureEff) : "";
   if (category) {
     const recentAi = messages.filter((m) => m.role === "assistant" && m.kind === "text").slice(-10).flatMap((m) => m.content.split(/\n+/));
@@ -758,6 +777,8 @@ export async function POST(request: Request) {
         soothed: false,
         seen: "",
       };
+      if (ctxRow) ctxRow.route = "pool";
+      pushLive({ at: Date.now(), personaId: persona.id, personaName: persona.name, device: (parsed.data.device ?? "").slice(0, 4), userName: parsed.data.user?.name ?? "", owner: ownerAuth, kind: last.kind, userText: last.content, replies: hit.messages, model: "reply-pool", route: `pool/${category}`, ms: 0 });
       return NextResponse.json(pooled, { headers: { "x-ai-model": `reply-pool / ${category}` } });
     }
   }
@@ -795,12 +816,13 @@ export async function POST(request: Request) {
     freedomRoll < (freedomTrial ? FREEDOM.trialChance : FREEDOM.chanceByStage[Math.min(stageIdx, FREEDOM.chanceByStage.length - 1)]);
   // 🧠 대화가 꼬인 턴(유저가 되묻거나 바로잡는 중)에는 고성능 모델 → 실패하면 메인
   const deepOn = !ownerOpts?.model && !!settingValue("deepModel") && settingValue("deepModel").toLowerCase() !== "off";
-  const deepTurn = deepOn && (continuity === "confusion" || continuity === "insist");
+  const deepTurn = deepOn && !!dep?.deep;
   const toMature = allureHot || moodHit || personaMature || explicit || freedom;
   // 2단계: 남은 말은 초경량 모델이 의도를 분류 (인사·맞장구·고민 키워드는 규칙으로 바로)
   let intent: Classified | null = null;
   if (smart && !toMature && !allureMode && last.kind === "text") {
-    if (!owner && route.tier === "light") intent = { category: categoryById("daily"), by: "rule", ms: 0 };
+    // 애매한 말(mid)은 규칙으로 "일상"이라 단정하지 않고, 분류 모델에게 직전 대화와 함께 한 번 묻는다
+    if (!owner && route.tier === "light" && dep?.level !== "mid") intent = { category: categoryById("daily"), by: "rule", ms: 0 };
     else if (route.reason === "sulking" || EMOTION_RE.test(last.content)) intent = { category: categoryById("emotion"), by: "rule", ms: 0 };
     else intent = await classifyIntent(last.content, 2500, [...recent].reverse().find((m) => m.role === "assistant" && (m.kind ?? "text") === "text")?.content ?? "");
     // 🧵 앞 대화를 읽어야 하는 말은 분류가 "일상"이어도 메인 모델(감정·상담 칸)로
@@ -952,6 +974,11 @@ export async function POST(request: Request) {
           { extras: settingValue("serviceFallback") === "off" ? [] : resolveFallbacks() }
         );
     resolved = ran.resolved;
+    const pathLabel = forced ? "forced" : toMature ? "mature" : deepTurn ? "deep" : intent ? `${intent.category.id}(${intent.by})` : route.tier;
+    if (ctxRow) {
+      ctxRow.route = pathLabel;
+      ctxRow.model = resolved.modelId;
+    }
     const result = ran.result;
     const { output, usage } = result;
 
@@ -1028,7 +1055,7 @@ export async function POST(request: Request) {
             debug: {
               model: resolved.modelId,
               label: resolved.label,
-              tier: forced ? "forced" : `${owner ? "owner" : ""}${allureMode ? `${owner ? "·" : ""}allure${surprise ? "·surprise" : heatHit ? "·heat" : allureHot ? "" : "·calm"}` : moodHit ? `${owner ? "·" : ""}mood` : personaMature ? `${owner ? "·" : ""}persona-mature` : explicit ? `${owner ? "·" : ""}explicit` : freedom ? `${owner ? "·" : ""}${freedomTrial ? "trial" : "freedom"}` : intent ? `${owner ? "·" : ""}${intent.category.id}(${intent.by === "rule" ? "규칙" : intent.by === "cache" ? "캐시" : intent.by === "default" ? "분류실패" : `분류 ${intent.ms}ms`})` : owner ? "" : route.tier}` || "owner",
+              tier: forced ? "forced" : `${owner ? "owner" : ""}${allureMode ? `${owner ? "·" : ""}allure${surprise ? "·surprise" : heatHit ? "·heat" : allureHot ? "" : "·calm"}` : moodHit ? `${owner ? "·" : ""}mood` : personaMature ? `${owner ? "·" : ""}persona-mature` : explicit ? `${owner ? "·" : ""}explicit` : freedom ? `${owner ? "·" : ""}${freedomTrial ? "trial" : "freedom"}` : deepTurn ? "deep(꼬임)" : intent ? `${owner ? "·" : ""}${intent.category.id}(${intent.by === "rule" ? "규칙" : intent.by === "cache" ? "캐시" : intent.by === "default" ? "분류실패" : `분류 ${intent.ms}ms`})` : owner ? "" : route.tier}` || "owner",
               reason: forced ? "model-override" : route.reason,
               promptMode: owner ? "owner" : "service",
               overrides: appliedOverrides,
@@ -1041,6 +1068,9 @@ export async function POST(request: Request) {
               ms: Date.now() - startedAt,
               fellBack: ran.fellBack,
               attempts: "attempts" in ran ? ran.attempts : [],
+              ctx: depAll ? { score: depAll.score, level: depAll.level, reason: depAll.reason, features: depAll.features } : null,
+              path: pathLabel,
+              userText: last.content.slice(0, 80),
             },
           }
         : {}),
@@ -1057,6 +1087,8 @@ export async function POST(request: Request) {
       animation: def.animation,
       media,
     };
+    // 💬 실시간 대화 모니터 (🛠)
+    pushLive({ at: Date.now(), personaId: persona.id, personaName: persona.name, device: (parsed.data.device ?? "").slice(0, 4), userName: parsed.data.user?.name ?? "", owner: ownerAuth, kind: last.kind, userText: last.content, replies: bubbles, model: resolved.modelId, route: pathLabel, ms: Date.now() - startedAt });
     // 뻔한 대화 답장은 풀에 모아 두었다가 재사용
     if (category && !media && !ownerAuth) addToPool(pKey, { messages: bubbles, reaction: output.reaction, affectionDelta: delta });
     return NextResponse.json(response, {
@@ -1070,6 +1102,7 @@ export async function POST(request: Request) {
     const triedText = tried?.length ? `\n시도: ${tried.map((a) => `${a.provider}/${a.model} ✕ ${a.ms}ms (${(a.error ?? "").slice(0, 110)})`).join(" → ")}` : "";
     const timedOut = /abort|timeout/i.test(error instanceof Error ? `${error.name} ${error.message}` : String(error));
     const timeoutHint = timedOut ? "\n(56초 안에 답이 오지 않아 끊었어요 — Vercel 함수 제한 60초. Grok 같은 추론 모델은 느릴 수 있어요)" : "";
+    pushLive({ at: Date.now(), personaId: persona.id, personaName: persona.name, device: (parsed.data.device ?? "").slice(0, 4), userName: parsed.data.user?.name ?? "", owner: ownerAuth, kind: last.kind, userText: last.content, replies: [], model: resolved?.modelId ?? "", route: "error", ms: Date.now() - startedAt, error: (error instanceof Error ? error.message : String(error)).slice(0, 200) });
     const detail = ownerAuth ? `⚠️ ${ownerOpts?.model ? `${ownerOpts.model.provider}/${ownerOpts.model.modelId}` : where} — ${error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300)}${triedText}${timeoutHint}` : null;
     return NextResponse.json(
       { error: detail ?? `${persona.name}의 답장이 잠시 늦어지고 있어요. 잠시 후 다시 보내 주세요.` },

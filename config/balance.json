@@ -376,6 +376,23 @@
         "무슨\\s*\\S+\\s*(이|가)?야",
         "왜\\s*안\\s*(해|돼|알려|말해)"
         ],
+        "logSize": 500,
+        "score": {
+            "highAt": 0.45,
+            "lowBelow": 0.2,
+            "weights": {
+                "veryShort": 0.15,
+                "short": 0.08,
+                "reference": 0.4,
+                "noSubject": 0.1,
+                "interjection": 0.1,
+                "closing": 0.35,
+                "answer": 0.35,
+                "overlapAi": 0.2,
+                "overlapTopic": 0.15,
+                "topic": 0.2
+            }
+        },
         "evasionPatterns": [
             "안\\s*알려",
             "비밀",
@@ -401,6 +418,8 @@
             "누구"
         ],
         "referencePatterns": [
+            "^왜",
+            "^어째서",
             "그거",
             "그게",
             "그건",

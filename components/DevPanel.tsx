@@ -9,6 +9,7 @@ import type { ChatResponse } from "@/types/game";
 
 /**
  * 🛠 주인님 모드 관리창 — 떠 있는 창(끌어서 이동·접기·투명도)으로 대화를 보면서 작업한다.
+ *   📡실시간: 턴마다 적용된 모델·경로·맥락 의존도 (이 기기) / 모든 유저 (서버 전체, /api/owner/ctxlog)
  *   상태 : 이번 턴 모델·경로·토큰, 이 대화방 상태, 서버 모델        (GET /api/status/full)
  *   모델 : 모델 목록에서 골라 바로 바꿔 테스트 (Grok 포함) · 직접 입력   (config/models.ts)
  *   캐릭터: 성격·말투·설정을 고쳐 다음 메시지부터 적용               (lib/ownerOverrides.ts PERSONA_FIELDS)
@@ -31,7 +32,11 @@ interface OwnerCfg {
   rules: { fields: FieldDef[]; defaults: Record<string, OverrideValue | undefined>; hard: string[] };
 }
 
-type Tab = "status" | "model" | "persona" | "rules" | "check" | "settings" | "cheat";
+/** 🛠 실시간 창: 한 턴의 기록 */
+export type TurnLog = NonNullable<ChatResponse["debug"]> & { at: number; personaId: string; personaName: string; kind: string };
+interface ServerRow { at: number; persona: string; text: string; prevAi: string; score: number; level: string; reason: string | null; features: Record<string, number>; route?: string; model?: string }
+
+type Tab = "live" | "status" | "model" | "persona" | "rules" | "check" | "settings" | "cheat";
 
 /** 🔑 치트룸 전용 조작 (ChatApp 이 넘겨 준다) */
 export interface CheatActions {
@@ -48,6 +53,7 @@ const OPACITY = [1, 0.8, 0.55];
 export default function DevPanel({
   token,
   last,
+  history = [],
   client,
   personaId,
   cheat,
@@ -55,6 +61,8 @@ export default function DevPanel({
 }: {
   token: string;
   last: ChatResponse["debug"] | null;
+  /** 이 기기에서 오간 턴마다의 모델 기록 (실시간 탭) */
+  history?: TurnLog[];
   /** 이 기기·이 대화방 상태 */
   client: { label: string; value: string }[];
   personaId: string;
@@ -63,7 +71,7 @@ export default function DevPanel({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<Tab>("status");
+  const [tab, setTab] = useState<Tab>("live");
   const [data, setData] = useState<FullStatus | null>(null);
   const [cfg, setCfg] = useState<OwnerCfg | null>(null);
   const [err, setErr] = useState("");
@@ -234,6 +242,7 @@ export default function DevPanel({
   const tabs: [Tab, string][] = [
     ...(cheat ? ([["cheat", "🔑치트"]] as [Tab, string][]) : []),
     ["status", "상태"],
+    ["live", "📡실시간"],
     ["model", `모델${curModel ? " ●" : ""}`],
     ["persona", `캐릭터${nPersona ? ` ${nPersona}` : ""}`],
     ["rules", `규칙${nRules ? ` ${nRules}` : ""}`],
@@ -303,6 +312,8 @@ export default function DevPanel({
 
                 <div className={`min-h-0 flex-1 overflow-y-auto p-3 ${ui.h ? "" : "max-h-[66dvh]"}`}>
                   {err && <p className="mb-2 text-red-400">⚠️ {err}</p>}
+
+                  {tab === "live" && <LiveTab token={token} history={history} />}
 
                   {tab === "status" && (
                     <>
@@ -714,5 +725,165 @@ function CheckTab({ token, serverMain, choices }: { token: string; serverMain: s
         </Section>
       )}
     </>
+  );
+}
+
+/* ── 📡 실시간 모델 모니터 ──────────────────────────────────────────────────
+ *  이 기기: 내가 보낸 턴마다 받은 debug (모델·경로·맥락 의존도·시간·토큰)
+ *  서버 전체: GET /api/owner/ctxlog 를 4초마다 (모든 유저의 일반 대화방 턴 — 서버 인스턴스별 메모리)
+ */
+const FAMILIES: { id: string; label: string; re: RegExp; cls: string }[] = [
+  { id: "opus", label: "Opus", re: /opus|fable|mythos/i, cls: "bg-fuchsia-500 text-white" },
+  { id: "sonnet", label: "Sonnet", re: /sonnet/i, cls: "bg-sky-500 text-white" },
+  { id: "haiku", label: "Haiku", re: /haiku/i, cls: "bg-emerald-500 text-slate-950" },
+  { id: "nova", label: "Nova", re: /nova/i, cls: "bg-orange-400 text-slate-950" },
+  { id: "grok", label: "Grok", re: /grok/i, cls: "bg-rose-500 text-white" },
+  { id: "gemini", label: "Gemini", re: /gemini/i, cls: "bg-indigo-400 text-white" },
+  { id: "pool", label: "답장풀", re: /^pool$|reply-pool/i, cls: "bg-slate-500 text-white" },
+];
+const familyOf = (model?: string, route?: string) =>
+  (route === "pool" ? FAMILIES.find((f) => f.id === "pool") : FAMILIES.find((f) => f.re.test(model ?? ""))) ?? { id: "other", label: "기타", re: /./, cls: "bg-slate-700 text-slate-100" };
+const LEVEL_CLS: Record<string, string> = { high: "text-rose-300", mid: "text-amber-300", low: "text-emerald-300" };
+const hhmmss = (t: number) => new Date(t).toLocaleTimeString("ko-KR", { hour12: false });
+
+function UsageBar({ items }: { items: { model?: string; route?: string }[] }) {
+  if (!items.length) return null;
+  const counts = new Map<string, { label: string; cls: string; n: number }>();
+  for (const it of items) {
+    const f = familyOf(it.model, it.route);
+    const c = counts.get(f.id) ?? { label: f.label, cls: f.cls, n: 0 };
+    c.n++;
+    counts.set(f.id, c);
+  }
+  const list = [...counts.values()].sort((a, b) => b.n - a.n);
+  return (
+    <div className="mb-2">
+      <div className="flex h-2.5 overflow-hidden rounded-full bg-slate-800">
+        {list.map((c) => (
+          <span key={c.label} className={c.cls} style={{ width: `${(c.n / items.length) * 100}%` }} />
+        ))}
+      </div>
+      <div className="mt-1 flex flex-wrap gap-1 text-[10px]">
+        {list.map((c) => (
+          <span key={c.label} className={`rounded px-1.5 ${c.cls}`}>{c.label} {Math.round((c.n / items.length) * 100)}% ({c.n})</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function LiveTab({ token, history }: { token: string; history: TurnLog[] }) {
+  const [scope, setScope] = useState<"me" | "server">("me");
+  const [rows, setRows] = useState<ServerRow[]>([]);
+  const [err, setErr] = useState("");
+  const [open, setOpen] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (scope !== "server") return;
+    let stop = false;
+    const load = async () => {
+      try {
+        const r = await fetch(apiUrl("/api/owner/ctxlog"), { headers: { "x-owner-token": token }, cache: "no-store" });
+        const j = (await r.json()) as { rows?: ServerRow[]; error?: string };
+        if (stop) return;
+        if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+        setRows(j.rows ?? []);
+        setErr("");
+      } catch (e) {
+        if (!stop) setErr(e instanceof Error ? e.message : String(e));
+      }
+    };
+    void load();
+    const t = setInterval(load, 4000);
+    return () => {
+      stop = true;
+      clearInterval(t);
+    };
+  }, [scope, token]);
+
+  const mine = [...history].reverse();
+  const server = [...rows].reverse().slice(0, 80);
+
+  return (
+    <div data-dev-live>
+      <div className="mb-2 flex items-center gap-1">
+        {(["me", "server"] as const).map((k) => (
+          <button key={k} type="button" data-dev-live-scope={k} onClick={() => setScope(k)} className={`rounded-full px-2.5 py-0.5 ${scope === k ? "bg-amber-300 font-bold text-slate-900" : "bg-slate-800"}`}>
+            {k === "me" ? "이 기기" : "서버 전체"}
+          </button>
+        ))}
+        <span className="ml-auto flex items-center gap-1 text-[10px] text-emerald-300">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+          {scope === "me" ? "매 턴 갱신" : "4초마다"}
+        </span>
+      </div>
+
+      {scope === "me" ? (
+        <>
+          <UsageBar items={history.map((h) => ({ model: h.model, route: h.path }))} />
+          {mine.length === 0 && <p className="text-slate-400">아직 기록이 없어요. 말을 보내면 턴마다 여기에 쌓여요. (모델 탭에서 고정 모델을 풀고, 프롬프트를 &quot;서비스&quot;로 두면 손님과 같은 라우팅을 볼 수 있어요)</p>}
+          {mine.map((h, i) => {
+            const prev = mine[i + 1];
+            const f = familyOf(h.model, h.path);
+            const changed = !!prev && prev.model !== h.model;
+            return (
+              <div key={h.at + "-" + i} data-dev-live-row className={`mb-1 rounded-lg p-1.5 ${i === 0 ? "bg-slate-800 ring-1 ring-amber-300/50" : "bg-slate-900"}`} onClick={() => setOpen(open === i ? null : i)}>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] text-slate-500">{hhmmss(h.at)}</span>
+                  <span className={`rounded px-1.5 text-[10px] font-bold ${f.cls}`}>{f.label}</span>
+                  <span className="min-w-0 truncate text-[11px]">{shortModel(h.model)}</span>
+                  {changed && <span className="shrink-0 text-[10px] text-amber-300" title={`이전: ${prev.model}`}>↔ 바뀜</span>}
+                  {h.fellBack && <span className="shrink-0 text-[10px] text-rose-300">우회</span>}
+                  <span className="ml-auto shrink-0 text-[10px] text-slate-400">{(h.ms / 1000).toFixed(1)}s</span>
+                </div>
+                <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-slate-400">
+                  <span className="shrink-0">{h.personaName}</span>
+                  <span className="min-w-0 flex-1 truncate text-slate-200">{h.kind === "text" ? `"${h.userText ?? ""}"` : `(${h.kind})`}</span>
+                </div>
+                <div className="mt-0.5 flex flex-wrap gap-x-2 text-[10px]">
+                  <span>경로 <b className="text-amber-200">{h.path ?? h.tier}</b></span>
+                  {h.ctx && (
+                    <span>맥락 <b className={LEVEL_CLS[h.ctx.level] ?? ""}>{h.ctx.level} {h.ctx.score}</b>{h.ctx.reason ? ` · ${h.ctx.reason}` : ""}</span>
+                  )}
+                  <span className="text-slate-500">토큰 {h.tokens.in}/{h.tokens.out}{h.tokens.cache ? ` (캐시 ${h.tokens.cache})` : ""}</span>
+                </div>
+                {open === i && (
+                  <div className="mt-1 border-t border-slate-700 pt-1 text-[10px] text-slate-400">
+                    <p>tier: {h.tier} · reason: {h.reason} · 프롬프트: {h.promptMode}</p>
+                    {h.ctx && <p>피처: {Object.entries(h.ctx.features).map(([k, v]) => `${k} ${v}`).join(" · ") || "없음"}</p>}
+                    {h.attempts.length > 0 && <p>시도: {h.attempts.map((a) => `${a.ok ? "✅" : "✕"} ${shortModel(a.model)} ${a.ms}ms`).join(" → ")}</p>}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </>
+      ) : (
+        <>
+          {err && <p className="mb-1 text-red-400">⚠️ {err}</p>}
+          <UsageBar items={rows.map((r) => ({ model: r.model, route: r.route }))} />
+          <p className="mb-1 text-[10px] text-slate-500">손님(일반 대화방) 턴만 · 이 서버 인스턴스에 쌓인 최근 {rows.length}개 · 엑셀: /api/owner/ctxlog?format=csv</p>
+          {server.length === 0 && !err && <p className="text-slate-400">아직 기록이 없어요.</p>}
+          {server.map((r, i) => {
+            const f = familyOf(r.model, r.route);
+            return (
+              <div key={r.at + "-" + i} data-dev-live-srow className="mb-1 rounded-lg bg-slate-900 p-1.5">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] text-slate-500">{hhmmss(r.at)}</span>
+                  <span className={`rounded px-1.5 text-[10px] font-bold ${f.cls}`}>{r.model || r.route ? f.label : "…"}</span>
+                  <span className="min-w-0 truncate text-[11px]">{r.model ? shortModel(r.model) : r.route ?? "응답 대기/실패"}</span>
+                  <span className="ml-auto shrink-0 text-[10px] text-slate-400">{r.persona}</span>
+                </div>
+                <div className="mt-0.5 flex gap-1.5 text-[10px]">
+                  <span className="min-w-0 flex-1 truncate text-slate-200">&quot;{r.text}&quot;</span>
+                  <span className={`shrink-0 ${LEVEL_CLS[r.level] ?? ""}`}>{r.level} {r.score}{r.reason ? ` · ${r.reason}` : ""}</span>
+                  <span className="shrink-0 text-amber-200">{r.route}</span>
+                </div>
+              </div>
+            );
+          })}
+        </>
+      )}
+    </div>
   );
 }

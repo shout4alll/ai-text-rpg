@@ -308,6 +308,29 @@ AI 호감도 판정 기준도 짜게 바꿨습니다: 평범한 대화 0, 진심
 - 풀은 서버 메모리에 있어서 재배포·서버 재시작 때 비워지고 다시 모여요.
 - 어떤 모델이 답했는지는 응답 헤더 `x-ai-model`에 나와요. `LOG_AI_USAGE=true`이면 서버 로그에도 남아요(예: `light(small-talk) … cacheRead=2600`).
 
+## 7-5. 🧵 맥락 의존도 라우팅 (`routing.continuity`) — 2026-10-12
+
+길이가 아니라 **"앞 대화 없이 이 말을 들으면 뜻이 통하나"**로 모델을 고른다 (`lib/continuity.ts`, AI 호출 없음).
+짧은 말도 모든 모델에 앞 대화(최근 `cost.historyTurns`턴)가 함께 간다. 앞 대화 없이 답하는 건 **답장 풀**뿐이라, 의존도가 low 일 때만 쓴다.
+
+| 피처 (`score.weights`) | 뜻 | 기본 |
+|---|---|---|
+| veryShort / short | 6자 이하 / 15자 이하 | 0.15 / 0.08 |
+| reference | 지시어·생략 (그거·아까·왜…, `referencePatterns`) | 0.4 |
+| noSubject | 25자 이하인데 주어(○○은/는/이/가, 나/너) 없음 | 0.1 |
+| interjection | 웃음·맞장구뿐 | 0.1 |
+| closing | 인사·작별·고마움 (맥락 없이도 분명 → 빼기) | 0.35 |
+| answer | 직전 AI 말이 질문·"말해봐" | 0.35 |
+| overlapAi / overlapTopic | 직전 AI 말 / 최근 유저 말과 같은 단어 | 0.2 / 0.15 |
+| topic | 최근 유저 말 중 긴 말이 `minSubstantive`개 이상 (한창 이야기 중) | 0.2 |
+
+- 합계 ≥ `highAt`(0.45) → **high**: 메인 모델(Sonnet 5). 맞장구뿐인 말은 대답·지시어가 아니면 최대 mid.
+- `lowBelow`(0.2) ~ highAt → **mid**: 초경량 분류 모델(Nova Micro)에게 직전 AI 말과 함께 한 번 묻는다.
+- 그 아래 → **low**: 가벼운 모델(Haiku)·답장 풀 허용.
+- 되묻기·정정(`confusionPatterns`), 얼버무림(`evasionPatterns`) 뒤 거듭된 요청(`requestPatterns`) → 점수와 무관하게 **고성능 모델**(설정 `deepModel`, 기본 Opus 5).
+
+**튜닝용 기록:** 🛠 주인님 토큰으로 `GET /api/owner/ctxlog?format=csv` → 최근 `logSize`(500)턴의 말·피처·점수·실제 고른 모델. 마지막 `label` 칸에 0(맥락 없이 이해 가능)/1(앞 대화 필요)을 적어 몇백 개 모이면, 틀린 줄을 보고 가중치·문턱을 고친다. (서버 메모리라 Vercel 인스턴스별로 쌓이고 재배포하면 비워진다)
+
 ## 8. 보이스톡 · 캐시 · 멤버십 (`voice`, `cash`, `plans`)
 
 | 키 | 현재 | 설명 |

@@ -48,7 +48,8 @@ import { checkRelease, giftCost, sulkExpired, sulkStartLevel, sulkSummary, touch
 import { deleteMediaFor, deleteMediaKeys, getMedia, importFile, mediaUrl, putMedia, UserMediaError } from "@/lib/userMedia";
 import { DEMO_TOPUP, MEDIA_COST } from "@/config/media";
 import { GemBadge, GemShop } from "@/components/GemShop";
-import DevPanel from "@/components/DevPanel";
+import DevPanel, { type TurnLog } from "@/components/DevPanel";
+import LiveChatMonitor from "@/components/LiveChatMonitor";
 import { buildOwnerOpts } from "@/lib/ownerClient";
 import { TYPING } from "@/config/typing";
 import { withTypo } from "@/lib/typos";
@@ -97,6 +98,19 @@ function writeOwnerToken(t: string | null) {
 }
 
 const LAST_KEY = "ai-rpg.personaId";
+/** 기기 무작위 id — 🛠 실시간 대화 모니터에서 손님을 구분하는 용도로만 서버에 보낸다 */
+function deviceId(): string {
+  try {
+    let id = localStorage.getItem("ai-rpg.deviceId");
+    if (!id) {
+      id = (crypto.randomUUID?.() ?? `${Date.now().toString(36)}${Math.random().toString(36).slice(2)}`).replace(/-/g, "");
+      localStorage.setItem("ai-rpg.deviceId", id);
+    }
+    return id.slice(0, 40);
+  } catch {
+    return "";
+  }
+}
 const chatKey = (id: PersonaId) => `ai-rpg.chat.${id}`;
 const MAX_STORED = 300; // 대화방당 저장할 최대 기록 수
 
@@ -401,6 +415,8 @@ export default function ChatApp({
   // 🛠 주인님 모드 상태판 (토큰이 있을 때만)
   const [ownerTok, setOwnerTok] = useState<string | null>(null);
   const [lastDebug, setLastDebug] = useState<ChatResponse["debug"] | null>(null);
+  /** 🛠 실시간 모델 모니터: 이 기기에서 오간 턴마다의 모델·경로 기록 (최근 60개, 새로고침하면 비워짐) */
+  const [debugLog, setDebugLog] = useState<TurnLog[]>([]);
   useEffect(() => {
     const t = readOwnerToken();
     setOwnerTok(t);
@@ -1064,6 +1080,7 @@ export default function ChatApp({
           personaId: pid,
           messages: sendTurns,
           timeZone: userTimeZone(),
+          device: deviceId(),
           affection: affectionRef.current,
           sentAlbumIds: msgs.flatMap((m) => (m.media?.albumId ? [m.media.albumId] : [])),
           allure: allureActive,
@@ -1135,7 +1152,11 @@ export default function ChatApp({
           setBusy(false);
           return;
         }
-        if (data.debug) setLastDebug(data.debug);
+        if (data.debug) {
+          const d = data.debug;
+          setLastDebug(d);
+          setDebugLog((prev) => [...prev.slice(-59), { ...d, at: Date.now(), personaId: pid, personaName: byId.get(pid)?.name ?? pid, kind }]);
+        }
         // 🔑 주인 모드: 모델이 실패해 다른 모델로 우회했으면 그 경과를 대화창에 그대로 보여 준다 (테스트용 · 대화 기록에는 안 들어감)
         if (data.debug?.attempts?.some((a) => !a.ok) && same()) {
           const trace = data.debug.attempts.map((a) => `${a.ok ? "✅" : "✕"} ${a.provider}/${a.model} ${a.ms}ms${a.ok ? "" : ` (${(a.error ?? "").slice(0, 100)})`}`).join("\n↪ ");
@@ -1994,6 +2015,7 @@ export default function ChatApp({
     return (
       <main className="h-[100dvh] w-full bg-paper">
         <PersonaSelector personas={listed} onCheatCode={handleCheatCode} currentId={null} onSelect={handleSelect} previews={previews()} onBackup={() => setBackupOpen(true)} onTheme={() => setThemeOpen(true)} onNotify={() => setNotifyOpen(true)} gems={cash} onGems={() => setGemOpen(true)} />
+        {ownerTok && <LiveChatMonitor token={ownerTok} className="fixed bottom-[calc(env(safe-area-inset-bottom)+1rem)] left-3 z-30" />}
         {!onboardingOpen && <LobbyNotes personas={listed} userGender={userProfile?.gender} userName={userProfile?.name} onOpen={openFromNote} />}
         {backupOpen && <BackupModal onClose={() => setBackupOpen(false)} onRestored={() => window.location.reload()} />}
       {themeOpen && (
@@ -2340,12 +2362,14 @@ export default function ChatApp({
     <main className={`relative h-[100dvh] w-full overflow-hidden ${kakaoView ? "bg-chat" : "bg-paper wide:flex"}`} data-view={kakaoView ? "kakao" : "stage"}>
       {!voiceOpen && <GemBadge gems={cash} onClick={() => setGemOpen(true)} className="absolute left-2 top-[calc(max(0.5rem,env(safe-area-inset-top))+3.5rem)] z-20 bg-white/85 backdrop-blur" />}
       {!voiceOpen && ownerTok && (
-        <div className="absolute left-[5.4rem] top-[calc(max(0.5rem,env(safe-area-inset-top))+3.5rem)] z-20">
+        <div className="absolute left-[5.4rem] top-[calc(max(0.5rem,env(safe-area-inset-top))+3.5rem)] z-20 flex items-start gap-1.5">
+          <LiveChatMonitor token={ownerTok} />
           <DevPanel
             token={ownerTok}
             personaId={persona.id}
             cheat={cheat ? cheatActions : undefined}
             last={lastDebug}
+            history={debugLog}
             client={[
               { label: "주인님 모드", value: "켜짐 (해제: 주인님퇴장)" },
               { label: "인물", value: `${persona.name} (${persona.id})` },
