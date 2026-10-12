@@ -11,6 +11,7 @@
 import { Capacitor } from "@capacitor/core";
 import {
   NOTIFY_CHANNEL,
+  OLD_NOTIFY_CHANNELS,
   NOTIFY_ID_BASE,
   NOTIFY_ID_COUNT,
   NOTIFY_TITLE,
@@ -143,9 +144,14 @@ async function ensureChannel() {
       id: NOTIFY_CHANNEL.id,
       name: NOTIFY_CHANNEL.name,
       description: NOTIFY_CHANNEL.description,
-      importance: 4, // 소리와 함께 헤드업
-      visibility: 0, // 잠금 화면에서는 내용 숨김
+      importance: 5, // 최대: 소리 + 화면 위에 팝업(헤드업)
+      visibility: 1, // 잠금 화면에도 표시 (알림 문구에는 누가 보냈는지만 있고 대화 내용은 없다)
+      vibration: true,
+      lights: true,
+      lightColor: "#E86A92",
     });
+    // 예전 채널은 지운다 (거기서 중요도를 낮추거나 꺼 둔 상태가 새 알림에 남아 있지 않게)
+    for (const id of OLD_NOTIFY_CHANNELS) await (await plugin()).deleteChannel({ id }).catch(() => {});
   } catch {
     /* 채널을 못 만들어도 기본 채널로 간다 */
   }
@@ -354,6 +360,10 @@ export function startNudgeLifecycle(h: NudgeLifecycleHandlers): () => void {
 /* ── 점검용 (설정 화면) ──────────────────────────────────────────────────── */
 export interface NudgeStatus {
   permission: NotifyPermission;
+  /** 알림 채널 중요도 (0=꺼짐 … 5=최대, 안드로이드 8+. 모르면 null) */
+  channelImportance: number | null;
+  /** 지금 알림창에 쌓여 있는(도착했지만 아직 안 치운) 선톡 알림 수 */
+  delivered: number;
   /** 지금 폰에 예약돼 있는 선톡 알림 수 (앱을 보고 있는 동안은 0이 정상 — 닫으면 예약된다) */
   pending: number;
   next: Date | null;
@@ -361,7 +371,18 @@ export interface NudgeStatus {
 
 export async function nudgeStatus(): Promise<NudgeStatus> {
   const permission = await notifyPermission();
-  if (!isNativeApp() || permission === "unsupported") return { permission, pending: 0, next: null };
+  if (!isNativeApp() || permission === "unsupported") return { permission, channelImportance: null, delivered: 0, pending: 0, next: null };
+  let channelImportance: number | null = null;
+  let delivered = 0;
+  try {
+    const { channels } = await (await plugin()).listChannels();
+    const ch = channels.find((c) => c.id === NOTIFY_CHANNEL.id);
+    channelImportance = ch ? Number(ch.importance) : null;
+    const d = await (await plugin()).getDeliveredNotifications();
+    delivered = d.notifications.filter((n) => inRange(n.id)).length;
+  } catch {
+    /* 무시 */
+  }
   try {
     const { notifications } = await (await plugin()).getPending();
     const times = notifications
@@ -369,9 +390,9 @@ export async function nudgeStatus(): Promise<NudgeStatus> {
       .map((n) => (n.schedule?.at ? new Date(n.schedule.at).getTime() : 0))
       .filter((t) => t > 0)
       .sort((a, b) => a - b);
-    return { permission, pending: times.length, next: times.length ? new Date(times[0]) : null };
+    return { permission, channelImportance, delivered, pending: times.length, next: times.length ? new Date(times[0]) : null };
   } catch {
-    return { permission, pending: 0, next: null };
+    return { permission, channelImportance, delivered, pending: 0, next: null };
   }
 }
 

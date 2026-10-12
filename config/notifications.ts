@@ -44,7 +44,9 @@ export const NOTIFY_ID_BASE = 91000;
 export const NOTIFY_ID_COUNT = 100;
 
 /** 안드로이드 알림 채널 */
-export const NOTIFY_CHANNEL = { id: "nudge", name: "선톡 알림", description: "인물이 먼저 보내는 메시지·사진·영상 알림" } as const;
+export const NOTIFY_CHANNEL = { id: "nudge_v2", name: "선톡 알림", description: "인물이 먼저 보내는 메시지·사진·영상 알림" } as const;
+/** 예전 채널 id (폰에서 중요도가 낮게 굳어 있을 수 있어 새 채널로 갈아탔다 — 앱 시작 때 지운다) */
+export const OLD_NOTIFY_CHANNELS = ["nudge"] as const;
 
 /** 알림 제목 */
 export const NOTIFY_TITLE = "WitH";

@@ -25,7 +25,7 @@ export default function NotifySettings({ onClose }: { onClose: () => void }) {
     void exactAlarmAllowed().then(setExact);
     void notifyPermission().then(setPerm);
     void nudgeStatus().then((st) =>
-      setInfo(`권한: ${st.permission === "granted" ? "허용" : st.permission === "denied" ? "꺼짐" : "미확인"} · 예약된 알림 ${st.pending}개${st.next ? ` (다음 ${st.next.getMonth() + 1}/${st.next.getDate()} ${String(st.next.getHours()).padStart(2, "0")}:${String(st.next.getMinutes()).padStart(2, "0")})` : ""}${(() => {
+      setInfo(`권한: ${st.permission === "granted" ? "허용" : st.permission === "denied" ? "꺼짐" : "미확인"} · 알림 채널: ${st.channelImportance === null ? "아직 없음" : st.channelImportance >= 4 ? "팝업·소리 켜짐" : st.channelImportance === 0 ? "꺼짐" : "소리·팝업 약함(" + st.channelImportance + ")"} · 알림창에 쌓인 알림 ${st.delivered}개 · 예약된 알림 ${st.pending}개${st.next ? ` (다음 ${st.next.getMonth() + 1}/${st.next.getDate()} ${String(st.next.getHours()).padStart(2, "0")}:${String(st.next.getMinutes()).padStart(2, "0")})` : ""}${(() => {
         const ls = lastScheduleInfo();
         if (!ls) return " · 아직 예약한 기록 없음";
         const f = new Date(ls.first);
@@ -125,6 +125,17 @@ export default function NotifySettings({ onClose }: { onClose: () => void }) {
                 <button type="button" onClick={async () => setExact(await openExactAlarmSetting())} className="mt-1.5 rounded-full bg-surface px-3 py-1.5 text-[13px] font-semibold text-ink shadow-soft ring-1 ring-ink-line">
                   알람 및 리마인더 켜기
                 </button>
+              </div>
+            )}
+            {typeof navigator !== "undefined" && /SM-|SAMSUNG/i.test(navigator.userAgent) && (
+              <div className="mt-2 rounded-xl bg-paper px-3 py-2 ring-1 ring-ink-line" data-notify-samsung>
+                <p className="font-semibold text-ink">갤럭시(삼성) 폰이면 꼭 확인하세요</p>
+                <ol className="mt-1 list-decimal space-y-0.5 pl-4 text-ink-mute">
+                  <li>설정 › 배터리 › 백그라운드 사용 제한 › ‘사용하지 않는 앱을 절전 상태로 전환’ 끄기</li>
+                  <li>같은 화면의 ‘절전 상태의 앱’·‘깊은 절전 상태의 앱’ 목록에 WitH가 있으면 삭제</li>
+                  <li>설정 › 앱 › WitH › 배터리 › ‘제한 없음’ 선택</li>
+                  <li>설정 › 앱 › WitH › 알림 › ‘선톡 알림’이 켜져 있고 ‘팝업’으로 표시되는지 확인</li>
+                </ol>
               </div>
             )}
             <p className="mt-2 text-ink-mute">그래도 안 오면 폰 설정 › 앱 › WitH › 배터리를 ‘제한 없음(최적화 안 함)’으로 바꾸고, 최근 앱 목록에서 WitH를 위로 밀어 완전히 종료하지 마세요. 일부 폰은 종료하면 예약된 알림이 지워져요.</p>
