@@ -67,6 +67,7 @@ export interface Persona {
   /** 인물 성향 중 화면에서 쓰는 것 (나머지는 서버 프롬프트에만) */
   traits: {
     gift: { name: string; emoji: string };
+    giftLikes?: string[];
     reactionBias: Partial<Record<string, number>>;
     stageUpLines: string[];
   };

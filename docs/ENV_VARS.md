@@ -21,6 +21,10 @@ Vercel 화면에는 변수 **이름만** 보이고 값은 가려져 있어서(�
 | `MOOD_ROUTING` | | ✅ | on | 대화 내용별 모델 라우팅: 설렘·스킨십 말 → `AI_MODEL_MATURE`(Grok 등, 일반 방은 매혹 지원 인물+이용 권한 있을 때만) / 인사·맞장구 → `AI_MODEL_LIGHT`(Haiku, Llama 로 바꿔도 됨) / 그 외 → 메인(Sonnet). 단어 목록: config/spicy.ts moodWords |
 | `BEDROCK_MANTLE_REGION` | | ✅ | us-east-1 | Grok 4.3 을 부르는 Bedrock Mantle 리전 (us-east-1 · us-east-2 · us-west-2) |
 | `MANTLE_REASONING_EFFORT` | | ✅ | low | Grok 4.3 생각 정도: none(가장 빠름) · low · medium · high |
+| `SMART_ROUTING` | | ✅ | on | 3단계 라우팅(규칙→의도 분류→목적지 모델, config/routing.ts). off=예전 규칙 라우팅 |
+| `ROUTER_MODEL` | | ✅ | us.amazon.nova-micro-v1:0 | 2단계 의도 분류 모델 (서울 리전이면 apac.amazon.nova-micro-v1:0) |
+| `AI_MODEL_KNOWLEDGE` | | ✅ | 자동 | 전문지식·정보 질문 모델. 비우면 Perplexity 키가 있으면 perplexity:sonar, 없으면 google:gemini-3.8-flash |
+| `PERPLEXITY_API_KEY` | 🔒 | | 없음 | (선택) 과학·정보 질문을 Perplexity Sonar 로 |
 | `OPENAI_API_KEY` | 🔒 | | 없음 | OpenAI 직접 호출(`openai:gpt-5`)용. 없으면 해당 모델은 건너뜀 |
 | `XAI_API_KEY` | 🔒 | | 없음 | xAI(Grok) 키 — console.x.ai 에서 발급. 🛠 모델 탭의 Grok 테스트·`AI_MODEL_MATURE=xai:grok-4.7` 에 필요 |
 | `XAI_BASE_URL` | | | `https://api.x.ai/v1` | (선택) Grok 주소. 미국 리전 `https://us.api.x.ai/v1` |

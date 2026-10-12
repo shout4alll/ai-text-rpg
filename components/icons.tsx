@@ -131,3 +131,18 @@ export const IconBell = (p: P) => (
     <path d="M10 20.5a2.2 2.2 0 004 0" />
   </svg>
 );
+/** 💗 매혹 모드 아이콘 — 연핑크 구름에 E (켜짐이면 진한 핑크) */
+export const IconAllureCloud = ({ on, className }: { on?: boolean; className?: string }) => (
+  <svg viewBox="0 0 32 32" className={className} aria-hidden="true">
+    <path
+      d="M9.5 25h13.2a5.8 5.8 0 0 0 .9-11.5A7.6 7.6 0 0 0 9.2 11.7 6.7 6.7 0 0 0 9.5 25z"
+      fill={on ? "#F472B6" : "#FCE7F3"}
+      stroke={on ? "#FFFFFF" : "#F9A8D4"}
+      strokeWidth="1.6"
+      strokeLinejoin="round"
+    />
+    <text x="16.4" y="22" textAnchor="middle" fontSize="10.5" fontWeight="800" fontFamily="system-ui, sans-serif" fill={on ? "#FFFFFF" : "#EC4899"}>
+      E
+    </text>
+  </svg>
+);

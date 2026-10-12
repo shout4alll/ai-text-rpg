@@ -204,13 +204,8 @@ export default function PersonaSelector({
                     <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: p.accent }} />
                     <span className="truncate">{p.status}</span>
                   </p>
-                  {previews[p.id] ? (
-                    <p className="line-clamp-2 rounded-2xl bg-paper px-3 py-2 text-sm text-ink-soft" data-preview>
-                      {previews[p.id]}
-                    </p>
-                  ) : (
-                    <p className="line-clamp-3 text-sm leading-relaxed text-ink-mute">{p.description}</p>
-                  )}
+                  {/* 마지막 대화 미리보기는 보이지 않는다 — 소개만 ("대화 중" 표시는 사진 위에) */}
+                  <p className="line-clamp-3 text-sm leading-relaxed text-ink-mute">{p.description}</p>
                   <div className="mt-auto flex flex-wrap gap-1.5">
                     {p.tags.map((t) => (
                       <span key={t} className="rounded-full bg-paper px-2.5 py-0.5 text-[11px] text-ink-soft ring-1 ring-ink-line">

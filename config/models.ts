@@ -9,7 +9,7 @@
  *  프로바이더 키: bedrock=AWS_BEDROCK_API_KEY · google=GOOGLE_GENERATIVE_AI_API_KEY · xai=XAI_API_KEY
  *  (키가 없는 프로바이더의 모델은 목록에 흐리게 표시되고 고르면 호출 시 오류 메시지가 나온다)
  */
-export type ChoiceProvider = "bedrock" | "google" | "xai" | "openai" | "mantle";
+export type ChoiceProvider = "bedrock" | "google" | "xai" | "openai" | "mantle" | "perplexity";
 
 export interface ModelChoice {
   /** 목록 안에서 겹치지 않는 이름 */
@@ -37,10 +37,12 @@ export const MODEL_CHOICES: readonly ModelChoice[] = [
   { key: "llama3-1-405b", label: "Meta Llama 3.1 405B", provider: "bedrock", modelId: "meta.llama3-1-405b-instruct-v1:0", note: "가장 큼 · 일부 리전(us-west-2)만, 느리고 비쌈" },
   { key: "gpt-oss-120b", label: "GPT (gpt-oss 120B · Bedrock)", provider: "bedrock", modelId: "openai.gpt-oss-120b-1:0", note: "OpenAI 오픈웨이트 · Bedrock 키만으로 호출 (우회 모델 기본값)" },
   { key: "gpt-5", label: "GPT-5 (OpenAI 직접)", provider: "openai", modelId: "gpt-5", note: "OPENAI_API_KEY 필요 · 모델 ID 는 직접 입력으로 바꿔 시험" },
+  { key: "nova-micro", label: "Amazon Nova Micro", provider: "bedrock", modelId: "us.amazon.nova-micro-v1:0", note: "가장 싸고 빠름 · 3단계 라우팅의 의도 분류기 기본값" },
+  { key: "perplexity-sonar", label: "Perplexity Sonar", provider: "perplexity", modelId: "sonar", note: "웹 검색 기반 · 과학·정보 질문용 · PERPLEXITY_API_KEY 필요" },
   { key: "nova-2-lite", label: "Amazon Nova 2 Lite", provider: "bedrock", modelId: "global.amazon.nova-2-lite-v1:0", note: "저렴 · 기억 정리용" },
   { key: "gemini-3-8-flash", label: "Gemini 3.8 Flash", provider: "google", modelId: "gemini-3.8-flash", note: "빠르고 똑똑" },
   { key: "gemini-3-1-pro", label: "Gemini 3.1 Pro (미리보기)", provider: "google", modelId: "gemini-3.1-pro-preview", note: "가장 똑똑하지만 느리고 비쌈" },
   { key: "gemini-3-5-flash-lite", label: "Gemini 3.5 Flash Lite", provider: "google", modelId: "gemini-3.5-flash-lite", note: "가장 저렴" },
 ];
 
-export const CHOICE_PROVIDERS: readonly ChoiceProvider[] = ["bedrock", "mantle", "google", "xai", "openai"];
+export const CHOICE_PROVIDERS: readonly ChoiceProvider[] = ["bedrock", "mantle", "google", "xai", "openai", "perplexity"];

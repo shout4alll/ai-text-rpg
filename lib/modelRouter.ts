@@ -11,7 +11,7 @@ import { settingValue } from "@/config/settings";
  *  수치·단어 목록: config/balance.json 의 routing · replyPool (docs/BALANCE.md §7-4)
  */
 import { BALANCE } from "@/config/balance";
-import { resolveModel, type ModelTier } from "@/config/ai";
+import { resolveModel, resolveSpec, type ModelTier } from "@/config/ai";
 
 export type Tier = "chat" | "light";
 
@@ -158,7 +158,8 @@ export interface Attempt {
  */
 export async function runWithFallback<T>(
   tag: string,
-  tiers: ModelTier[],
+  /** 역할 이름(chat·light…) 또는 "프로바이더:모델ID" (config/routing.ts) */
+  tiers: (ModelTier | string)[],
   run: (r: ReturnType<typeof resolveModel>, attemptNo: number) => Promise<T>,
   opts: { extras?: ReturnType<typeof resolveModel>[] } = {}
 ): Promise<{ result: T; resolved: ReturnType<typeof resolveModel>; fellBack: boolean; attempts: Attempt[] }> {
@@ -168,7 +169,7 @@ export async function runWithFallback<T>(
   let skipped = false;
   const primary = tiers.flatMap((t) => {
     try {
-      return [resolveModel(t)];
+      return [resolveSpec(t)];
     } catch (err) {
       initErr = err;
       skipped = true;

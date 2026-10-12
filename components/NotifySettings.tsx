@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { IconBell, IconClose } from "@/components/icons";
 import { NOTIFY_KINDS } from "@/config/notifications";
 import { loadNotifyPlan } from "@/lib/push/planClient";
-import { cancelNudges, isNativeApp, notifyPermission, nudgeStatus, requestNotifyPermission, sendTestNotification, type NotifyPermission } from "@/lib/push/nudge";
+import { cancelNudges, isNativeApp, lastNotifyError, notifyPermission, nudgeStatus, requestNotifyPermission, sendTestNotification, type NotifyPermission } from "@/lib/push/nudge";
 import { loadNotifySettings, saveNotifySettings, type NotifySettings as Settings } from "@/lib/push/settings";
 
 /**
@@ -23,7 +23,7 @@ export default function NotifySettings({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     void notifyPermission().then(setPerm);
     void nudgeStatus().then((st) =>
-      setInfo(`권한: ${st.permission === "granted" ? "허용" : st.permission === "denied" ? "꺼짐" : "미확인"} · 예약된 알림 ${st.pending}개${st.next ? ` (다음 ${st.next.getMonth() + 1}/${st.next.getDate()} ${String(st.next.getHours()).padStart(2, "0")}:${String(st.next.getMinutes()).padStart(2, "0")})` : ""}`),
+      setInfo(`권한: ${st.permission === "granted" ? "허용" : st.permission === "denied" ? "꺼짐" : "미확인"} · 예약된 알림 ${st.pending}개${st.next ? ` (다음 ${st.next.getMonth() + 1}/${st.next.getDate()} ${String(st.next.getHours()).padStart(2, "0")}:${String(st.next.getMinutes()).padStart(2, "0")})` : ""}${lastNotifyError() ? ` · 마지막 오류: ${lastNotifyError()}` : ""}`),
     );
   }, []);
 

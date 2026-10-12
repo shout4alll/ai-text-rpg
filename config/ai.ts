@@ -284,6 +284,20 @@ const PROVIDERS = {
   },
 
   /* ------------------------------------------------------------------------ */
+  /*  Perplexity  (선택 — 과학·정보 질문용 knowledge 모델. 실시간 웹 검색 기반 답)      */
+  /*    인증: PERPLEXITY_API_KEY · 모델: sonar (빠름) / sonar-pro                  */
+  /* ------------------------------------------------------------------------ */
+  perplexity: {
+    label: "Perplexity",
+    model: "sonar",
+    create: (modelId) => {
+      const apiKey = process.env.PERPLEXITY_API_KEY?.trim();
+      if (!apiKey) throw new Error("[config/ai] PERPLEXITY_API_KEY 가 없습니다.");
+      return createOpenAI({ apiKey, baseURL: process.env.PERPLEXITY_BASE_URL?.trim() || "https://api.perplexity.ai" }).chat(modelId);
+    },
+  },
+
+  /* ------------------------------------------------------------------------ */
   /*  OpenAI GPT  (대기 — 우회(fallback) 모델 또는 🛠 › 모델 에서 사용)             */
   /*    인증: OPENAI_API_KEY (선택 OPENAI_BASE_URL)                              */
   /*    Bedrock 으로 쓰는 GPT(gpt-oss)는 이 항목이 아니라 Bedrock 모델 ID 로 부른다  */
@@ -358,7 +372,8 @@ export function describeModel(): {
  * 환경변수 > 설정 파일 순으로 프로바이더/모델을 결정해 모델 인스턴스를 만든다.
  * @param purpose "cheap" 이면 보조 작업용 저렴한 모델 (AI_CHEAP_MODEL > cheapModel)
  */
-export type ModelTier = "chat" | "light" | "cheap" | "mature";
+export type ModelTier = "chat" | "light" | "cheap" | "mature" | "knowledge" | "router";
+export const MODEL_TIERS: readonly ModelTier[] = ["chat", "light", "cheap", "mature", "knowledge", "router"];
 
 /** 모델 이름 앞에 "프로바이더:" 를 붙이면 그 프로바이더로 호출한다. 예) AI_MODEL_MATURE=mantle:xai.grok-4.3 */
 export function splitProviderPrefix(spec: string): { provider?: ProviderId; modelId: string } {
@@ -393,6 +408,7 @@ export function providerKeys(): Record<ProviderId, boolean> {
     xai: has("XAI_API_KEY"),
     openai: has("OPENAI_API_KEY"),
     mantle: has("AWS_BEDROCK_API_KEY") || has("AWS_BEARER_TOKEN_BEDROCK"),
+    perplexity: has("PERPLEXITY_API_KEY"),
   };
 }
 
@@ -421,8 +437,30 @@ export function resolveModel(purpose: ModelTier = "chat"): ResolvedModel {
       return build(sp.provider ?? requested, sp.modelId);
     }
   }
+  // 📚 knowledge: 과학·취미·정보 질문 (AI_MODEL_KNOWLEDGE · 없으면 Perplexity → Gemini → 메인 순)
+  if (purpose === "knowledge") {
+    const k = settingValue("knowledgeModel");
+    const keys = providerKeys();
+    const spec = k || (keys.perplexity ? "perplexity:sonar" : keys.google ? "google:gemini-3.8-flash" : "");
+    if (spec) {
+      const sp = splitProviderPrefix(spec);
+      return build(sp.provider ?? requested, sp.modelId);
+    }
+  }
+  // 🧭 router: 2단계 의도 분류용 초경량 모델 (ROUTER_MODEL · 기본 Nova Micro)
+  if (purpose === "router") {
+    const sp = splitProviderPrefix(settingValue("routerModel") || "us.amazon.nova-micro-v1:0");
+    return build(sp.provider ?? "bedrock", sp.modelId);
+  }
   if (purpose === "cheap") modelId = process.env.AI_CHEAP_MODEL?.trim() || entry.cheapModel || light;
   return build(requested, modelId);
+}
+
+/** "프로바이더:모델ID" 또는 역할 이름(light·chat…)으로 모델 만들기 — config/routing.ts 의 tiers 용 */
+export function resolveSpec(spec: string): ResolvedModel {
+  if ((MODEL_TIERS as readonly string[]).includes(spec)) return resolveModel(spec as ModelTier);
+  const sp = splitProviderPrefix(spec);
+  return build(sp.provider ?? "bedrock", sp.modelId);
 }
 
 /** 성인(매혹) 전용 모델이 따로 설정돼 있으면 그 모델 ID (프로바이더 접두사 처리·리전 보정 포함), 없으면 null — 모델은 만들지 않는다 */

@@ -19,6 +19,9 @@ import type { PersonaFile } from "@/lib/personas/schema";
 import { resolveModel, resolveOverrideModel, resolveFallbacks, matureModelId, supportsBedrockCache, usesTextJson } from "@/config/ai";
 import { sanitizeHistory, stickyMature } from "@/lib/historySanitizer";
 import { SPICY } from "@/config/spicy";
+import { EMOTION_PATTERN, FREEDOM } from "@/config/routing";
+const EMOTION_RE = new RegExp(EMOTION_PATTERN);
+import { categoryById, classifyIntent, explicitHit, type Classified } from "@/lib/smartRouter";
 import { SAFETY_RULES, MINOR_GUARD, absoluteRules } from "@/config/rules";
 import { PERSONA_FIELDS, RULE_FIELDS, applyPersonaOverride, mergeOverride, type OwnerOpts, type RulesOverride } from "@/lib/ownerOverrides";
 import { persistedPersona, persistedRules } from "@/lib/overridesStore";
@@ -110,6 +113,12 @@ const requestSchema = z.object({
     .optional(),
   /** 기억 노트 (/api/memory 가 만든 요약, 예전 대화·보이스톡) */
   memory: z.array(z.string().max(300)).max(60).optional(),
+  /** 👤 유저 정보 (첫 입장 때 받은 호칭·성별) */
+  user: z.object({ name: z.string().max(20).optional(), gender: z.enum(["male", "female"]).optional() }).optional(),
+  /** 🎁 이번 턴 선물 (kind=gift) — good: 이 인물이 좋아하는 선물인지 */
+  gift: z.object({ name: z.string().max(40), good: z.boolean() }).optional(),
+  /** 👆 최근 화면 터치 (대화 흐름에 이어서 반응하도록) 예) "볼 2번 (3분 전)" */
+  touches: z.array(z.string().max(60)).max(6).optional(),
   /** 📲 선톡: 유저가 알림을 받고 들어왔을 때(kind=return) 어떤 선톡이었는지 */
   nudge: z.enum(["message", "photo", "video"]).optional(),
   /** 선톡 일과표 슬롯 id (morning·lunch·goodnight …). 문구는 서버(CMS) 일과표에서 찾는다 */
@@ -328,6 +337,28 @@ interface InstructionContext {
   sulk: z.infer<typeof requestSchema>["sulk"];
   /** 예전 대화(보이스톡 포함)에서 기억해 둔 것 */
   memory: string[];
+  /** 직전 대화 이후 흐른 시간(ms) */
+  gapMs?: number;
+  user?: { name?: string; gender?: "male" | "female" };
+  gift?: { name: string; good: boolean };
+  touches?: string[];
+}
+
+/** 마지막 대화 뒤 경과 시간에 맞는 첫 답장 지침 (balance.json gapReactions) */
+function gapGuide(ms?: number): string | null {
+  if (!ms || ms <= 0) return null;
+  const min = ms / 60_000;
+  const step = [...BALANCE.gapReactions.steps].sort((a, b) => b.minMin - a.minMin).find((s) => min >= s.minMin);
+  return step ? `- 오랜만에 온 말: ${step.guide} (첫 말풍선에서만, 다음 턴부터는 평소처럼)` : null;
+}
+
+/** 👤 호칭 지침 — 정해진 호칭으로 부르고, 모르면 '유저님' 같은 말 대신 호칭 없이 말한다 */
+function userLine(u?: { name?: string; gender?: "male" | "female" }): string {
+  const g = u?.gender === "male" ? "남성" : u?.gender === "female" ? "여성" : null;
+  if (u?.name) {
+    return `- 대화 상대: "${u.name}"${g ? ` (${g})` : ""}. 처음에는 "${u.name}" 또는 "${u.name} 씨"처럼 이 이름으로 불러라(관계·말투에 맞게). 유저가 다른 호칭(오빠·자기·이름 반말 등)을 원하면 대화 흐름에서 판단해 바꿔라. "유저님"·"사용자님"·"그쪽 님" 같은 말은 절대 쓰지 마라.`;
+  }
+  return `- 대화 상대의 이름을 아직 모른다${g ? ` (${g})` : ""}. "유저님"·"사용자님"·"그쪽" 같은 호칭을 쓰지 말고, 호칭 없이 자연스럽게 말해라. 유저가 이름을 알려 주면 그때부터 그 이름으로 불러라.`;
 }
 
 /** 인물 성향 (personas/<id>.json traits) → 프롬프트 */
@@ -483,7 +514,10 @@ function buildTurnContext(c: InstructionContext): string {
     userNow && c.userTimeZone ? `- 유저 쪽은 ${daypart(c.userTimeZone) ?? ""}이다. 한밤중·새벽이면 안 자는 걸 걱정하거나 놀라고, 아침이면 하루 시작을 챙기고, 식사 시간대면 식사를 가볍게 물어도 된다(억지로 하지 말 것).` : null,
     "- 이 대화의 앞부분(위 메시지들)을 다시 읽고 확인해라: 유저가 말한 일정·약속·고민·질문 중 아직 매듭짓지 않은 것이 있으면 이번 답에서 자연스럽게 이어 가라(예: 면접·시험·병원·약속의 결과 묻기, 아까 하던 이야기 다시 꺼내기). 이미 물어본 걸 또 묻지 마라. 유저가 방금 한 질문에는 먼저 답해라.",
     ...unlockedStory(c),
+    userLine(c.user),
     c.sinceLast ? `- 직전 대화 이후 ${c.sinceLast}이 지났다. 그동안 각자의 시간이 흘렀다는 걸 자연스럽게 반영해라.` : null,
+    gapGuide(c.gapMs),
+    c.touches?.length ? `- 방금 유저가 화면 속 너를 터치했다: ${c.touches.join(", ")}. 그 스킨십을 기억하고 관계 단계에 맞게 이어서 반응해라(가까우면 설레거나 장난스럽게, 아직 어색하면 쑥스럽거나 살짝 경계). 매번 언급하지는 마라.` : null,
     `- 호감도 ${Math.round(c.affection)}/100 → "${stage.label}": ${stage.guide}${prog.next ? ` (다음 "${prog.next.label}"까지 ${prog.toNext})` : ""}`,
     c.recentOpenings.length > 0
       ? `- 최근 답장들은 이렇게 시작했다: ${c.recentOpenings.map((o) => `"${o}…"`).join(", ")}. 같은 말이나 같은 구조로 시작하지 마라.`
@@ -496,7 +530,9 @@ function buildTurnContext(c: InstructionContext): string {
   const turn =
     c.lastKind === "user_media"
       ? `- 이번 턴: 유저가 사진·영상을 직접 보냈다. 실제로 보이는 것에 대해 ${persona.name}답게 반응해라. ${persona.traits?.mediaReaction ?? "보이는 것을 구체적으로 짚어 칭찬하거나 궁금한 걸 물어라."} 보이지 않는 것을 지어내지 마라. 마음에 들면 tapback 을 달아도 된다. seen 에 무엇이 보였는지 한 문장으로 적어라. 사람 얼굴이 보이면 외모는 다정하게만 언급하고 누구인지 추측하지 마라. 노출이 있거나 성적인 사진이면 내용을 언급하지 말고 부드럽게 화제를 돌려라. 미성년자로 보이는 사람이 있으면 외모 평가를 하지 마라.`
-      : c.lastKind === "gift"
+      : c.lastKind === "gift" && c.gift && !c.sulk
+        ? `- 이번 턴: 유저가 선물로 "${c.gift.name}"을(를) 줬다. 네가 정말 좋아하는 선물이다. 기쁨과 고마움을 네 말투로 표현하고(1~2개 말풍선), 왜 좋은지 한마디. reaction 은 love 나 shy.`
+        : c.lastKind === "gift"
         ? `- 이번 턴: 유저가 너를 달래려고 선물을 줬고, 서운함이 다 풀렸다. 고마움과 풀린 마음을 네 말투로 표현해라(1~2개 말풍선). reaction 은 love 나 shy 같은 기쁜 표정.`
         : c.lastKind === "reaction"
           ? `- 이번 턴: 유저가 말 없이 마음 리액션을 보냈다. 관계 단계와 기분에 맞게 반응해라. 말 없이 표정만 지어도 되고(messages 빈 배열), 짧은 한두 마디로 답해도 된다.`
@@ -657,6 +693,29 @@ export async function POST(request: Request) {
     persona.id
   );
 
+  // 🧭 3단계 라우팅 (config/routing.ts) ─────────────────────────────────────
+  const smart = settingValue("smartRouting") !== "off" && !ownerOpts?.model;
+  /** 더 대담한 모델을 써도 되는 유저 (성인 확인 + 매혹 지원 인물, 또는 주인님) */
+  const adultOk = owner || (parsed.data.allureOk === true && !!persona.allure);
+  const stageIdx = affectionStageIndex(affection, persona.relationshipType);
+  // 1단계: 직설적 표현 키워드 → 분석 없이 성인 모델
+  const explicit = smart && !!matureId && adultOk && last.kind === "text" && explicitHit(last.content);
+  // 단계별 개방: 초반 체험 몇 번 + 관계가 깊어질수록 성인 모델 확률↑ (매혹 모드가 아닐 때 · 수위 규칙은 그대로)
+  const matureReplies = recent.filter((t) => t.role === "assistant" && t.mature).length;
+  const freedomRoll = Math.random();
+  const freedomTrial = matureReplies < FREEDOM.trialTurns;
+  const freedom =
+    smart && !!matureId && adultOk && !allureMode && !explicit && last.kind === "text" &&
+    freedomRoll < (freedomTrial ? FREEDOM.trialChance : FREEDOM.chanceByStage[Math.min(stageIdx, FREEDOM.chanceByStage.length - 1)]);
+  const toMature = allureHot || moodHit || personaMature || explicit || freedom;
+  // 2단계: 남은 말은 초경량 모델이 의도를 분류 (인사·맞장구·고민 키워드는 규칙으로 바로)
+  let intent: Classified | null = null;
+  if (smart && !toMature && !allureMode && last.kind === "text") {
+    if (!owner && route.tier === "light") intent = { category: categoryById("daily"), by: "rule", ms: 0 };
+    else if (route.reason === "sulking" || EMOTION_RE.test(last.content)) intent = { category: categoryById("emotion"), by: "rule", ms: 0 };
+    else intent = await classifyIntent(last.content);
+  }
+
   let resolved: ReturnType<typeof resolveModel> | null = null;
   try {
     // 💰 고정 프롬프트(캐시 대상) + 이번 턴 상황(마지막 유저 메시지 앞)
@@ -679,6 +738,10 @@ export async function POST(request: Request) {
       lastKind: last.kind,
       userText: last.content,
       sinceLast,
+      gapMs: last.at && prevAt ? last.at - prevAt : undefined,
+      user: parsed.data.user,
+      gift: parsed.data.gift,
+      touches: parsed.data.touches,
       album,
       sentAlbumIds: parsed.data.sentAlbumIds ?? [],
       allure: allureEff,
@@ -787,7 +850,8 @@ export async function POST(request: Request) {
       : await runWithFallback(
           "/api/chat",
           // 대화 내용에 따라: 매혹 모드·설렘 분위기 → 성인 모델(Grok 등) / 인사·맞장구 → 가벼운 모델(Haiku·Llama 등) / 그 외 → 메인(Sonnet)
-          allureHot || moodHit || personaMature ? ["mature", "chat"] : !owner && route.tier === "light" && (!allureMode || AR.lightInAllure) ? ["light", "cheap", "chat"] : ["chat"],
+          // 3단계: 성인 모델(규칙·개방·매혹) / 의도 분류 결과의 모델 / 규칙 라우팅
+          toMature ? ["mature", "chat"] : intent ? intent.category.tiers : !owner && route.tier === "light" && (!allureMode || AR.lightInAllure) ? ["light", "cheap", "chat"] : ["chat"],
           generate,
           // 🔁 우회: 위 모델들이 모두 실패하면 우회 목록(성공률 높은 순)으로 이어서 답한다. 일반 대화방은 오류를 보이지 않는다.
           { extras: settingValue("serviceFallback") === "off" ? [] : resolveFallbacks() }
@@ -868,7 +932,7 @@ export async function POST(request: Request) {
             debug: {
               model: resolved.modelId,
               label: resolved.label,
-              tier: forced ? "forced" : `${owner ? "owner" : ""}${allureMode ? `${owner ? "·" : ""}allure${surprise ? "·surprise" : heatHit ? "·heat" : allureHot ? "" : "·calm"}` : moodHit ? `${owner ? "·" : ""}mood` : personaMature ? `${owner ? "·" : ""}persona-mature` : owner ? "" : route.tier}` || "owner",
+              tier: forced ? "forced" : `${owner ? "owner" : ""}${allureMode ? `${owner ? "·" : ""}allure${surprise ? "·surprise" : heatHit ? "·heat" : allureHot ? "" : "·calm"}` : moodHit ? `${owner ? "·" : ""}mood` : personaMature ? `${owner ? "·" : ""}persona-mature` : explicit ? `${owner ? "·" : ""}explicit` : freedom ? `${owner ? "·" : ""}${freedomTrial ? "trial" : "freedom"}` : intent ? `${owner ? "·" : ""}${intent.category.id}(${intent.by === "rule" ? "규칙" : intent.by === "cache" ? "캐시" : intent.by === "default" ? "분류실패" : `분류 ${intent.ms}ms`})` : owner ? "" : route.tier}` || "owner",
               reason: forced ? "model-override" : route.reason,
               promptMode: owner ? "owner" : "service",
               overrides: appliedOverrides,
@@ -886,7 +950,7 @@ export async function POST(request: Request) {
         : {}),
       messages: bubbles,
       // 성인 모델이 쓴 답만 mature 로 표시 → 다음에 Sonnet 등이 답할 때 그 부분만 요약해서 넘긴다 (성인 모델이 없으면 매혹 모드 답 전부)
-      ...((allureMode && (!matureId || resolved?.modelId === matureId)) || ((moodHit || allureHot || personaMature) && !!matureId && resolved?.modelId === matureId) ? { mature: true } : {}),
+      ...((allureMode && (!matureId || resolved?.modelId === matureId)) || ((moodHit || allureHot || personaMature || explicit || freedom) && !!matureId && resolved?.modelId === matureId) ? { mature: true } : {}),
       reaction: output.reaction,
       // 마음 리액션에 마음으로 답하는 건 어색하므로 text 턴에만 허용
       tapback: last.kind === "text" && output.tapback !== "none" ? output.tapback : null,

@@ -15,7 +15,7 @@ import { loadNotifySettings } from "@/lib/push/settings";
 import type { NudgeKind } from "@/config/notifications";
 import { DEFAULT_THEME, isThemeId, THEME_KEY, VIEW_KEY, type ThemeId } from "@/config/themes";
 import {
-  IconBack, IconBackup, IconBrain, IconBubble, IconCrown, IconMore, IconPhone, IconScreen, IconSound, IconSparkle, IconTrash, IconUser,
+  IconAllureCloud, IconGift, IconBack, IconBackup, IconBrain, IconBubble, IconCrown, IconMore, IconPhone, IconScreen, IconSound, IconSparkle, IconTrash, IconUser,
  IconBell, } from "@/components/icons";
 import VoiceCall, { type VoiceBilling, type VoiceCallHandle, type VoiceCallResult } from "@/components/VoiceCall";
 import PlansModal, { type PlansReason } from "@/components/PlansModal";
@@ -33,6 +33,12 @@ import {
   type MembershipState,
 } from "@/lib/membership";
 import MediaPurchaseModal from "@/components/MediaPurchaseModal";
+import OwnerPasswordModal from "@/components/OwnerPasswordModal";
+import OnboardingModal from "@/components/OnboardingModal";
+import GiftSheet, { type GiftOption } from "@/components/GiftSheet";
+import LobbyNotes from "@/components/LobbyNotes";
+import { allurePaidToday, countMessage, markAllurePaid, nextMessageCost } from "@/lib/economy";
+import { loadUserProfile, saveUserProfile, type UserProfile } from "@/lib/userProfile";
 import AllureGateModal from "@/components/AllureGateModal";
 import { BackupModal, MemoryModal, ResetFlow } from "@/components/ChatManageModals";
 import { downloadBackup } from "@/lib/backup";
@@ -72,6 +78,8 @@ import type { ChatMessage, ChatResponse } from "@/types/game";
 /*  브라우저 저장: 인물마다 대화방(메시지 + 호감도)이 따로 저장된다               */
 /* -------------------------------------------------------------------------- */
 const OWNER_KEY = "ai-rpg.owner";
+/** 대화창에 이 말을 치면 비밀번호 창이 뜬다 (비밀번호 자체는 서버만 안다) */
+const OWNER_ENTRY_WORD = "주인님입장";
 function readOwnerToken(): string | null {
   try {
     return localStorage.getItem(OWNER_KEY);
@@ -302,14 +310,46 @@ const visibleText = (m: ChatMessage) => (m.kind ?? "text") === "text";
 
 /* -------------------------------------------------------------------------- */
 
+const PERSONAS_CACHE = "ai-rpg.personas.v1";
+
 export default function ChatApp({
-  personas,
+  personas: bundledPersonas,
   premiumReactions = false,
 }: {
   personas: Persona[];
   /** 유료 리액션 영상(뽀뽀 등) 사용 가능 — 서버가 정한다 (lib/entitlements.ts) */
   premiumReactions?: boolean;
 }) {
+  // 📦 업데이트 이원화: 앱 안에 들어 있는 목록으로 먼저 그리고, 서버의 최신 목록(/api/personas)을 받아 바꾼다.
+  //    → 인물·영상·사진을 서버에만 올려도 설치된 앱에 반영된다 (앱에서는 리소스도 서버 주소로)
+  const [personas, setPersonas] = useState<Persona[]>(() => {
+    try {
+      const c = JSON.parse(localStorage.getItem(PERSONAS_CACHE) ?? "null") as { personas?: Persona[] } | null;
+      if (c?.personas?.length) return c.personas;
+    } catch {
+      /* 서버 렌더 또는 저장소 없음 */
+    }
+    return bundledPersonas;
+  });
+  useEffect(() => {
+    let alive = true;
+    const native = isNativeApp();
+    fetch(apiUrl(`/api/personas${native ? "?abs=1" : ""}`))
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { personas?: Persona[] } | null) => {
+        if (!alive || !d?.personas?.length) return;
+        setPersonas(d.personas);
+        try {
+          localStorage.setItem(PERSONAS_CACHE, JSON.stringify({ at: Date.now(), personas: d.personas }));
+        } catch {
+          /* 용량 초과 등 */
+        }
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
   const byId = useMemo(() => new Map(personas.map((p) => [p.id, p])), [personas]);
 
   const [hydrated, setHydrated] = useState(false);
@@ -415,6 +455,7 @@ export default function ChatApp({
   // 💋 매혹 모드 (인물별로 켜고 끔, 기기에 기억) — config/allure.ts
   const [allureIds, setAllureIds] = useState<string[]>([]);
   const [allureGate, setAllureGate] = useState(false);
+  const [ownerPwOpen, setOwnerPwOpen] = useState(false);
   useEffect(() => {
     try {
       const v = JSON.parse(readStorage(ALLURE_STORAGE.on) ?? "[]") as unknown;
@@ -695,6 +736,8 @@ export default function ChatApp({
       const firing = now - t.lastFire > BALANCE.touch.fireGapMs;
       const zone = touchZoneOf(y / 100);
       const touchId = firing ? pickTouchReaction(zone, t.combo, affection, persona.relationshipType) : null;
+      // 👆 다음 답장이 터치를 기억하고 이어서 반응하도록 기록 (최근 5분)
+      touchLogRef.current = [...touchLogRef.current.filter((x) => now - x.at < 5 * 60_000), { zone, at: now }].slice(-30);
       const def = touchId ? TOUCH_REACTIONS[touchId] : null;
       const lines = touchId ? persona.touchLines?.[touchId] ?? def?.lines : undefined;
       const line = lines && lines.length ? lines[Math.floor(Math.random() * lines.length)] : undefined;
@@ -868,7 +911,10 @@ export default function ChatApp({
   };
 
   // 마지막으로 대화한 사람 복원
+  const restoredRef = useRef(false);
   useEffect(() => {
+    if (restoredRef.current) return; // 인물 목록이 서버에서 새로 와도 다시 열지 않는다 (한 번만)
+    restoredRef.current = true;
     const last = readStorage(LAST_KEY);
     if (last && byId.has(last) && !byId.get(last)?.cheatRoom) openChat(last); // 치트룸은 자동 복원하지 않는다
     setHydrated(true);
@@ -963,6 +1009,34 @@ export default function ChatApp({
   }, [messages, busy, personaId, memory, memoryBusy, updateMemory]);
 
   /* ── 답장 받기 (공통) ──────────────────────────────────────────────────── */
+  /** 👆 최근 터치 기록 → 다음 요청에 요약해서 보낸다 */
+  const touchLogRef = useRef<{ zone: string; at: number }[]>([]);
+  const takeTouches = (): string[] | undefined => {
+    const now = Date.now();
+    const recent = touchLogRef.current.filter((x) => now - x.at < 5 * 60_000);
+    touchLogRef.current = [];
+    if (!recent.length) return undefined;
+    const name: Record<string, string> = { head: "머리", face: "볼·얼굴", body: "몸(어깨·팔)" };
+    const by = new Map<string, { n: number; last: number }>();
+    for (const x of recent) {
+      const v = by.get(x.zone) ?? { n: 0, last: 0 };
+      by.set(x.zone, { n: v.n + 1, last: Math.max(v.last, x.at) });
+    }
+    return [...by.entries()].map(([z, v]) => `${name[z] ?? z} ${v.n}번 (${Math.max(0, Math.round((now - v.last) / 60_000))}분 전)`);
+  };
+  /** 🎁 이번 요청에 실을 선물 */
+  const giftRef = useRef<{ name: string; good: boolean } | null>(null);
+  /** 👤 첫 입장 때 받은 호칭·성별 */
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [onboardingOpen, setOnboardingOpen] = useState<"first" | "edit" | null>(null);
+  useEffect(() => {
+    const u = loadUserProfile();
+    setUserProfile(u);
+    if (!u) setOnboardingOpen("first");
+  }, []);
+  const userProfileRef = useRef<UserProfile | null>(null);
+  userProfileRef.current = userProfile;
+
   const requestReply = useCallback(
     async (msgs: ChatMessage[], kind: Turn["kind"], tapbackTargetId: number | null, heart?: HeartReactionId, nudge?: NudgeKind, nudgeTopic?: string) => {
       if (!personaId) return;
@@ -994,6 +1068,9 @@ export default function ChatApp({
           allureOk: !!persona?.allure && premiumUnlocked,
           sulk: sulkSummary(sulkRef.current),
           memory: memoryRef.current?.facts ?? [],
+          ...(userProfileRef.current ? { user: { name: userProfileRef.current.name, gender: userProfileRef.current.gender } } : {}),
+          ...(kind === "text" || kind === "reaction" ? (() => { const t = takeTouches(); return t ? { touches: t } : {}; })() : {}),
+          ...(kind === "gift" && giftRef.current ? { gift: giftRef.current } : {}),
           ...(kind === "return" && nudge ? { nudge, ...(nudgeTopic ? { nudgeTopic } : {}) } : {}),
           ...(readOwnerToken() ? { ownerToken: readOwnerToken(), ownerOpts: buildOwnerOpts(pid) } : {}),
         }),
@@ -1281,6 +1358,65 @@ export default function ChatApp({
     };
   }, [nudgeCandidates]);
 
+  /* ── ◀ 뒤로가기 (안드로이드 뒤로 버튼 · 브라우저 뒤로) ─────────────────────── */
+  // 위에 떠 있는 창부터 닫고 → 대화방이면 메인(인물 목록)으로 → 메인이면 앱을 내린다(종료하지 않음)
+  const backRef = useRef<() => boolean>(() => false);
+  backRef.current = () => {
+    const closers: [boolean, () => void][] = [
+      [ownerPwOpen, () => setOwnerPwOpen(false)],
+      [giftOpen, () => setGiftOpen(false)],
+      [onboardingOpen === "edit", () => setOnboardingOpen(null)],
+      [menuOpen, () => setMenuOpen(false)],
+      [resetOpen, () => setResetOpen(false)],
+      [memoryOpen, () => setMemoryOpen(false)],
+      [backupOpen, () => setBackupOpen(false)],
+      [themeOpen, () => setThemeOpen(false)],
+      [notifyOpen, () => setNotifyOpen(false)],
+      [gemOpen, () => setGemOpen(false)],
+      [profileOpen, () => setProfileOpen(false)],
+      [!!plansModal, () => setPlansModal(null)],
+      [allureGate, () => setAllureGate(false)],
+      [selectMode, () => setSelectMode(false)],
+    ];
+    const open = closers.find(([o]) => o);
+    if (open) {
+      open[1]();
+      return true;
+    }
+    if (voiceOpen) return true; // 통화 중에는 뒤로가기로 끊지 않는다 (통화 화면의 종료 버튼으로)
+    if (persona && !selectorOpen) {
+      setConfirmReset(false);
+      setSelectorOpen(true);
+      return true;
+    }
+    if (persona && selectorOpen) {
+      setSelectorOpen(false); // 대화방 위에 띄운 메인을 닫으면 대화방으로
+      return true;
+    }
+    return false; // 메인 화면 → 앱 내리기
+  };
+  useEffect(() => {
+    let remove: (() => void) | undefined;
+    if (isNativeApp()) {
+      void import("@capacitor/app").then(async ({ App }) => {
+        const h = await App.addListener("backButton", () => {
+          if (!backRef.current()) void App.minimizeApp();
+        });
+        remove = () => void h.remove();
+      });
+    } else {
+      // 웹: 브라우저 뒤로가기도 같은 동작 (기록 한 칸을 늘 깔아 둔다)
+      const push = () => window.history.pushState({ witH: true }, "");
+      push();
+      const onPop = () => {
+        if (backRef.current()) push();
+      };
+      window.addEventListener("popstate", onPop);
+      remove = () => window.removeEventListener("popstate", onPop);
+    }
+    return () => remove?.();
+  }, []);
+
   /* ── 보내기 ─────────────────────────────────────────────────────────── */
   // 답장을 기다리는 중에 보낸 말: 화면에는 바로 올리고, 답장이 끝나면 한꺼번에 이어서 답한다
   const queuedRef = useRef<{ pid: string; fromId: number } | null>(null);
@@ -1293,6 +1429,22 @@ export default function ChatApp({
     }
     const text = input.trim();
     if (!text) return;
+    // 🔑 "주인님입장" → 비밀번호 창 (문구를 대화에 직접 치지 않게 — 기록·서버 전송 없음)
+    if (text.replace(/\s+/g, "") === OWNER_ENTRY_WORD) {
+      setInput("");
+      setOwnerPwOpen(true);
+      return;
+    }
+    // 💎 하루 무료 메시지를 넘기면 1개당 보석 (balance.json economy)
+    const msgCost = nextMessageCost();
+    if (msgCost > 0 && !payCash(msgCost)) {
+      setCashState(getCash());
+      addNotice(`오늘 무료 메시지 ${BALANCE.economy.dailyFreeMessages}개를 다 썼어요 · 💎 충전 후 계속할 수 있어요`);
+      setGemOpen(true);
+      return;
+    }
+    countMessage();
+    if (msgCost > 0) setCashState(getCash());
     const userMsg: ChatMessage = { id: nextId.current++, role: "user", kind: "text", text, at: Date.now(), read: false, ...(allureActive ? { mature: true } : {}) };
     const msgs = [...messages, userMsg];
     setMessages(msgs);
@@ -1442,6 +1594,67 @@ export default function ChatApp({
     });
   };
 
+  /* ── 🎁 선물하기 (매혹 버튼 아래) ────────────────────────────────────── */
+  const [giftOpen, setGiftOpen] = useState(false);
+  const GIFT_AT_KEY = "ai-rpg.giftAt";
+  const giftOptions = (): GiftOption[] => {
+    if (!persona) return [];
+    const list: GiftOption[] = [...BALANCE.economy.gifts];
+    const fav = persona.traits.gift;
+    if (!list.some((g) => g.name === fav.name)) list.splice(Math.floor(Math.random() * (list.length + 1)), 0, { id: "fav", name: fav.name, emoji: fav.emoji, cost: 20 });
+    return list;
+  };
+  const giftCooldownLeft = (): number => {
+    if (!persona) return 0;
+    try {
+      const at = (JSON.parse(localStorage.getItem(GIFT_AT_KEY) ?? "{}") as Record<string, number>)[persona.id] ?? 0;
+      const left = BALANCE.economy.giftCooldownMin * 60_000 - (Date.now() - at);
+      return left > 0 ? Math.ceil(left / 60_000) : 0;
+    } catch {
+      return 0;
+    }
+  };
+  const giveGift = (g: GiftOption) => {
+    if (!persona || busy) return;
+    if (g.cost > 0 && !payCash(g.cost)) {
+      setCashState(getCash());
+      addNotice(`💎 보석이 부족해요 (필요 ${g.cost})`);
+      setGiftOpen(false);
+      setGemOpen(true);
+      return;
+    }
+    setCashState(getCash());
+    setGiftOpen(false);
+    try {
+      const m = JSON.parse(localStorage.getItem(GIFT_AT_KEY) ?? "{}") as Record<string, number>;
+      localStorage.setItem(GIFT_AT_KEY, JSON.stringify({ ...m, [persona.id]: Date.now() }));
+    } catch {
+      /* 무시 */
+    }
+    // 삐져 있으면 기존 달래기 선물과 같다 (좋아하는 선물일 때만)
+    const good = g.name === persona.traits.gift.name || (persona.traits.giftLikes ?? []).some((x) => x === g.id || x === g.name);
+    const giftMsg: ChatMessage = { id: nextId.current++, role: "user", kind: "gift", text: `${g.emoji} ${g.name}`, at: Date.now() };
+    const msgs = [...messages, giftMsg];
+    setMessages(msgs);
+    if (!good) {
+      // 잘못된 선물: 반응 없음 (AI 호출·호감도 변화 없음)
+      setTimeout(() => addNotice(`${persona.name}의 반응이 없어요… 다른 선물이 좋을지도 몰라요`), 900);
+      return;
+    }
+    spawnBurst(g.emoji);
+    spawnParticles([g.emoji, "💗", "✨"], 10);
+    const bonus = BALANCE.economy.giftGoodBonus;
+    if (sulkRef.current) {
+      if (sulkTimer.current) clearTimeout(sulkTimer.current);
+      setSulk(null);
+      sulkReleasedAt.current = Date.now();
+      playReaction("love", { delta: bonus, kind: "gift", sulkRelease: "gift" });
+    } else playReaction("love", { delta: bonus, kind: "gift" });
+    applyAffection(bonus);
+    giftRef.current = { name: g.name, good: true };
+    requestReply(msgs, "gift", null);
+  };
+
   /* ── 삐짐 달래기: 💎 선물 (즉시 풀림 + 특별 리액션) ─────────────────────── */
   const sendGift = () => {
     const s = sulkRef.current;
@@ -1528,6 +1741,20 @@ export default function ChatApp({
   };
   const enableAllure = () => {
     if (!persona) return;
+    // 💎 인물마다 하루 처음 켤 때 이용료 (balance.json economy.allureDayCost)
+    if (!allurePaidToday(persona.id)) {
+      const cost = BALANCE.economy.allureDayCost;
+      if (cost > 0 && !payCash(cost)) {
+        setCashState(getCash());
+        setAllureGate(false);
+        addNotice(`💎 보석이 부족해요 (${persona.allureUi?.label ?? "매혹 모드"} 오늘 이용료 ${cost})`);
+        setGemOpen(true);
+        return;
+      }
+      markAllurePaid(persona.id);
+      setCashState(getCash());
+      if (cost > 0) addNotice(`💎 ${cost} 사용 · 오늘 하루 ${persona.name} 님과 ${persona.allureUi?.label ?? "매혹 모드"}`);
+    }
     setAllureFor(persona.id, true);
     setAllureGate(false);
     const ui = persona.allureUi ?? { emoji: "💋", label: "매혹 모드" };
@@ -1556,6 +1783,29 @@ export default function ChatApp({
       return;
     }
     enableAllure();
+  };
+
+  /** 💌 로비 쪽지를 누르면: 그 인물 대화방을 열고 쪽지를 인물의 첫 말로 넣는다 */
+  const openFromNote = (pid: string, text: string) => {
+    setSelectorOpen(false);
+    openChat(pid);
+    setAutoAction(null);
+    setTimeout(() => setMessages((prev) => [...prev, { id: nextId.current++, role: "ai", kind: "text", text: `💌 ${text}`, at: Date.now() }]), 0);
+  };
+
+  /** 🔑 "주인님입장" 비밀번호 창: 맞으면 주인님 모드 켜짐 (지금 대화방에 그대로 머문다) */
+  const handleOwnerPassword = async (code: string): Promise<string | null> => {
+    try {
+      const res = await fetch(apiUrl("/api/owner/enter"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) });
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; ownerToken?: string; error?: string };
+      if (!res.ok || !data.ok || !data.ownerToken) return data.error ?? "입장하지 못했어요.";
+      writeOwnerToken(data.ownerToken);
+      setOwnerTok(data.ownerToken);
+      setMessages((prev) => [...prev, { id: nextId.current++, role: "ai", kind: "notice", text: "🔑 주인님 모드가 켜졌어요 (끄기: 주인님퇴장)", at: Date.now(), local: true }]);
+      return null;
+    } catch {
+      return "서버에 연결하지 못했어요.";
+    }
   };
 
   /** 🔑 치트 코드 입장: 서버가 코드를 확인하고 토큰을 준다 → 치트룸이 목록에 나타나고 바로 들어간다 */
@@ -1699,6 +1949,7 @@ export default function ChatApp({
     return (
       <main className="h-[100dvh] w-full bg-paper">
         <PersonaSelector personas={listed} onCheatCode={handleCheatCode} currentId={null} onSelect={handleSelect} previews={previews()} onBackup={() => setBackupOpen(true)} onTheme={() => setThemeOpen(true)} onNotify={() => setNotifyOpen(true)} gems={cash} onGems={() => setGemOpen(true)} />
+        {!onboardingOpen && <LobbyNotes personas={listed} userGender={userProfile?.gender} userName={userProfile?.name} onOpen={openFromNote} />}
         {backupOpen && <BackupModal onClose={() => setBackupOpen(false)} onRestored={() => window.location.reload()} />}
       {themeOpen && (
         <ThemePicker
@@ -1710,6 +1961,17 @@ export default function ChatApp({
         />
       )}
       {notifyOpen && <NotifySettings onClose={() => setNotifyOpen(false)} />}
+      {ownerPwOpen && <OwnerPasswordModal onSubmit={handleOwnerPassword} onClose={() => setOwnerPwOpen(false)} />}
+      {onboardingOpen && (
+        <OnboardingModal
+          initial={onboardingOpen === "edit" ? userProfile : null}
+          onDone={(p) => {
+            setUserProfile(saveUserProfile(p));
+            setOnboardingOpen(null);
+          }}
+          onClose={onboardingOpen === "edit" ? () => setOnboardingOpen(null) : undefined}
+        />
+      )}
       {gemOpen && (
         <GemShop
           gems={cash}
@@ -1900,6 +2162,7 @@ export default function ChatApp({
             data="memory"
             onClick={() => { setMenuOpen(false); setMemoryOpen(true); }}
           />
+          <MenuItem icon={<IconUser className="h-[18px] w-[18px]" />} label={`내 정보 (${userProfile?.name ?? "호칭 미설정"})`} data="me" onClick={() => { setMenuOpen(false); setOnboardingOpen("edit"); }} />
           <MenuItem icon={<IconBackup className="h-[18px] w-[18px]" />} label="대화 기록 백업" data="backup" onClick={() => { setMenuOpen(false); setBackupOpen(true); }} />
           <MenuItem
             icon={<IconTrash className="h-[18px] w-[18px]" />}
@@ -2106,11 +2369,26 @@ export default function ChatApp({
                 aria-label={`${persona.allureUi?.label ?? "매혹 모드"} ${allureActive ? "끄기" : "켜기"}`}
                 aria-pressed={allureActive}
                 data-allure-toggle={allureActive ? "on" : "off"}
-                className={`absolute right-3 top-[calc(max(0.5rem,env(safe-area-inset-top))+7.5rem)] z-10 flex h-9 w-9 items-center justify-center rounded-full text-base ring-1 backdrop-blur-md transition wide:top-[3.75rem] ${
-                  allureActive ? "bg-brand-500/90 text-onbrand ring-white/70 shadow-glow" : "bg-surface/75 text-ink shadow-soft ring-white/70 grayscale-[40%]"
+                className={`absolute right-3 top-[calc(max(0.5rem,env(safe-area-inset-top))+7.5rem)] z-10 flex h-9 w-9 items-center justify-center rounded-full ring-1 backdrop-blur-md transition wide:top-[3.75rem] ${
+                  allureActive ? "bg-pink-200/90 ring-white/80 shadow-glow" : "bg-surface/75 shadow-soft ring-white/70"
                 }`}
               >
-                {persona.allureUi?.emoji ?? "💋"}
+                <IconAllureCloud on={allureActive} className="h-7 w-7" />
+              </button>
+            )}
+            {/* 🎁 선물하기 (매혹 버튼 아래) — 좋아하는 선물이면 호감도↑, 아니면 반응 없음 */}
+            {!voiceOpen && (
+              <button
+                type="button"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => setGiftOpen(true)}
+                aria-label="선물하기"
+                data-gift-open
+                className={`absolute right-3 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-surface/75 text-ink shadow-soft ring-1 ring-white/70 backdrop-blur-md transition ${
+                  persona.allure ? "top-[calc(max(0.5rem,env(safe-area-inset-top))+10.25rem)] wide:top-[6.5rem]" : "top-[calc(max(0.5rem,env(safe-area-inset-top))+7.5rem)] wide:top-[3.75rem]"
+                }`}
+              >
+                <IconGift className="h-[18px] w-[18px]" />
               </button>
             )}
             {sulkCard}
@@ -2287,6 +2565,7 @@ export default function ChatApp({
           previews={previews()}
         />
       )}
+      {selectorOpen && !onboardingOpen && <LobbyNotes personas={listed.filter((p) => p.id !== persona.id)} userGender={userProfile?.gender} userName={userProfile?.name} onOpen={openFromNote} />}
       {themeOpen && (
         <ThemePicker
           theme={theme}
@@ -2297,6 +2576,18 @@ export default function ChatApp({
         />
       )}
       {notifyOpen && <NotifySettings onClose={() => setNotifyOpen(false)} />}
+      {ownerPwOpen && <OwnerPasswordModal onSubmit={handleOwnerPassword} onClose={() => setOwnerPwOpen(false)} />}
+      {giftOpen && persona && <GiftSheet name={persona.name} gifts={giftOptions()} gems={cash} cooldownLeftMin={giftCooldownLeft()} onGive={giveGift} onClose={() => setGiftOpen(false)} />}
+      {onboardingOpen && (
+        <OnboardingModal
+          initial={onboardingOpen === "edit" ? userProfile : null}
+          onDone={(p) => {
+            setUserProfile(saveUserProfile(p));
+            setOnboardingOpen(null);
+          }}
+          onClose={onboardingOpen === "edit" ? () => setOnboardingOpen(null) : undefined}
+        />
+      )}
       {gemOpen && (
         <GemShop
           gems={cash}

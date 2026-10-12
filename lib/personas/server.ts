@@ -20,9 +20,30 @@ import balanceJson from "@/config/balance.json";
  * personas/index.ts 에 등록된 JSON 을 검증하고, 화면용 공개 데이터와 서버용 프롬프트를 나눠 제공한다.
  */
 
+/**
+ * 📦 업데이트 이원화: personas/ 폴더의 *.json 을 서버가 직접 읽는다 → 인물 추가는 JSON 파일 + public/avatar/personas/<id>/ 리소스만
+ *    올리고 배포하면 끝 (앱 재빌드·코드 수정 불필요). 앱은 /api/personas 로 최신 목록을 받는다.
+ *    순서: 파일의 order 값(작을수록 앞) → 파일 이름. hidden: true 면 목록에서 뺀다. _ 로 시작하는 파일은 공용 파일.
+ *    폴더를 못 읽는 환경이면 personas/index.ts 의 등록 목록을 쓴다.
+ */
+function loadPersonaFiles(): { file: string; data: unknown }[] {
+  const dir = path.join(process.cwd(), "personas");
+  try {
+    const names = fs.readdirSync(dir).filter((f) => f.endsWith(".json") && !f.startsWith("_"));
+    if (names.length === 0) return PERSONA_FILES;
+    const items = names.map((file) => ({ file, data: JSON.parse(fs.readFileSync(path.join(dir, file), "utf8")) as Record<string, unknown> }));
+    const known = PERSONA_FILES.map((f) => f.file);
+    const rank = (f: { file: string; data: Record<string, unknown> }) =>
+      typeof f.data.order === "number" ? f.data.order : known.includes(f.file) ? known.indexOf(f.file) : 1000;
+    return items.filter((f) => f.data.hidden !== true).sort((a, b) => rank(a) - rank(b) || a.file.localeCompare(b.file));
+  } catch {
+    return PERSONA_FILES;
+  }
+}
+
 function validate(): PersonaFile[] {
   const seen = new Set<string>();
-  return PERSONA_FILES.map(({ file, data }) => {
+  return loadPersonaFiles().map(({ file, data }) => {
     const parsed = personaFileSchema.safeParse(data);
     if (!parsed.success) {
       throw new Error(`[personas] ${file} 형식 오류:\n${z.prettifyError(parsed.error)}`);
@@ -138,6 +159,7 @@ export function toPublic(p: PersonaFile): Persona {
     },
     traits: {
       gift: p.traits?.gift ?? { name: "꽃다발", emoji: "💐" },
+      ...(p.traits?.giftLikes ? { giftLikes: p.traits.giftLikes } : {}),
       reactionBias: p.traits?.reactionBias ?? {},
       stageUpLines: p.traits?.stageUpLines ?? [],
     },

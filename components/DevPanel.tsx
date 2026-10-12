@@ -42,7 +42,7 @@ export interface CheatActions {
   resetChat: () => void;
 }
 const SRC: Record<string, string> = { env: "환경변수", default: "기본값", cms: "CMS" };
-const POS_KEY = "ai-rpg.dev.ui";
+const POS_KEY = "ai-rpg.dev.ui2"; // v2: 크기(w·h) 추가 — 처음엔 화면 아래쪽에 뜬다
 const OPACITY = [1, 0.8, 0.55];
 
 export default function DevPanel({
@@ -72,7 +72,8 @@ export default function DevPanel({
   const [saved, setSaved] = useState<StoredOwnerOpts>({ personas: {} });
   const [appliedAt, setAppliedAt] = useState(0);
   const [ver, setVer] = useState(0);
-  const [ui, setUi] = useState({ x: 8, y: 120, min: false, op: 0 });
+  const [ui, setUi] = useState({ x: 8, y: 120, w: 0, h: 0, min: false, op: 0 });
+  const sizing = useRef<{ sx: number; sy: number; w: number; h: number } | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ dx: number; dy: number } | null>(null);
 
@@ -106,6 +107,12 @@ export default function DevPanel({
     try {
       const v = JSON.parse(localStorage.getItem(POS_KEY) ?? "null");
       if (v) setUi((u) => ({ ...u, ...v }));
+      else {
+        // 처음: 화면 아래쪽, 가로 가득(최대 34rem), 높이는 화면의 55%
+        const w = Math.min(window.innerWidth - 16, 544);
+        const h = Math.round(Math.min(window.innerHeight * 0.55, 560));
+        setUi((u) => ({ ...u, w, h, x: Math.max(8, (window.innerWidth - w) / 2), y: Math.max(8, window.innerHeight - h - 12) }));
+      }
     } catch {
       /* 무시 */
     }
@@ -162,6 +169,24 @@ export default function DevPanel({
   const clamp = (x: number, y: number) => {
     const w = boxRef.current?.offsetWidth ?? 360;
     return { x: Math.min(Math.max(0, x), Math.max(0, window.innerWidth - w)), y: Math.min(Math.max(0, y), window.innerHeight - 44) };
+  };
+  /** ◢ 손잡이로 크기 바꾸기 (손가락·마우스) */
+  const onSizeDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    const r = boxRef.current?.getBoundingClientRect();
+    sizing.current = { sx: e.clientX, sy: e.clientY, w: r?.width ?? 360, h: r?.height ?? 400 };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onSizeMove = (e: React.PointerEvent) => {
+    const s0 = sizing.current;
+    if (!s0) return;
+    const w = Math.round(Math.min(window.innerWidth - ui.x, Math.max(260, s0.w + e.clientX - s0.sx)));
+    const h = Math.round(Math.min(window.innerHeight - ui.y, Math.max(180, s0.h + e.clientY - s0.sy)));
+    setUi((u) => ({ ...u, w, h }));
+  };
+  const onSizeUp = () => {
+    if (sizing.current) saveUi(ui);
+    sizing.current = null;
   };
   const onDown = (e: React.PointerEvent) => {
     if ((e.target as HTMLElement).closest("button")) return;
@@ -239,8 +264,8 @@ export default function DevPanel({
           <div
             ref={boxRef}
             data-dev-panel
-            style={{ left: ui.x, top: ui.y, opacity: OPACITY[ui.op] }}
-            className="fixed z-[80] w-[min(96vw,34rem)] rounded-2xl bg-slate-950 font-mono text-[12px] leading-relaxed text-slate-200 shadow-2xl ring-1 ring-amber-300/40"
+            style={{ left: ui.x, top: ui.y, opacity: OPACITY[ui.op], ...(ui.w ? { width: ui.w } : {}), ...(ui.h && !ui.min ? { height: ui.h } : {}) }}
+            className="fixed z-[80] flex w-[min(96vw,34rem)] flex-col rounded-2xl bg-slate-950 font-mono text-[12px] leading-relaxed text-slate-200 shadow-2xl ring-1 ring-amber-300/40"
           >
             {/* 끌어서 옮기는 손잡이 */}
             <div
@@ -276,7 +301,7 @@ export default function DevPanel({
                   <button type="button" onClick={() => { void loadStatus(); void loadCfg(); }} className="ml-auto shrink-0 rounded-full bg-slate-800 px-2.5 py-1" title="새로고침">↻</button>
                 </div>
 
-                <div className="max-h-[66dvh] overflow-y-auto p-3">
+                <div className={`min-h-0 flex-1 overflow-y-auto p-3 ${ui.h ? "" : "max-h-[66dvh]"}`}>
                   {err && <p className="mb-2 text-red-400">⚠️ {err}</p>}
 
                   {tab === "status" && (
@@ -504,7 +529,7 @@ export default function DevPanel({
                 </div>
 
                 {(tab === "model" || tab === "persona" || tab === "rules") && (
-                  <div className="sticky bottom-0 flex items-center gap-2 rounded-b-2xl border-t border-slate-700 bg-slate-950/95 px-3 py-2" data-dev-applybar>
+                  <div className="sticky bottom-0 flex items-center gap-2 rounded-b-2xl border-t border-slate-700 bg-slate-950/95 py-2 pl-3 pr-8" data-dev-applybar>
                     <span className="min-w-0 flex-1 truncate text-[11px] text-slate-400" data-dev-apply-state>
                       {appliedAt ? <b className="text-emerald-300">✓ 적용됨 — 다음 메시지부터</b> : dirty ? <b className="text-amber-300">● 수정됨 — 확인을 눌러야 적용돼요</b> : tab === "model" ? <span className="text-emerald-300">적용 중: {saved.model ? `🔒 ${saved.model.modelId}` : "자동"} (모델은 누르면 바로 적용)</span> : "수정 사항 없음"}
                     </span>
@@ -513,6 +538,19 @@ export default function DevPanel({
                   </div>
                 )}
               </>
+            )}
+            {!ui.min && (
+              <div
+                onPointerDown={onSizeDown}
+                onPointerMove={onSizeMove}
+                onPointerUp={onSizeUp}
+                onPointerCancel={onSizeUp}
+                data-dev-resize
+                title="끌어서 크기 조절"
+                className="absolute bottom-0 right-0 z-10 flex h-7 w-7 cursor-nwse-resize touch-none select-none items-end justify-end rounded-br-2xl p-1 text-[13px] leading-none text-amber-300/80"
+              >
+                ◢
+              </div>
             )}
           </div>,
           document.body,

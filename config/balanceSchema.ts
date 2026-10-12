@@ -117,6 +117,16 @@ export const balanceSchema = z.object({
     teaserGapMs: ms,
   }),
   allure: z.object({ gapMs: ms, sameClipGapMs: ms, aiChance: chance, heartChance: chance, touchChance: chance }),
+  gapReactions: z.object({ _readme: z.string().optional(), steps: z.array(z.object({ minMin: z.number().min(1), guide: z.string().min(1) })) }),
+  economy: z.object({
+    _readme: z.string().optional(),
+    dailyFreeMessages: z.number().int().min(0),
+    messageCost: z.number().int().min(0),
+    allureDayCost: z.number().int().min(0),
+    gifts: z.array(z.object({ id: z.string(), name: z.string(), emoji: z.string(), cost: z.number().int().min(0) })).min(1),
+    giftGoodBonus: z.number().min(0).max(20),
+    giftCooldownMin: z.number().min(0),
+  }),
   allureRouting: z.object({
     _readme: z.string().optional(),
     enabled: z.boolean(),

@@ -216,6 +216,38 @@
     "heartChance": 0.8,
     "touchChance": 0.45
   },
+  "gapReactions": {
+    "_readme": "마지막 대화 뒤 얼마 만에 다시 말을 걸었는지(분)에 따라 첫 답장에 붙는 지침. minMin 이상인 것 중 가장 큰 구간이 쓰인다.",
+    "steps": [
+      { "minMin": 30, "guide": "30분쯤 자리를 비웠다 돌아왔다. 가볍게 '어디 다녀왔어요?' 정도로 반겨라." },
+      { "minMin": 60, "guide": "한 시간쯤 연락이 없었다. 뭐 하다 왔는지 궁금해하며 자연스럽게 이어라." },
+      { "minMin": 120, "guide": "두 시간 넘게 연락이 없었다. 살짝 기다렸다는 티를 내도 된다." },
+      { "minMin": 180, "guide": "서너 시간 만이다. 그사이 네 하루에 있었던 일을 한마디 섞고, 유저의 시간을 물어라." },
+      { "minMin": 300, "guide": "다섯 시간 넘게 지났다. 반가움을 표현하고 그동안 어떻게 지냈는지 물어라." },
+      { "minMin": 600, "guide": "반나절(10시간 넘게) 만이다. '하루 종일 뭐 했어요?'처럼 하루를 묻고, 관계가 가까우면 기다렸다고 말해라." },
+      { "minMin": 1440, "guide": "하루 만이다. '어제 이후로 처음이네요' 같은 반가움, 가까운 사이면 살짝 서운함도." },
+      { "minMin": 2880, "guide": "이틀 넘게 연락이 없었다. '오랜만이네요?', '나 잊은 줄 알았어요' 같은 서운함과 반가움을 네 성격대로. 무슨 일 있었는지 물어라." },
+      { "minMin": 10080, "guide": "일주일 넘게 연락이 없었다. 아주 오랜만인 반가움과 서운함, 그동안의 근황을 물어라. 다그치지는 마라." }
+    ]
+  },
+  "economy": {
+    "_readme": "인게임 💎 비용. 결제 모듈 연동 전에는 상점에서 바로 충전된다(config/gems.ts GEM_TEST_TOPUP).",
+    "dailyFreeMessages": 30,
+    "messageCost": 1,
+    "allureDayCost": 30,
+    "gifts": [
+      { "id": "coffee", "name": "좋은 원두 커피", "emoji": "☕", "cost": 10 },
+      { "id": "flowers", "name": "꽃다발", "emoji": "💐", "cost": 20 },
+      { "id": "cake", "name": "조각 케이크", "emoji": "🍰", "cost": 15 },
+      { "id": "candle", "name": "향초", "emoji": "🕯️", "cost": 15 },
+      { "id": "book", "name": "추리소설 신간", "emoji": "📚", "cost": 15 },
+      { "id": "wine", "name": "와인", "emoji": "🍷", "cost": 30 },
+      { "id": "doll", "name": "곰인형", "emoji": "🧸", "cost": 20 },
+      { "id": "perfume", "name": "향수", "emoji": "🌸", "cost": 40 }
+    ],
+    "giftGoodBonus": 4,
+    "giftCooldownMin": 30
+  },
   "allureRouting": {
     "_readme": "매혹·설렘 모드 대화의 모델 배분. 분위기가 달아오르면(config/spicy.ts moodWords) 성인 모델(AI_MODEL_MATURE·Grok)로 수위 끝선까지, 평이한 말은 메인(Sonnet)·가벼운 모델(Haiku). surprise = 가끔 먼저 선을 넘는 신선한 턴(관계 단계별 확률, 최근 N턴 안에 성인 모델이 답했으면 쉼)",
     "enabled": true,

@@ -81,3 +81,15 @@ Grok 4.3 은 Bedrock 의 일반 주소(Converse)가 아니라 **Mantle(OpenAI �
 - 가격: 입력 $1.25 / 출력 $2.50 (100만 토큰, Standard) — Grok 4.7($2/$6)보다 저렴하고, 생각 정도를 낮춰 빠름.
 - AWS 콘솔 → Bedrock(us-east-1) → Model access 에서 xAI Grok 4.3 이 활성화돼 있어야 합니다.
 - 🛠 › 모델 › "Grok 4.3 (Bedrock · 빠름)" 으로 바로 시험할 수 있습니다. 예전 Grok 4.7 은 "이전" 표시로 남겨 두었습니다.
+
+## 🧭 3단계 라우팅 (2026-10-12)
+
+`config/routing.ts` 표와 `lib/smartRouter.ts`. 일반 대화방에서 이번 턴을 어느 모델이 답할지 정합니다.
+
+1. **규칙(비용 0)** — 성인 확인 유저 + 직설적 표현(`EXPLICIT_PATTERNS`) → 바로 성인 모델(Grok 4.3). 인사·맞장구 → 가벼운 모델. 감정 단어(`EMOTION_PATTERN`) → Sonnet.
+2. **의도 분류(1회 0.1원 미만)** — 남은 말만 Nova Micro(`ROUTER_MODEL`)가 1 일상 / 2 감정·상담 / 3 전문지식 으로 분류.
+3. **목적지** — 1 → Haiku·Nova Lite, 2 → Sonnet, 3 → Perplexity 또는 Gemini Flash(`AI_MODEL_KNOWLEDGE`). 실패하면 다음 → 우회 목록.
+
+- 분류 추가: `ROUTE_CATEGORIES` 에 한 줄 (tiers 에 역할 이름 또는 `프로바이더:모델ID`).
+- **단계별 개방** (`FREEDOM`): 성인 확인 유저는 처음 3번까지 35% 확률로 성인 모델 체험(수위 규칙은 일반 정책), 관계 단계가 오를수록 0 → 10% → 22% → 40% 확률. 내용에 따른 자유로운 수위는 매혹 모드에서만.
+- 🛠 상태판 tier 에 `daily(규칙)`, `knowledge(분류 300ms)`, `explicit`, `trial`, `freedom` 등으로 보입니다.

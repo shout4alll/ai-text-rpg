@@ -182,12 +182,35 @@ export async function scheduleNudges(candidates: NudgeCandidate[]): Promise<numb
         body: nudgeBody(p.name, p.kind),
         channelId: NOTIFY_CHANNEL.id,
         schedule: { at: p.at, allowWhileIdle: true },
+        // ⚠️ 정확한 알람(기본값 true)은 안드로이드 12+ 에서 '알람 및 리마인더' 권한이 없으면 예약할 때마다 설정 화면을 띄우고,
+        //    백그라운드로 가는 순간에는 예약이 실패해 알림이 오지 않았다 → 부정확(몇 분 오차) 알람으로 조용히 예약한다
+        isExactNotification: false,
         extra: { personaId: p.personaId, kind: p.kind, topic: p.topic, at: p.at.getTime() },
       })),
     });
+    noteError("");
     return plan.length;
-  } catch {
+  } catch (e) {
+    noteError(e instanceof Error ? e.message : String(e));
     return 0;
+  }
+}
+
+const ERR_KEY = "ai-rpg.notify.lastError";
+function noteError(msg: string) {
+  try {
+    if (msg) localStorage.setItem(ERR_KEY, `${new Date().toLocaleString()} ${msg.slice(0, 160)}`);
+    else localStorage.removeItem(ERR_KEY);
+  } catch {
+    /* 무시 */
+  }
+}
+/** 마지막 예약 실패 사유 (설정 화면 점검용) */
+export function lastNotifyError(): string {
+  try {
+    return localStorage.getItem(ERR_KEY) ?? "";
+  } catch {
+    return "";
   }
 }
 
@@ -328,6 +351,7 @@ export async function sendTestNotification(): Promise<"ok" | "denied" | "unsuppo
           body: "알림이 잘 도착했어요",
           channelId: NOTIFY_CHANNEL.id,
           schedule: { at: new Date(Date.now() + 5000), allowWhileIdle: true },
+          isExactNotification: false,
         },
       ],
     });

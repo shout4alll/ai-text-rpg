@@ -53,6 +53,21 @@ export const SERVER_SETTINGS = [
     desc: "비우면 메인 모델. 매혹·설렘 모드를 켠 대화방의 텍스트 톡에만 쓰인다. 다른 프로바이더는 앞에 붙임: mantle:xai.grok-4.3(권장·빠름) · global.xai.grok-4.7 · google:gemini-3.8-flash",
   },
   {
+    key: "smartRouting", label: "3단계 라우팅 (규칙 → 의도 분류 → 목적지 모델)", group: "모델", type: "enum", options: ["on", "off"],
+    default: "on", env: "SMART_ROUTING", usedIn: "lib/smartRouter.ts · config/routing.ts",
+    desc: "on=규칙·키워드로 먼저 거르고, 남은 말은 초경량 모델이 일상/감정/지식으로 분류해 알맞은 모델에 보냄 / off=규칙 라우팅만(가벼운 대화만 가벼운 모델)",
+  },
+  {
+    key: "routerModel", label: "의도 분류 모델 (2단계)", group: "모델", type: "string",
+    default: "", env: "ROUTER_MODEL", usedIn: "config/ai.ts resolveModel('router')",
+    desc: "비우면 us.amazon.nova-micro-v1:0 (BEDROCK_REGION 이 미국일 때). 서울 리전이면 apac.amazon.nova-micro-v1:0. 다른 프로바이더는 google:gemini-3.5-flash-lite 처럼",
+  },
+  {
+    key: "knowledgeModel", label: "전문지식·정보 질문 모델 (3번 분류)", group: "모델", type: "string",
+    default: "", env: "AI_MODEL_KNOWLEDGE", usedIn: "config/ai.ts resolveModel('knowledge')",
+    desc: "비우면 PERPLEXITY_API_KEY 가 있으면 perplexity:sonar, 없으면 google:gemini-3.8-flash, 둘 다 없으면 메인 모델",
+  },
+  {
     key: "serviceFallback", label: "일반 대화방 모델 우회", group: "모델", type: "enum", options: ["on", "off"],
     default: "on", env: "SERVICE_FALLBACK", usedIn: "app/api/chat/route.ts · lib/modelRouter.ts",
     desc: "on=모델이 실패·지연되면 손님에게 오류를 보이지 않고 다른 모델(우회 목록)로 이어서 답함 / off=기존처럼 해당 모델만 시도",
@@ -112,7 +127,7 @@ export const SERVER_SETTINGS = [
 export type ServerSettingKey = (typeof SERVER_SETTINGS)[number]["key"];
 
 /** 비밀 환경변수 — 값은 절대 화면에 내보내지 않고 "있음/없음"만 */
-export const SECRET_ENV = ["AWS_BEDROCK_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "XAI_API_KEY", "OPENAI_API_KEY", "VOICE_DEV_PASS", "OWNER_CHEAT_PHRASE"] as const;
+export const SECRET_ENV = ["AWS_BEDROCK_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "XAI_API_KEY", "OPENAI_API_KEY", "PERPLEXITY_API_KEY", "VOICE_DEV_PASS", "OWNER_CHEAT_PHRASE"] as const;
 
 /** 모델 관련 환경변수 (값을 보여 줘도 되는 것) */
 export const MODEL_ENV = ["AI_PROVIDER", "AI_MODEL", "AI_MODEL_LIGHT", "AI_CHEAP_MODEL", "BEDROCK_REGION", "BEDROCK_MANTLE_REGION", "MANTLE_REASONING_EFFORT", "XAI_BASE_URL", "GEMINI_IMAGE_MODEL", "GEMINI_TTS_MODEL"] as const;

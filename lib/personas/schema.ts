@@ -49,6 +49,10 @@ export const personaFileSchema = z.object({
    * (실패하면 우회 목록). 수위 규칙은 모드별 규칙 그대로. 없으면 "auto" (내용에 따라 자동 배분)
    */
   modelRoute: z.enum(["auto", "mature"]).optional(),
+  /** (선택) 목록 순서 — 작을수록 앞. 없으면 personas/index.ts 순서, 새 파일은 뒤로 */
+  order: z.number().optional(),
+  /** (선택) true 면 목록·서비스에서 숨김 (파일은 남겨 둠) */
+  hidden: z.boolean().optional(),
   /** 🔑 치트룸: 목록에 안 보이고(치트 코드로 입장), 서버도 운영자 인증 없이는 응답하지 않는다. 운영자 프롬프트(제한 해제)가 기본 */
   cheatRoom: z.boolean().default(false),
   /** (치트룸) 🛠 규칙 탭 "주인님 모드 규칙"의 기본 문장 — 이 방의 제한 수위 (미성년자 관련 줄은 코드에 고정) */
@@ -109,6 +113,8 @@ export const personaFileSchema = z.object({
       sulkStyle: z.string().min(1).optional(),
       /** 달랠 때 주는 선물 (💎 차감) */
       gift: z.object({ name: z.string().min(1), emoji: z.string().min(1) }).optional(),
+      /** (선택) 🎁 이것도 좋아하는 선물 — config/balance.json economy.gifts 의 id 또는 이름 */
+      giftLikes: z.array(z.string()).optional(),
       /** 리액션별 영상 확률 배수 (1 = 기본, 1.5 = 더 자주, 0.5 = 덜). 예: { "laugh": 1.4, "shy": 0.6 } */
       reactionBias: z.partialRecord(z.enum(AVATAR_REACTION_IDS), z.number().min(0).max(3)).default({}),
       /** 호감도 단계가 오를 때 하는 말 (2번째 단계부터 순서대로) */
