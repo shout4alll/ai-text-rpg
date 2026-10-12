@@ -22,6 +22,11 @@ export interface LiveTurn {
   model: string;
   route: string;
   ms: number;
+  /** 원래 고른 모델이 실패해 다른 모델로 넘어갔는지 + 시도 순서 */
+  fellBack?: boolean;
+  tried?: { model: string; ok: boolean; ms: number }[];
+  /** 맥락 의존도 (lib/continuity.ts) */
+  ctx?: { score: number; level: string; reason: string | null } | null;
   error?: string;
 }
 

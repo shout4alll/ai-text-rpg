@@ -1886,9 +1886,7 @@ export default function ChatApp({
       if (!res.ok || !data.ok || !data.ownerToken) return data.error ?? "입장하지 못했어요.";
       writeOwnerToken(data.ownerToken);
       setOwnerTok(data.ownerToken);
-      const room = personas.find((p) => p.cheatRoom);
-      setSelectorOpen(false);
-      if (room) openChat(room.id);
+      // 메인에 그대로 머물며 🛠 관리·💬 LIVE 버튼을 띄운다 (치트룸은 버튼으로 들어간다)
       return null;
     } catch {
       return "서버에 연결하지 못했어요.";
@@ -2015,7 +2013,50 @@ export default function ChatApp({
     return (
       <main className="h-[100dvh] w-full bg-paper">
         <PersonaSelector personas={listed} onCheatCode={handleCheatCode} currentId={null} onSelect={handleSelect} previews={previews()} onBackup={() => setBackupOpen(true)} onTheme={() => setThemeOpen(true)} onNotify={() => setNotifyOpen(true)} gems={cash} onGems={() => setGemOpen(true)} />
-        {ownerTok && <LiveChatMonitor token={ownerTok} className="fixed bottom-[calc(env(safe-area-inset-bottom)+1rem)] left-3 z-30" />}
+        {ownerTok && (
+          // 🔑 주인님 모드: 메인 화면에서도 관리창·실시간 대화 모니터
+          <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+1rem)] left-3 z-[60] flex flex-wrap items-center gap-1.5" data-owner-toolbar>
+            <DevPanel
+              token={ownerTok}
+              personaId={listed.find((p) => !p.cheatRoom)?.id ?? listed[0]?.id ?? ""}
+              last={lastDebug}
+              history={debugLog}
+              client={[
+                { label: "주인님 모드", value: "켜짐 (메인 화면)" },
+                { label: "화면", value: "메인(대화 목록)" },
+                { label: "보석", value: `💎${cash}` },
+                { label: "멤버십", value: membership ? `${PLANS[membership.plan].name}` : "없음" },
+              ]}
+            />
+            <LiveChatMonitor token={ownerTok} />
+            {personas.some((p) => p.cheatRoom) && (
+              <button
+                type="button"
+                data-owner-cheatroom
+                onClick={() => {
+                  const room = personas.find((p) => p.cheatRoom);
+                  if (room) openChat(room.id);
+                }}
+                className="inline-flex h-8 items-center rounded-full bg-slate-900/85 px-2.5 text-[12px] font-bold text-amber-200 shadow-sm ring-1 ring-amber-300/40 backdrop-blur active:scale-95"
+              >
+                🔑 치트룸
+              </button>
+            )}
+            <button
+              type="button"
+              data-owner-exit
+              onClick={() => {
+                writeOwnerToken(null);
+                setOwnerTok(null);
+                setLastDebug(null);
+                setDebugLog([]);
+              }}
+              className="inline-flex h-8 items-center rounded-full bg-slate-900/70 px-2.5 text-[11px] text-slate-300 shadow-sm backdrop-blur active:scale-95"
+            >
+              퇴장
+            </button>
+          </div>
+        )}
         {!onboardingOpen && <LobbyNotes personas={listed} userGender={userProfile?.gender} userName={userProfile?.name} onOpen={openFromNote} />}
         {backupOpen && <BackupModal onClose={() => setBackupOpen(false)} onRestored={() => window.location.reload()} />}
       {themeOpen && (

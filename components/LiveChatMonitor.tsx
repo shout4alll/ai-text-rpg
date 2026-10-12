@@ -28,12 +28,36 @@ interface LiveTurn {
   model: string;
   route: string;
   ms: number;
+  fellBack?: boolean;
+  tried?: { model: string; ok: boolean; ms: number }[];
+  ctx?: { score: number; level: string; reason: string | null } | null;
   error?: string;
 }
 
 const short = (id: string) => id.replace(/^(global|us|apac|eu)\./, "").replace(/^(anthropic|amazon|mistral|meta)\./, "").replace(/-\d{8}-v\d:\d$/, "");
 const chip = (m: string) =>
   /opus|fable/i.test(m) ? "bg-fuchsia-500 text-white" : /sonnet/i.test(m) ? "bg-sky-500 text-white" : /haiku/i.test(m) ? "bg-emerald-500 text-slate-950" : /nova/i.test(m) ? "bg-orange-400 text-slate-950" : /grok/i.test(m) ? "bg-rose-500 text-white" : /pool/i.test(m) ? "bg-slate-500 text-white" : "bg-slate-700 text-slate-100";
+/** 모델 ID → 읽기 쉬운 이름 (예: global.anthropic.claude-sonnet-5 → Sonnet 5) */
+function modelName(id: string): string {
+  if (!id) return "—";
+  if (/pool/i.test(id)) return "답장 풀 (AI 호출 없음)";
+  const c = /claude-(opus|sonnet|haiku|fable|mythos)-(\d+(?:-\d+)?)/i.exec(id);
+  if (c) return `${c[1][0].toUpperCase()}${c[1].slice(1)} ${c[2].replace("-", ".")}`;
+  const n = /nova-(\d+)?-?(lite|micro|pro|premier)?/i.exec(id);
+  if (n && /nova/i.test(id)) return `Nova${n[1] ? ` ${n[1]}` : ""}${n[2] ? ` ${n[2][0].toUpperCase()}${n[2].slice(1)}` : ""}`;
+  const g = /grok-?([\d.]+)?/i.exec(id);
+  if (g) return `Grok${g[1] ? ` ${g[1]}` : ""}`;
+  const gm = /gemini-([\d.]+)-?(\w+)?/i.exec(id);
+  if (gm) return `Gemini ${gm[1]}${gm[2] ? ` ${gm[2]}` : ""}`;
+  return short(id);
+}
+const ROUTE_KO: Record<string, string> = { deep: "대화 꼬임 → 고성능", mature: "성인 모델", light: "가벼운 대화", chat: "메인", forced: "주인님 고정", error: "실패" };
+const routeKo = (r: string) => {
+  if (r.startsWith("pool")) return "뻔한 말 → 답장 풀";
+  const m = /^(\w+)\((\w+)\)$/.exec(r);
+  if (m) return `${{ daily: "일상", emotion: "감정·대화", knowledge: "지식" }[m[1]] ?? m[1]} · ${{ rule: "규칙", cache: "캐시", default: "분류실패", continuity: "맥락↑" }[m[2]] ?? "분류"}`;
+  return ROUTE_KO[r] ?? r;
+};
 const time = (t: number) => new Date(t).toLocaleTimeString("ko-KR", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
 const KIND: Record<string, string> = { reaction: "💗 마음 리액션", return: "📲 다시 들어옴/선톡", gift: "🎁 선물", user_media: "🖼 사진·영상", call: "📞 통화" };
 
@@ -168,6 +192,31 @@ export default function LiveChatMonitor({ token, className = "" }: { token: stri
 
   const personas = useMemo(() => [...new Map(turns.map((t) => [t.personaId, t.personaName])).entries()], [turns]);
   const shown = turns.filter((t) => (!guestsOnly || !t.owner) && (persona === "all" || t.personaId === persona));
+  /** 모델별 사용 비율 (보이는 턴 기준) */
+  const usage = useMemo(() => {
+    const m = new Map<string, { n: number; cls: string }>();
+    for (const t of shown) {
+      if (!t.model) continue;
+      const k = modelName(t.model).replace(/ \(.*\)$/, "");
+      const c = m.get(k) ?? { n: 0, cls: chip(t.model) };
+      c.n++;
+      m.set(k, c);
+    }
+    const total = [...m.values()].reduce((a, b) => a + b.n, 0);
+    return { total, list: [...m.entries()].sort((a, b) => b[1].n - a[1].n) };
+  }, [shown]);
+  /** 같은 대화(인물+기기)에서 바로 전 턴의 모델 — 바뀌었으면 표시 */
+  const prevModel = useMemo(() => {
+    const last = new Map<string, string>();
+    const out = new Map<string, string>();
+    for (const t of turns) {
+      const k = `${t.personaId}|${t.owner ? "owner" : t.device}`;
+      const p = last.get(k);
+      if (p !== undefined) out.set(`${t.id}-${t.at}`, p);
+      if (t.model) last.set(k, t.model);
+    }
+    return out;
+  }, [turns]);
 
   // 맨 아래를 보고 있을 때만 새 대화로 자동 스크롤
   useEffect(() => {
@@ -232,6 +281,20 @@ export default function LiveChatMonitor({ token, className = "" }: { token: stri
               </label>
               <button type="button" onClick={() => setTurns([])} className="ml-auto rounded bg-slate-800 px-2 py-0.5 text-[10px]">화면 비우기</button>
             </div>
+            {usage.total > 0 && (
+              <div className="border-b border-slate-800 px-3 py-1.5" data-live-usage>
+                <div className="flex h-2 overflow-hidden rounded-full bg-slate-800">
+                  {usage.list.map(([k, v]) => (
+                    <span key={k} className={v.cls} style={{ width: `${(v.n / usage.total) * 100}%` }} />
+                  ))}
+                </div>
+                <div className="mt-1 flex flex-wrap gap-1 text-[10px]">
+                  {usage.list.map(([k, v]) => (
+                    <span key={k} className={`rounded px-1.5 ${v.cls}`}>{k} {Math.round((v.n / usage.total) * 100)}% ({v.n})</span>
+                  ))}
+                </div>
+              </div>
+            )}
             {err && <p className="px-3 py-1 text-[11px] text-red-400">⚠️ {err}</p>}
             <div
               ref={listRef}
@@ -248,15 +311,30 @@ export default function LiveChatMonitor({ token, className = "" }: { token: stri
                     <span>{time(t.at)}</span>
                     <b className="text-amber-200">{t.personaName}</b>
                     <span>↔ {t.owner ? "🛠 주인님" : `👤 ${t.userName || "손님"}${t.device ? `#${t.device}` : ""}`}</span>
-                    {t.model && <span className={`rounded px-1 font-bold ${chip(t.model)}`}>{short(t.model)}</span>}
-                    <span className="text-slate-400">{t.route}</span>
-                    {t.ms > 0 && <span>{(t.ms / 1000).toFixed(1)}s</span>}
                   </div>
                   <div className="flex justify-end">
                     <p className="max-w-[80%] whitespace-pre-wrap break-words rounded-2xl rounded-tr-sm bg-amber-300 px-2.5 py-1.5 text-slate-900">
                       {t.kind === "text" ? t.userText : KIND[t.kind] ?? t.kind}
                     </p>
                   </div>
+                  {(() => {
+                    const before = prevModel.get(`${t.id}-${t.at}`);
+                    const changed = !!t.model && !!before && before !== t.model;
+                    return (
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[10px]" data-live-model>
+                        <span className="text-slate-500">🤖 적용 모델</span>
+                        <span className={`rounded px-1.5 py-px font-bold ${chip(t.model)}`} title={t.model}>{modelName(t.model)}</span>
+                        {changed && <span className="text-amber-300" title={before}>↔ {modelName(before!)}에서 바뀜</span>}
+                        {t.fellBack && <span className="rounded bg-rose-900/70 px-1 text-rose-200">우회</span>}
+                        <span className="text-slate-400">· {routeKo(t.route)}</span>
+                        {t.ctx && <span className={t.ctx.level === "high" ? "text-rose-300" : t.ctx.level === "mid" ? "text-amber-300" : "text-emerald-300"}>· 맥락 {t.ctx.level} {t.ctx.score}</span>}
+                        {t.ms > 0 && <span className="text-slate-500">· {(t.ms / 1000).toFixed(1)}s</span>}
+                      </div>
+                    );
+                  })()}
+                  {t.tried && t.tried.some((a) => !a.ok) && (
+                    <p className="text-[10px] text-slate-500">시도: {t.tried.map((a) => `${a.ok ? "✅" : "✕"} ${modelName(a.model)}`).join(" → ")}</p>
+                  )}
                   {t.error ? (
                     <p className="mt-1 max-w-[85%] rounded-2xl bg-red-900/60 px-2.5 py-1.5 text-red-200">⚠️ 답장 실패: {t.error}</p>
                   ) : t.replies.length === 0 ? (
