@@ -47,3 +47,11 @@ GEMINI_LIVE_MODEL=<Vercel 값과 동일>
 ```
 값 확인: Vercel 변수 오른쪽 `⋯` › Edit 에서 눈 아이콘으로 볼 수 있습니다 (비밀 값은 보이지 않을 수 있음).
 Vercel CLI 가 있으면 `vercel env pull .env.local` 한 번으로 로컬 파일이 만들어집니다.
+
+## 💬 실시간 대화 모니터 공유 저장소 (선택, 2026-10-12)
+
+| 변수 | 설명 |
+|---|---|
+| `KV_REST_API_URL` / `KV_REST_API_TOKEN` | Upstash Redis REST 주소·토큰 (Vercel → Storage/Marketplace → "Upstash for Redis" 연결 시 자동 추가). `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` 이름도 인식 |
+
+없으면 서버 메모리에만 기록돼, Vercel 이 서버를 여러 대 띄울 때 🛠 💬 LIVE 창에 일부 대화만 보인다. 연결하면 모든 서버의 최근 400턴이 3일간 모인다 (`lib/liveFeed.ts`).

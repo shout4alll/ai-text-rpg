@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { apiUrl } from "@/lib/apiBase";
 import { IconBubble } from "@/components/icons";
+import type { TurnLog } from "@/components/DevPanel";
 
 /**
  * 💬 실시간 대화 모니터 (🛠 주인님 모드 전용)
@@ -61,12 +62,13 @@ const routeKo = (r: string) => {
 const time = (t: number) => new Date(t).toLocaleTimeString("ko-KR", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
 const KIND: Record<string, string> = { reaction: "💗 마음 리액션", return: "📲 다시 들어옴/선톡", gift: "🎁 선물", user_media: "🖼 사진·영상", call: "📞 통화" };
 
-export default function LiveChatMonitor({ token, className = "" }: { token: string; className?: string }) {
+export default function LiveChatMonitor({ token, mine = [], className = "" }: { token: string; /** 이 기기에서 오간 내 턴 (서버 저장소와 상관없이 항상 보이게) */ mine?: TurnLog[]; className?: string }) {
   const [open, setOpen] = useState(false);
   const [turns, setTurns] = useState<LiveTurn[]>([]);
   const [err, setErr] = useState("");
   const [paused, setPaused] = useState(false);
-  const [guestsOnly, setGuestsOnly] = useState(true);
+  const [guestsOnly, setGuestsOnly] = useState(false);
+  const [store, setStore] = useState<{ store: string; instance: string } | null>(null);
   const [persona, setPersona] = useState("all");
   const [unseen, setUnseen] = useState(0);
   const since = useRef(0);
@@ -165,7 +167,8 @@ export default function LiveChatMonitor({ token, className = "" }: { token: stri
     const load = async () => {
       try {
         const r = await fetch(apiUrl(`/api/owner/live?since=${since.current}`), { headers: { "x-owner-token": token }, cache: "no-store" });
-        const j = (await r.json()) as { turns?: LiveTurn[]; error?: string };
+        const j = (await r.json()) as { turns?: LiveTurn[]; error?: string; store?: string; instance?: string };
+        if (j.store) setStore({ store: j.store, instance: j.instance ?? "" });
         if (stop) return;
         if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
         const add = j.turns ?? [];
@@ -190,8 +193,31 @@ export default function LiveChatMonitor({ token, className = "" }: { token: stri
     };
   }, [open, paused, token]);
 
-  const personas = useMemo(() => [...new Map(turns.map((t) => [t.personaId, t.personaName])).entries()], [turns]);
-  const shown = turns.filter((t) => (!guestsOnly || !t.owner) && (persona === "all" || t.personaId === persona));
+  // 서버 기록 + 이 기기 기록(서버가 여러 대라 내 대화가 안 잡혀도 보이게) — 같은 턴은 하나로
+  const all = useMemo(() => {
+    const local: LiveTurn[] = mine.map((m, i) => ({
+      id: -1 - i,
+      at: m.at,
+      personaId: m.personaId,
+      personaName: m.personaName,
+      device: "",
+      userName: "",
+      owner: true,
+      kind: m.kind,
+      userText: m.userText ?? "",
+      replies: m.replies ?? [],
+      model: m.model,
+      route: m.path ?? m.tier,
+      ms: m.ms,
+      fellBack: m.fellBack,
+      tried: m.attempts.map((a) => ({ model: a.model, ok: a.ok, ms: a.ms })),
+      ctx: m.ctx ? { score: m.ctx.score, level: m.ctx.level, reason: m.ctx.reason } : null,
+    }));
+    const dup = (l: LiveTurn) => turns.some((t) => t.owner && t.personaId === l.personaId && Math.abs(t.at - l.at) < 90_000 && t.userText.startsWith(l.userText.slice(0, 40)));
+    return [...turns, ...local.filter((l) => !dup(l))].sort((a, b) => a.at - b.at);
+  }, [turns, mine]);
+  const personas = useMemo(() => [...new Map(all.map((t) => [t.personaId, t.personaName])).entries()], [all]);
+  const shown = all.filter((t) => (!guestsOnly || !t.owner) && (persona === "all" || t.personaId === persona));
   /** 모델별 사용 비율 (보이는 턴 기준) */
   const usage = useMemo(() => {
     const m = new Map<string, { n: number; cls: string }>();
@@ -209,14 +235,14 @@ export default function LiveChatMonitor({ token, className = "" }: { token: stri
   const prevModel = useMemo(() => {
     const last = new Map<string, string>();
     const out = new Map<string, string>();
-    for (const t of turns) {
+    for (const t of all) {
       const k = `${t.personaId}|${t.owner ? "owner" : t.device}`;
       const p = last.get(k);
       if (p !== undefined) out.set(`${t.id}-${t.at}`, p);
       if (t.model) last.set(k, t.model);
     }
     return out;
-  }, [turns]);
+  }, [all]);
 
   // 맨 아래를 보고 있을 때만 새 대화로 자동 스크롤
   useEffect(() => {
@@ -304,7 +330,12 @@ export default function LiveChatMonitor({ token, className = "" }: { token: stri
               }}
               className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-2"
             >
-              {shown.length === 0 && <p className="pt-6 text-center text-slate-500">아직 오간 대화가 없어요.<br />손님이 말을 보내면 여기에 바로 떠요.</p>}
+              {shown.length === 0 && (
+                <p className="pt-6 text-center text-slate-500">
+                  아직 오간 대화가 없어요.<br />손님이 말을 보내면 여기에 바로 떠요.
+                  {guestsOnly && all.length > 0 && <><br />(“손님만”이 켜져 있어 주인님 대화 {all.length}개는 숨겨져 있어요)</>}
+                </p>
+              )}
               {shown.map((t) => (
                 <div key={`${t.id}-${t.at}`} data-live-turn>
                   <div className="mb-1 flex flex-wrap items-center gap-1 text-[10px] text-slate-500">
@@ -349,7 +380,15 @@ export default function LiveChatMonitor({ token, className = "" }: { token: stri
                 </div>
               ))}
             </div>
-            <p className="rounded-b-2xl bg-slate-900 py-1 pl-3 pr-8 text-[9px] text-slate-500">서버 메모리(인스턴스별 최근 400턴) · 파일로 저장하지 않아요 · 재배포하면 비워져요</p>
+            <p className="rounded-b-2xl bg-slate-900 py-1 pl-3 pr-8 text-[9px] text-slate-500" data-live-store>
+              {store?.store === "redis" ? (
+                <>공유 저장소(Redis) · 모든 서버의 최근 400턴 · 3일 보관</>
+              ) : (
+                <>
+                  <span className="text-amber-300">⚠ 서버 메모리</span> — 서버가 여러 대 떠 있으면 일부 대화만 보여요(서버 {store?.instance ?? "?"}). 전부 보려면 Vercel에 Upstash Redis 연결
+                </>
+              )}
+            </p>
             <div
               onPointerDown={onSizeDown}
               onPointerMove={onSizeMove}

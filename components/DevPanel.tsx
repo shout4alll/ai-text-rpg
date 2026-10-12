@@ -33,7 +33,7 @@ interface OwnerCfg {
 }
 
 /** 🛠 실시간 창: 한 턴의 기록 */
-export type TurnLog = NonNullable<ChatResponse["debug"]> & { at: number; personaId: string; personaName: string; kind: string };
+export type TurnLog = NonNullable<ChatResponse["debug"]> & { at: number; personaId: string; personaName: string; kind: string; replies?: string[] };
 interface ServerRow { at: number; persona: string; text: string; prevAi: string; score: number; level: string; reason: string | null; features: Record<string, number>; route?: string; model?: string }
 
 type Tab = "live" | "status" | "model" | "persona" | "rules" | "check" | "settings" | "cheat";

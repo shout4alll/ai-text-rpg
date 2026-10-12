@@ -1155,7 +1155,7 @@ export default function ChatApp({
         if (data.debug) {
           const d = data.debug;
           setLastDebug(d);
-          setDebugLog((prev) => [...prev.slice(-59), { ...d, at: Date.now(), personaId: pid, personaName: byId.get(pid)?.name ?? pid, kind }]);
+          setDebugLog((prev) => [...prev.slice(-59), { ...d, at: Date.now(), personaId: pid, personaName: byId.get(pid)?.name ?? pid, kind, replies: data.messages }]);
         }
         // 🔑 주인 모드: 모델이 실패해 다른 모델로 우회했으면 그 경과를 대화창에 그대로 보여 준다 (테스트용 · 대화 기록에는 안 들어감)
         if (data.debug?.attempts?.some((a) => !a.ok) && same()) {
@@ -2028,7 +2028,7 @@ export default function ChatApp({
                 { label: "멤버십", value: membership ? `${PLANS[membership.plan].name}` : "없음" },
               ]}
             />
-            <LiveChatMonitor token={ownerTok} />
+            <LiveChatMonitor token={ownerTok} mine={debugLog} />
             {personas.some((p) => p.cheatRoom) && (
               <button
                 type="button"
@@ -2404,7 +2404,7 @@ export default function ChatApp({
       {!voiceOpen && <GemBadge gems={cash} onClick={() => setGemOpen(true)} className="absolute left-2 top-[calc(max(0.5rem,env(safe-area-inset-top))+3.5rem)] z-20 bg-white/85 backdrop-blur" />}
       {!voiceOpen && ownerTok && (
         <div className="absolute left-[5.4rem] top-[calc(max(0.5rem,env(safe-area-inset-top))+3.5rem)] z-20 flex items-start gap-1.5">
-          <LiveChatMonitor token={ownerTok} />
+          <LiveChatMonitor token={ownerTok} mine={debugLog} />
           <DevPanel
             token={ownerTok}
             personaId={persona.id}

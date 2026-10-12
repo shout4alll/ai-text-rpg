@@ -778,7 +778,7 @@ export async function POST(request: Request) {
         seen: "",
       };
       if (ctxRow) ctxRow.route = "pool";
-      pushLive({ at: Date.now(), personaId: persona.id, personaName: persona.name, device: (parsed.data.device ?? "").slice(0, 4), userName: parsed.data.user?.name ?? "", owner: ownerAuth, kind: last.kind, userText: last.content, replies: hit.messages, model: "reply-pool", route: `pool/${category}`, ms: 0, ctx: depAll ? { score: depAll.score, level: depAll.level, reason: depAll.reason } : null });
+      await pushLive({ at: Date.now(), personaId: persona.id, personaName: persona.name, device: (parsed.data.device ?? "").slice(0, 4), userName: parsed.data.user?.name ?? "", owner: ownerAuth, kind: last.kind, userText: last.content, replies: hit.messages, model: "reply-pool", route: `pool/${category}`, ms: 0, ctx: depAll ? { score: depAll.score, level: depAll.level, reason: depAll.reason } : null });
       return NextResponse.json(pooled, { headers: { "x-ai-model": `reply-pool / ${category}` } });
     }
   }
@@ -1088,7 +1088,7 @@ export async function POST(request: Request) {
       media,
     };
     // 💬 실시간 대화 모니터 (🛠)
-    pushLive({ at: Date.now(), personaId: persona.id, personaName: persona.name, device: (parsed.data.device ?? "").slice(0, 4), userName: parsed.data.user?.name ?? "", owner: ownerAuth, kind: last.kind, userText: last.content, replies: bubbles, model: resolved.modelId, route: pathLabel, ms: Date.now() - startedAt, fellBack: ran.fellBack, tried: ("attempts" in ran ? ran.attempts : []).map((a) => ({ model: a.model, ok: a.ok, ms: a.ms })), ctx: depAll ? { score: depAll.score, level: depAll.level, reason: depAll.reason } : null });
+    await pushLive({ at: Date.now(), personaId: persona.id, personaName: persona.name, device: (parsed.data.device ?? "").slice(0, 4), userName: parsed.data.user?.name ?? "", owner: ownerAuth, kind: last.kind, userText: last.content, replies: bubbles, model: resolved.modelId, route: pathLabel, ms: Date.now() - startedAt, fellBack: ran.fellBack, tried: ("attempts" in ran ? ran.attempts : []).map((a) => ({ model: a.model, ok: a.ok, ms: a.ms })), ctx: depAll ? { score: depAll.score, level: depAll.level, reason: depAll.reason } : null });
     // 뻔한 대화 답장은 풀에 모아 두었다가 재사용
     if (category && !media && !ownerAuth) addToPool(pKey, { messages: bubbles, reaction: output.reaction, affectionDelta: delta });
     return NextResponse.json(response, {
@@ -1102,7 +1102,7 @@ export async function POST(request: Request) {
     const triedText = tried?.length ? `\n시도: ${tried.map((a) => `${a.provider}/${a.model} ✕ ${a.ms}ms (${(a.error ?? "").slice(0, 110)})`).join(" → ")}` : "";
     const timedOut = /abort|timeout/i.test(error instanceof Error ? `${error.name} ${error.message}` : String(error));
     const timeoutHint = timedOut ? "\n(56초 안에 답이 오지 않아 끊었어요 — Vercel 함수 제한 60초. Grok 같은 추론 모델은 느릴 수 있어요)" : "";
-    pushLive({ at: Date.now(), personaId: persona.id, personaName: persona.name, device: (parsed.data.device ?? "").slice(0, 4), userName: parsed.data.user?.name ?? "", owner: ownerAuth, kind: last.kind, userText: last.content, replies: [], model: resolved?.modelId ?? "", route: "error", ms: Date.now() - startedAt, tried: ((error as { attempts?: { model: string; ok: boolean; ms: number }[] } | null)?.attempts ?? []).map((a) => ({ model: a.model, ok: a.ok, ms: a.ms })), error: (error instanceof Error ? error.message : String(error)).slice(0, 200) });
+    await pushLive({ at: Date.now(), personaId: persona.id, personaName: persona.name, device: (parsed.data.device ?? "").slice(0, 4), userName: parsed.data.user?.name ?? "", owner: ownerAuth, kind: last.kind, userText: last.content, replies: [], model: resolved?.modelId ?? "", route: "error", ms: Date.now() - startedAt, tried: ((error as { attempts?: { model: string; ok: boolean; ms: number }[] } | null)?.attempts ?? []).map((a) => ({ model: a.model, ok: a.ok, ms: a.ms })), error: (error instanceof Error ? error.message : String(error)).slice(0, 200) });
     const detail = ownerAuth ? `⚠️ ${ownerOpts?.model ? `${ownerOpts.model.provider}/${ownerOpts.model.modelId}` : where} — ${error instanceof Error ? error.message.slice(0, 300) : String(error).slice(0, 300)}${triedText}${timeoutHint}` : null;
     return NextResponse.json(
       { error: detail ?? `${persona.name}의 답장이 잠시 늦어지고 있어요. 잠시 후 다시 보내 주세요.` },
