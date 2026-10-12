@@ -14,6 +14,8 @@ import { BALANCE } from "@/config/balance";
 export const MEDIA_COST = {
   /** 실시간 사진 1장 */
   photo: CASH_PRICE.photo,
+  /** 실시간 영상 1편 (약 5초) */
+  video: CASH_PRICE.video,
 } as const;
 
 /** 테스트용 시작 캐시 (결제 연동 전) */
@@ -36,4 +38,4 @@ export interface AlbumItem {
 /** /api/chat 응답의 사진·영상 지시 */
 export type MediaDirective =
   | { action: "album"; item: AlbumItem }
-  | { action: "custom"; type: "photo"; request: string };
+  | { action: "custom"; type: MediaType; request: string };

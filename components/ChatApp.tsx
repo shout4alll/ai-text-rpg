@@ -45,7 +45,7 @@ import { downloadBackup } from "@/lib/backup";
 import { ALLURE_STORAGE } from "@/config/allure";
 import { BALANCE, sulkLevelDef } from "@/config/balance";
 import { checkRelease, giftCost, sulkExpired, sulkStartLevel, sulkSummary, touchSulk, type SulkState } from "@/lib/sulk";
-import { deleteMediaFor, deleteMediaKeys, getMedia, importFile, mediaUrl, UserMediaError } from "@/lib/userMedia";
+import { deleteMediaFor, deleteMediaKeys, getMedia, importFile, mediaUrl, putMedia, UserMediaError } from "@/lib/userMedia";
 import { DEMO_TOPUP, MEDIA_COST } from "@/config/media";
 import { GemBadge, GemShop } from "@/components/GemShop";
 import DevPanel from "@/components/DevPanel";
@@ -380,7 +380,7 @@ export default function ChatApp({
   const touchRef = useRef({ lastAt: 0, combo: 0, lastFire: 0, lastGain: 0, gains: 0, lastLoss: 0 });
 
   // 유료 실시간 사진 (모달 → 캐시 차감 → 생성)
-  const [photoOffer, setPhotoOffer] = useState<null | { personaId: PersonaId; request: string }>(null);
+  const [photoOffer, setPhotoOffer] = useState<null | { personaId: PersonaId; request: string; kind: "photo" | "video" }>(null);
   const [cash, setCashState] = useState(0);
   const [photoBusy, setPhotoBusy] = useState(false);
 
@@ -1260,7 +1260,7 @@ export default function ChatApp({
           ]);
         } else if (media?.action === "custom") {
           setCashState(getCash());
-          setPhotoOffer({ personaId: pid, request: media.request });
+          setPhotoOffer({ personaId: pid, request: media.request, kind: media.type === "video" ? "video" : "photo" });
         }
       } catch (err) {
         if (!same()) return;
@@ -1544,9 +1544,10 @@ export default function ChatApp({
   const buyPhoto = async () => {
     const offer = photoOffer;
     if (!offer || photoBusy) return;
-    // 구독 사진이 남았으면 그걸로, 아니면 캐시
-    const usePlan = consumePlanPhoto();
-    const cost = usePlan ? 0 : MEDIA_COST.photo;
+    const isVideo = offer.kind === "video";
+    // 구독 사진이 남았으면 그걸로(사진만), 아니면 캐시
+    const usePlan = isVideo ? false : consumePlanPhoto();
+    const cost = usePlan ? 0 : isVideo ? MEDIA_COST.video : MEDIA_COST.photo;
     if (!usePlan && !payCash(cost)) {
       setCashState(getCash());
       return;
@@ -1559,6 +1560,47 @@ export default function ChatApp({
     const session = sessionRef.current;
     try {
       const pass = readPass();
+      if (isVideo) {
+        // 🎬 영상: 생성 시작 → 1~2분 기다리며 확인 → 받아서 이 기기에 보관
+        const headers = { "Content-Type": "application/json", ...(pass ? { "x-voice-pass": pass } : {}) };
+        const start = await fetch(apiUrl("/api/media/video"), { method: "POST", headers, body: JSON.stringify({ personaId: offer.personaId, request: offer.request }) });
+        const sd = (await start.json().catch(() => ({}))) as { id?: string; error?: string };
+        if (!start.ok || !sd.id) throw new Error(sd.error ?? `HTTP ${start.status}`);
+        addNotice("🎬 영상을 찍는 중이에요. 1~2분쯤 걸려요. 다른 대화를 해도 돼요");
+        const q = `id=${encodeURIComponent(sd.id)}`;
+        const deadline = Date.now() + 240_000;
+        let done = false;
+        while (Date.now() < deadline) {
+          await sleep(5000);
+          if (session !== sessionRef.current) {
+            refund(); // 완성 전에 다른 대화방으로 옮김 → 환불
+            return;
+          }
+          const st = await fetch(apiUrl(`/api/media/video?${q}`), { headers: pass ? { "x-voice-pass": pass } : {} });
+          const sj = (await st.json().catch(() => ({}))) as { status?: string; error?: string };
+          if (sj.status === "failed" || (!st.ok && st.status !== 504 && st.status < 500)) throw new Error(sj.error ?? "영상을 받지 못했어요.");
+          if (sj.status === "done") {
+            done = true;
+            break;
+          }
+        }
+        if (!done) throw new Error("영상이 아직 완성되지 않았어요.");
+        const fr = await fetch(apiUrl(`/api/media/video?${q}&file=1`), { headers: pass ? { "x-voice-pass": pass } : {} });
+        if (!fr.ok) throw new Error("영상을 받지 못했어요.");
+        const blob = await fr.blob();
+        const key = `gen-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        await putMedia({ key, personaId: offer.personaId, type: "video", blob, frames: [], at: Date.now() });
+        if (session !== sessionRef.current) {
+          refund();
+          return;
+        }
+        setMessages((prev) => [
+          ...prev,
+          { id: nextId.current++, role: "ai", kind: "media", text: `방금 찍은 영상: ${offer.request}`, at: Date.now(), media: { type: "video", src: "", localKey: key, generated: true } },
+        ]);
+        playReaction("shy");
+        return;
+      }
       const res = await fetch(apiUrl("/api/media/photo"), {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(pass ? { "x-voice-pass": pass } : {}) },
@@ -1580,7 +1622,7 @@ export default function ChatApp({
       refund();
       refreshMembership();
       if (session === sessionRef.current) {
-        addNotice(`⚠️ ${err instanceof Error ? err.message : "사진을 받지 못했어요."} ${usePlan ? "사용한 사진 1장은" : `캐시 💎${cost}은`} 돌려드렸어요.`);
+        addNotice(`⚠️ ${err instanceof Error ? err.message : isVideo ? "영상을 받지 못했어요." : "사진을 받지 못했어요."} ${usePlan ? "사용한 사진 1장은" : `캐시 💎${cost}은`} 돌려드렸어요.`);
       }
     } finally {
       setPhotoBusy(false);
@@ -2253,7 +2295,7 @@ export default function ChatApp({
           {persona.name}
           <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: persona.accent }} aria-hidden />
         </p>
-        <p className="truncate text-[11px] text-ink-mute">{photoBusy ? "사진 찍는 중…" : typing ? "입력 중…" : persona.status}</p>
+        <p className="truncate text-[11px] text-ink-mute">{photoBusy ? "촬영 중…" : typing ? "입력 중…" : persona.status}</p>
         {affectionRow}
       </div>
       <button type="button" onClick={() => setProfileOpen(true)} aria-label="프로필" title="프로필" data-profile-button className={iconBtn}>
@@ -2456,9 +2498,10 @@ export default function ChatApp({
         <MediaPurchaseModal
           persona={persona}
           request={photoOffer.request}
-          cost={MEDIA_COST.photo}
+          kind={photoOffer.kind}
+          cost={photoOffer.kind === "video" ? MEDIA_COST.video : MEDIA_COST.photo}
           cash={cash}
-          planPhotosLeft={membership ? planPhotosLeft(membership) : 0}
+          planPhotosLeft={photoOffer.kind === "video" ? 0 : membership ? planPhotosLeft(membership) : 0}
           planName={membership ? PLANS[membership.plan].name : ""}
           onShowPlans={() => setPlansModal("photo")}
           onConfirm={buyPhoto}

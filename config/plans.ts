@@ -23,6 +23,8 @@ export const CASH_PRICE = {
   voicePerMinute: BALANCE.cash.voicePerMinute,
   /** 실시간 사진 1장 */
   photo: BALANCE.cash.photo,
+  /** 실시간 영상 1편 (약 5초) */
+  video: BALANCE.cash.video,
 } as const;
 
 export type PlanId = "free" | "best" | "prime" | "vip";

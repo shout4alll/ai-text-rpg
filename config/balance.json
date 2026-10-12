@@ -390,6 +390,7 @@
   "cash": {
     "voicePerMinute": 5,
     "photo": 10,
+    "video": 60,
     "demoStart": 30,
     "demoTopup": 100
   },

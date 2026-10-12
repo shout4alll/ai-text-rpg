@@ -47,6 +47,7 @@
 | --- | --- | --- |
 | `GOOGLE_GENERATIVE_AI_API_KEY` | 필수 (보이스톡과 같은 키) | — |
 | `GEMINI_IMAGE_MODEL` | 이미지 모델 | `gemini-3.1-flash-image` |
+| `GEMINI_VIDEO_MODEL` | 영상 모델 | `gemini-omni-1.1-flash` |
 | `MEDIA_ACCESS` | `open`(누구나) / `paid`(`VOICE_DEV_PASS` 헤더만 통과) / `off` | 개발 `open`, 배포 `paid` |
 
 배포 환경에서 테스트하려면 Vercel에 `MEDIA_ACCESS=open`을 추가하고 Redeploy 하세요.
@@ -73,6 +74,14 @@
 - 크기·개수 제한과 호감도 상한은 `config/balance.json` 의 `userMedia` (docs/BALANCE.md §7).
 - AI 모델이 이미지를 이해해야 합니다. 지금 쓰는 Bedrock Nova Lite·Gemini 모두 지원합니다.
 
-## 나중에: 실시간 영상
+## 실시간 영상 (유료, 새로 생성)
 
-"영상 찍어 줘"의 실시간 생성(예: Gemini Omni Flash, 720p 약 $0.10/초)도 같은 구조로 붙일 수 있습니다. `MediaDirective`에 `type: "video"`를 추가하고 `/api/media/video`를 만들면 됩니다. 영상은 생성에 1~2분 걸리므로 "찍어서 보낼게요" → 완성되면 도착하는 흐름이 자연스럽습니다.
+"지금 영상 찍어 줘", "손 흔드는 영상 보여 줘"처럼 앨범에 없는 영상을 콕 집어 요청하면 AI가 `media_action=custom, custom_kind=video` 로 답합니다.
+말풍선으로 "잠깐만요, 영상 찍어 볼게요" 하고 나면 사진과 같은 확인 모달(🎬, 💎 `cash.video`)이 뜨고, 확인하면 영상을 생성합니다.
+
+- 모델: `GEMINI_VIDEO_MODEL` (기본 `gemini-omni-1.1-flash`, Gemini API · 유료 등급만). 인물 사진 최대 3장을 기준 이미지로 넣고 약 5초 세로 영상을 만듭니다.
+- 비용: 720p 기준 약 $0.10/초 → 한 편(5초) 약 $0.5. 그래서 가격은 사진(💎10)보다 높은 💎60 입니다(`config/balance.json` `cash.video`). 구독 사진 혜택은 영상에 쓰이지 않습니다.
+- 생성은 1~2분 걸리는 백그라운드 작업이라 `/api/media/video` 가 시작(POST) → 확인(GET) → 파일 받기(GET `file=1`)로 나뉘어 있습니다. 앱은 5초마다 확인하고 최대 4분 기다립니다. 실패하거나 시간이 지나면 💎를 자동 환불합니다.
+- 받은 영상은 이 기기의 IndexedDB 에 보관되어 다시 열어도 보입니다("처음부터"를 누르면 지워짐). 영상에는 SynthID 워터마크가 들어갑니다.
+- ⚠️ Interactions API 형태는 가짜 서버로만 확인했습니다. 실제 키로 한 번 시험해 보세요. 안 되면 `GEMINI_VIDEO_MODEL` 이름과 Google 문서를 확인하세요.
+- Amazon Bedrock 에도 영상 모델(Nova Reel, Luma Ray v2)이 있지만 Nova Reel 은 2026-09-30 지원 종료(Legacy), Luma 는 us-west-2·S3 출력이 필요하고 인물 얼굴을 유지한다는 보장이 없어 쓰지 않았습니다.

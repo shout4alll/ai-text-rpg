@@ -11,6 +11,7 @@ import type { Persona } from "@/lib/personas/types";
 export default function MediaPurchaseModal({
   persona,
   request,
+  kind = "photo",
   cost,
   cash,
   onConfirm,
@@ -23,6 +24,8 @@ export default function MediaPurchaseModal({
   persona: Persona;
   /** 유저가 원한 장면 */
   request: string;
+  /** 사진 또는 영상 */
+  kind?: "photo" | "video";
   cost: number;
   cash: number;
   onConfirm: () => void;
@@ -55,9 +58,9 @@ export default function MediaPurchaseModal({
           </div>
           <div className="min-w-0">
             <p id="media-modal-title" className="text-base font-bold">
-              📸 {persona.name}의 실시간 사진
+              {kind === "video" ? "🎬" : "📸"} {persona.name}의 실시간 {kind === "video" ? "영상" : "사진"}
             </p>
-            <p className="text-xs text-ink-mute">앨범에 없는, 지금 이 순간의 모습을 새로 받아요</p>
+            <p className="text-xs text-ink-mute">앨범에 없는, 지금 이 순간의 모습을 새로 받아요{kind === "video" ? " (완성까지 1~2분)" : ""}</p>
           </div>
         </div>
 
@@ -91,7 +94,7 @@ export default function MediaPurchaseModal({
             </>
           )}
           <p className="text-[11px] leading-relaxed text-ink-mute">
-            AI가 {persona.name}의 사진을 바탕으로 만든 이미지예요. 사진을 만들지 못하면 캐시는 돌려드려요.
+            AI가 {persona.name}의 사진을 바탕으로 만든 {kind === "video" ? "영상" : "이미지"}예요. {kind === "video" ? "영상" : "사진"}을 만들지 못하면 캐시는 돌려드려요.
           </p>
         </div>
 

@@ -185,6 +185,7 @@ export const balanceSchema = z.object({
   cash: z.object({
     voicePerMinute: z.number().int().min(0),
     photo: z.number().int().min(0),
+    video: z.number().int().min(0),
     demoStart: z.number().int().min(0),
     demoTopup: z.number().int().min(0),
   }),

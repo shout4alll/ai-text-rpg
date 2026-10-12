@@ -173,6 +173,10 @@ const replySchema = z.object({
     .string()
     .catch("")
     .describe("media_action=custom 일 때 유저가 원하는 장면을 한국어 한 문장으로(장소·옷·표정·포즈). 아니면 빈 문자열"),
+  custom_kind: z
+    .enum(["photo", "video"])
+    .catch("photo")
+    .describe("media_action=custom 일 때 새로 만들 것: photo=사진, video=짧은 영상(유저가 영상·동영상·움직이는 모습을 콕 집어 원할 때만). 아니면 photo"),
   soothed: z
     .boolean()
     .catch(false)
@@ -188,12 +192,12 @@ const TEXT_JSON_GUIDE = `
 
 [출력 형식 — 반드시 지킬 것]
 다른 말 없이 아래 형태의 JSON 객체 하나만 출력한다. 코드 블록(\`\`\`)·설명·생각 과정은 쓰지 않는다.
-{"messages":["말풍선1","말풍선2"],"reaction":"smile","tapback":"none","affection_delta":0,"media_action":"none","album_id":"","custom_request":"","soothed":false,"seen":""}
+{"messages":["말풍선1","말풍선2"],"reaction":"smile","tapback":"none","affection_delta":0,"media_action":"none","album_id":"","custom_request":"","custom_kind":"photo","soothed":false,"seen":""}
 - messages: 메신저 말풍선 0~5개 (한국어)
 - reaction: ${AVATAR_REACTION_IDS.join(" | ")} 중 하나
 - tapback: none | ${HEART_REACTION_IDS.join(" | ")} 중 하나 (대부분 none)
 - affection_delta: -5 ~ 5 정수 / media_action: none | album | custom
-- album_id, custom_request, seen: 해당 없으면 빈 문자열 / soothed: true 또는 false`;
+- album_id, custom_request, seen: 해당 없으면 빈 문자열 / custom_kind: photo | video (media_action=custom 일 때만 video 가능) / soothed: true 또는 false`;
 
 type Turn = z.infer<typeof turnSchema>;
 
@@ -510,7 +514,7 @@ ${allure && persona.allure ? `\n${allureInstructions(persona.name, persona.allur
 [사진·영상]
 - 너는 메신저로 사진과 영상을 보낼 수 있다. 단, 유저가 이번 메시지에서 "사진/셀카/영상/모습을 보여 달라"고 직접 요청했을 때만 보낸다. 그 밖에는 항상 media_action=none 이다. 네가 먼저 사진을 보내거나 "사진 보내 줄까요?"라고 권하지 마라. 인사·리액션·칭찬·"보고 싶다"는 말에는 사진을 보내지 않는다.
 - 유저가 그냥 "사진 보내 줘", "얼굴 보고 싶어", "영상 보여 줘"처럼 요청하면: "찍어 둔 게 있다"는 식으로 자연스럽게 말하고 앨범에서 어울리는 것 하나를 보낸다(media_action=album, album_id). 영상을 원하면 video, 사진이면 photo 를 골라라.
-- 유저가 "지금" 모습이나 앨범에 없는 특정 모습(특정 장소·옷·포즈·상황)을 콕 집어 요청하면: media_action=custom, custom_request 에 장면을 적고, 말풍선에서는 "잠깐만요, 찍어 볼게요"처럼 지금 찍으려는 듯 자연스럽게 답해라. 영상을 지금 찍어 달라는 요청도 custom(사진)으로 처리한다. 돈·결제·유료 이야기는 절대 하지 마라(앱이 따로 안내한다).
+- 유저가 "지금" 모습이나 앨범에 없는 특정 모습(특정 장소·옷·포즈·상황)을 콕 집어 요청하면: media_action=custom, custom_request 에 장면을 적고, 말풍선에서는 "잠깐만요, 찍어 볼게요"처럼 지금 찍으려는 듯 자연스럽게 답해라. 영상·동영상을 지금 찍어 달라는 요청은 custom 이고 custom_kind=video, 그 밖의 요청은 custom_kind=photo 로 처리한다(앱이 AI로 새로 만들어 보내 준다. 말풍선에서는 "잠깐만요, 찍어 볼게요"처럼만 말해라). 돈·결제·유료 이야기는 절대 하지 마라(앱이 따로 안내한다).
 - 노출, 속옷·수영복, 선정적인 포즈, 침대 위 등 성적인 느낌의 사진·영상 요청은 부드럽게 거절하고 media_action=none. 유저가 미성년자로 보여도 none.
 - 이미 보낸 앨범([지금 상황]에 표시)은 되도록 다시 보내지 마라.${album.length ? "" : "\n- 지금은 앨범이 비어 있다. 그냥 보고 싶다는 요청엔 custom 으로 처리해라."}
 ${album.length ? `- 앨범: ${album.map((a) => `${a.id}(${a.type === "video" ? "영상" : "사진"}: ${a.desc})`).join(" / ")}` : ""}
@@ -527,7 +531,7 @@ ${examples}
 ${safetyRules}
 
 [출력 규칙]
-- 응답은 반드시 지정된 JSON 스키마(messages, reaction, tapback, affection_delta, media_action, album_id, custom_request, soothed, seen)로만 출력해라.
+- 응답은 반드시 지정된 JSON 스키마(messages, reaction, tapback, affection_delta, media_action, album_id, custom_request, custom_kind, soothed, seen)로만 출력해라.
 - messages의 각 항목은 한국어 말풍선 하나다. 최대 ${MAX_BUBBLES}개.
 
 [절대 수칙]
@@ -939,7 +943,7 @@ export async function POST(request: Request) {
         askedPhoto && output.media_action === "album"
           ? ["찍어 둔 거 있는데 보내 줄게요"]
           : askedPhoto && output.media_action === "custom"
-            ? ["잠깐만요, 찍어 볼게요"]
+            ? [output.custom_kind === "video" ? "잠깐만요, 영상 찍어 볼게요" : "잠깐만요, 찍어 볼게요"]
             : ["…"];
     }
 
@@ -980,7 +984,7 @@ export async function POST(request: Request) {
       media = { action: "album", item };
     } else if (mediaAllowed && last.kind === "text" && output.media_action === "custom") {
       const req = output.custom_request.trim().slice(0, 200) || last.content.slice(0, 200);
-      media = { action: "custom", type: "photo", request: req };
+      media = { action: "custom", type: output.custom_kind === "video" ? "video" : "photo", request: req };
     }
 
     if (owner) media = null;
