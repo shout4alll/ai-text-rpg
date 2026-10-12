@@ -918,8 +918,7 @@ export default function ChatApp({
   useEffect(() => {
     if (restoredRef.current) return; // 인물 목록이 서버에서 새로 와도 다시 열지 않는다 (한 번만)
     restoredRef.current = true;
-    const last = readStorage(LAST_KEY);
-    if (last && byId.has(last) && !byId.get(last)?.cheatRoom) openChat(last); // 치트룸은 자동 복원하지 않는다
+    // 앱을 다시 열면 항상 메인(대화 목록)에서 시작한다 — 마지막 대화방을 자동으로 열지 않는다
     setHydrated(true);
   }, [byId, openChat]);
 
@@ -2209,7 +2208,7 @@ export default function ChatApp({
             onClick={() => { setMenuOpen(false); setMemoryOpen(true); }}
           />
           <MenuItem icon={<IconUser className="h-[18px] w-[18px]" />} label={`내 정보 (${userProfile?.name ?? "호칭 미설정"})`} data="me" onClick={() => { setMenuOpen(false); setOnboardingOpen("edit"); }} />
-          <MenuItem icon={<IconBackup className="h-[18px] w-[18px]" />} label="대화 기록 백업" data="backup" onClick={() => { setMenuOpen(false); setBackupOpen(true); }} />
+          <MenuItem icon={<IconBackup className="h-[18px] w-[18px]" />} label="이 대화 백업" data="backup" onClick={() => { setMenuOpen(false); setBackupOpen(true); }} />
           <MenuItem
             icon={<IconTrash className="h-[18px] w-[18px]" />}
             label="메시지 골라서 삭제"
@@ -2524,7 +2523,7 @@ export default function ChatApp({
           memoryCount={memory?.facts.length ?? 0}
           messageCount={messages.filter((m) => !m.local && (m.kind ?? "text") === "text").length}
           onBackup={async () => {
-            await downloadBackup({ includeMedia: true });
+            await downloadBackup({ includeMedia: true, personaId: persona.id, personaName: persona.name });
           }}
           onConfirm={() => {
             setResetOpen(false);
@@ -2549,6 +2548,8 @@ export default function ChatApp({
         <BackupModal
           onClose={() => setBackupOpen(false)}
           onRestored={() => window.location.reload()}
+          personaId={persona.id}
+          personaName={persona.name}
         />
       )}
 

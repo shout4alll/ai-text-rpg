@@ -195,7 +195,8 @@ export function MemoryModal({
 }
 
 /* ── 전체 백업 / 복원 ──────────────────────────────────────────────────── */
-export function BackupModal({ onClose, onRestored }: { onClose: () => void; onRestored: () => void }) {
+export function BackupModal({ onClose, onRestored, personaId, personaName }: { onClose: () => void; onRestored: () => void; personaId?: string; personaName?: string }) {
+  const one = !!personaId;
   const [includeMedia, setIncludeMedia] = useState(true);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -206,8 +207,8 @@ export function BackupModal({ onClose, onRestored }: { onClose: () => void; onRe
     <Shell onClose={onClose} label="백업">
       <div className="flex items-center justify-between gap-3 px-5 pb-2 pt-4">
         <div>
-          <p className="text-base font-bold">💾 대화 기록 백업</p>
-          <p className="text-[11px] text-ink-mute">모든 인물과의 대화·호감도·기억을 내 PC에 파일로 저장해요</p>
+          <p className="text-base font-bold">{one ? `💾 ${personaName ?? "이 대화"} 대화 백업` : "💾 전체 백업"}</p>
+          <p className="text-[11px] text-ink-mute">{one ? "이 인물과의 대화·호감도·기억을 다운로드 폴더에 파일로 저장해요" : "모든 인물과의 대화·호감도·기억·설정을 다운로드 폴더에 파일로 저장해요"}</p>
         </div>
         <button type="button" onClick={onClose} aria-label="닫기" className="text-lg text-ink-mute">
           ✕
@@ -226,7 +227,7 @@ export function BackupModal({ onClose, onRestored }: { onClose: () => void; onRe
             setBusy(true);
             setMsg(null);
             try {
-              const r = await downloadBackup({ includeMedia });
+              const r = await downloadBackup({ includeMedia, personaId, personaName });
               setMsg(`✅ 대화방 ${r.rooms}개${r.media ? `, 사진·영상 ${r.media}개` : ""}를 저장했어요 (${(r.bytes / 1024 / 1024).toFixed(1)}MB). 다운로드 폴더를 확인하세요.`);
             } catch {
               setMsg("⚠️ 백업 파일을 만들지 못했어요.");
@@ -236,11 +237,11 @@ export function BackupModal({ onClose, onRestored }: { onClose: () => void; onRe
           }}
           className="w-full rounded-2xl bg-brand-500 py-3 text-sm font-bold hover:bg-brand-400 disabled:opacity-60"
         >
-          {busy ? "만드는 중…" : "💾 내 PC에 백업하기"}
+          {busy ? "만드는 중…" : one ? "💾 이 대화 백업하기" : "💾 전체 백업하기"}
         </button>
 
         <div className="border-t border-ink-line pt-3">
-          <p className="text-xs text-ink-mute">다른 기기나 예전 백업에서 불러오기</p>
+          <p className="text-xs text-ink-mute">{one ? "예전 백업 파일에서 불러오기" : "다른 기기나 예전 백업에서 불러오기"}</p>
           <input
             ref={fileRef}
             type="file"
@@ -262,7 +263,7 @@ export function BackupModal({ onClose, onRestored }: { onClose: () => void; onRe
           {pending ? (
             <div className="mt-2 space-y-2 rounded-2xl bg-amber-400/10 p-3 ring-1 ring-amber-200">
               <p className="text-xs text-amber-700">
-                {new Date(pending.exportedAt).toLocaleString("ko-KR")} 백업이에요. 불러오면 <b>이 기기의 지금 기록이 이 백업으로 바뀌어요.</b>
+                {new Date(pending.exportedAt).toLocaleString("ko-KR")} {pending.scope === "persona" ? `${pending.personaName ?? "한 인물"} 대화` : "전체"} 백업이에요. 불러오면 <b>{pending.scope === "persona" ? "그 인물과의 지금 대화가 이 백업으로 바뀌어요." : "이 기기의 지금 기록이 이 백업으로 바뀌어요."}</b>
               </p>
               <div className="flex gap-2">
                 <button type="button" onClick={() => setPending(null)} className="flex-1 rounded-xl bg-ink/5 py-2 text-xs">
