@@ -1,0 +1,197 @@
+/**
+ * 🔁 반복 방지 (서버 전용 로직이지만 비밀 정보 없음)
+ *
+ *  - 최근 내 답장에서 이미 말한 "행동·상황·음식" 키워드와 반복되는 표현을 찾아 AI에게 알려 준다.
+ *  - 매 턴 다른 "근황 씨앗"을 몇 개 골라 줘서 같은 설정(와인·독서·등산…)만 되풀이하지 않게 한다.
+ *  - 모델이 그래도 같은 말풍선을 되풀이하면 마지막에 걸러낸다.
+ */
+
+type TextTurn = { role: "user" | "assistant"; content: string; kind?: string };
+
+/** 장면·행동·음식 카테고리: 같은 카테고리를 자꾸 말하는지 센다 */
+const SCENES: { id: string; label: string; re: RegExp }[] = [
+  { id: "drink", label: "술·와인·맥주", re: /와인|맥주|소주|위스키|칵테일|막걸리|한잔|한 잔|술\b|취했|취한/ },
+  { id: "coffee", label: "커피·차", re: /커피|라떼|아메리카노|카페|홍차|녹차|차 한|티타임/ },
+  { id: "read", label: "책·독서", re: /책을|책 |독서|읽고|읽는|읽다|소설|서점|페이지/ },
+  { id: "hike", label: "산·등산·산책", re: /등산|산에|산책|산길|둘레길|공원|걷고|걷다|트레킹|한강/ },
+  { id: "workout", label: "운동", re: /운동|헬스|요가|필라테스|러닝|달리기|조깅|스트레칭|수영/ },
+  { id: "cook", label: "요리·식사", re: /요리|끓이|볶|먹고 있|먹는 중|저녁 먹|점심 먹|아침 먹|라면|배달|도시락|밥을/ },
+  { id: "work", label: "일·야근·회의", re: /야근|회의|퇴근|출근|마감|보고서|촬영|리허설|대본|프로젝트|작업 중|일하고/ },
+  { id: "home", label: "집안일·청소", re: /청소|빨래|설거지|정리하|이불|집안일|분리수거/ },
+  { id: "media", label: "영화·드라마·음악", re: /영화|드라마|넷플|유튜브|노래|음악|플레이리스트|앨범|기타 치|연주/ },
+  { id: "weather", label: "날씨·창밖", re: /날씨|비가|비 오|눈이|바람|창밖|하늘|노을|햇살|더워|추워|쌀쌀/ },
+  { id: "tired", label: "피곤·졸림", re: /피곤|졸려|졸리|잠이|못 잤|커피 없|지쳐|지치/ },
+  { id: "night", label: "잠자리·늦은 밤", re: /자려고|잘 시간|이불 속|침대|잠들|꿈에/ },
+];
+
+/** 말투·조사 때문에 같은 단어가 다르게 보이는 걸 줄이는 간단 정리 */
+function stem(w: string): string {
+  return w.replace(/(이랑|에서|에게|한테|으로|이라|이에요|예요|이야|이고|이나|은|는|이|가|을|를|에|도|의|로|와|과|랑|야|요|죠|네|고|서)$/u, "");
+}
+
+const STOP = new Set([
+  "그리고", "그런데", "근데", "그래서", "진짜", "정말", "너무", "그냥", "조금", "아직", "오늘", "지금", "이제", "다시", "계속", "우리", "나도", "저도", "그럼", "이거", "저거", "그거", "여기", "거기",
+  "하는", "해서", "하고", "했어", "했는데", "있어", "있는", "있어요", "없어", "같아", "같은", "이런", "저런", "그런", "어떻게", "뭐해", "뭐하", "뭔가", "아니", "근데요", "그래", "맞아", "그렇", "그러", "많이", "좀더", "엄청", "완전", "되게", "별로", "그래도", "하지만", "그렇지",
+]);
+
+function words(text: string): string[] {
+  const out: string[] = [];
+  for (const raw of text.toLowerCase().match(/[가-힣a-z0-9]{2,}/g) ?? []) {
+    const s = stem(raw);
+    if (s.length >= 2 && !STOP.has(s) && !STOP.has(raw)) out.push(s);
+  }
+  return out;
+}
+
+/** 공백·문장부호·웃음을 지운 비교용 문자열 */
+export function normalizeBubble(s: string): string {
+  return s.toLowerCase().replace(/[\s.,!?…~^;:'"()\-ㅋㅎㅠㅜ♡]+/gu, "");
+}
+
+function bigramSet(s: string): Set<string> {
+  const n = normalizeBubble(s);
+  const set = new Set<string>();
+  for (let i = 0; i < n.length - 1; i++) set.add(n.slice(i, i + 2));
+  return set;
+}
+
+/** 두 말풍선이 거의 같은 말인가 (글자 2-gram 겹침 비율) */
+export function nearlySame(a: string, b: string): boolean {
+  const na = normalizeBubble(a);
+  const nb = normalizeBubble(b);
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  if (Math.min(na.length, nb.length) < 8) return false;
+  const A = bigramSet(a);
+  const B = bigramSet(b);
+  let inter = 0;
+  for (const x of A) if (B.has(x)) inter++;
+  return inter / Math.min(A.size, B.size) >= 0.8;
+}
+
+/** 모델이 방금 한 말풍선이 최근 내 말풍선과 같으면 뺀다 (전부 같으면 그대로 둔다) */
+export function dropRepeatedBubbles(bubbles: string[], turns: TextTurn[]): string[] {
+  const past: string[] = [];
+  for (const t of turns.slice(-12)) {
+    if (t.role === "assistant" && (t.kind === undefined || t.kind === "text")) {
+      for (const p of t.content.split(/\n+/)) if (p.trim()) past.push(p.trim());
+    }
+  }
+  const seen: string[] = [];
+  const kept = bubbles.filter((b) => {
+    if (normalizeBubble(b).length < 3) return true; // "헐", "ㅋㅋ" 같은 짧은 말은 반복해도 자연스럽다
+    if (past.some((p) => nearlySame(p, b)) || seen.some((p) => nearlySame(p, b))) return false;
+    seen.push(b);
+    return true;
+  });
+  return kept.length > 0 ? kept : bubbles;
+}
+
+/** 근황 씨앗 — 직업·성격에 맞게 바꿔 쓰라고 안내한다. time: 어울리는 시간대 (없으면 아무 때나) */
+const SEEDS: { t: string; time?: "morning" | "day" | "evening" | "night" }[] = [
+  { t: "창밖에서 문득 본 작은 장면(지나가는 사람·동물·간판·구름)" },
+  { t: "오늘 있었던 사소한 해프닝(잘못 누른 것, 놓친 것, 우연히 만난 사람)" },
+  { t: "문득 떠오른 어릴 적 기억 한 조각" },
+  { t: "요즘 머릿속에 맴도는 노래나 멜로디" },
+  { t: "몸 상태(어깨 뻐근함, 눈 피로, 손발 차가움, 배에서 나는 소리)" },
+  { t: "기다리는 택배·연락·결과 같은 작은 기대" },
+  { t: "SNS·뉴스에서 본 소소한 이야깃거리" },
+  { t: "새로 시작해 보고 싶은 사소한 것(앱, 취미, 음식, 길)" },
+  { t: "주변 사람(가족·동료·친구·이웃) 이야기 한 토막" },
+  { t: "최근에 산 것·고장 난 것·잃어버린 것" },
+  { t: "방금 전까지 하던 일에서 막힌 부분이나 뿌듯했던 부분" },
+  { t: "계획 중인 이번 주 일정이나 가 보고 싶은 곳" },
+  { t: "먹고 싶은 것 고르다 결정 못 한 고민" },
+  { t: "유저가 했던 말 중 다시 떠오른 한 마디" },
+  { t: "집·사무실·거리의 냄새·소리·온도" },
+  { t: "손에 쥐고 있는 물건이나 정리 중인 서랍·가방" },
+  { t: "이상하게 웃겼던 생각이나 혼잣말" },
+  { t: "요즘 잠·꿈·컨디션 패턴" },
+  { t: "아침 준비 중 겪은 사소한 일", time: "morning" },
+  { t: "출근·등교 길에서 본 것", time: "morning" },
+  { t: "점심 메뉴 정하기 전의 고민", time: "day" },
+  { t: "일하다 잠깐 멍해진 순간", time: "day" },
+  { t: "퇴근길 풍경이나 기분", time: "evening" },
+  { t: "저녁 메뉴·장 보기 같은 하루 마무리 준비", time: "evening" },
+  { t: "하루를 돌아보며 든 생각 한 줄", time: "night" },
+  { t: "잠들기 전 습관이나 잠이 안 올 때 하는 일", time: "night" },
+];
+
+function hourIn(tz: string): number {
+  try {
+    return Number(new Intl.DateTimeFormat("en-US", { timeZone: tz, hour: "numeric", hourCycle: "h23" }).format(new Date()));
+  } catch {
+    return 12;
+  }
+}
+
+function pickSeeds(h: number, avoid: Set<string>, n: number): string[] {
+  const slot: "morning" | "day" | "evening" | "night" = h < 5 ? "night" : h < 11 ? "morning" : h < 17 ? "day" : h < 22 ? "evening" : "night";
+  const pool = SEEDS.filter((s) => (!s.time || s.time === slot) && ![...avoid].some((a) => s.t.includes(a)));
+  const out: string[] = [];
+  const bag = [...pool];
+  while (out.length < n && bag.length > 0) out.push(bag.splice(Math.floor(Math.random() * bag.length), 1)[0].t);
+  return out;
+}
+
+/** 최근 내 답장에서 이미 말한 장면 카테고리 (최근 8개 답장 기준) */
+export function recentScenes(turns: TextTurn[]): { id: string; label: string; count: number; recent: boolean }[] {
+  const mine = turns.filter((t) => t.role === "assistant" && (t.kind === undefined || t.kind === "text")).slice(-8);
+  const res: { id: string; label: string; count: number; recent: boolean }[] = [];
+  for (const sc of SCENES) {
+    let count = 0;
+    let recent = false;
+    mine.forEach((t, i) => {
+      if (sc.re.test(t.content)) {
+        count++;
+        if (i >= mine.length - 3) recent = true;
+      }
+    });
+    if (count > 0) res.push({ id: sc.id, label: sc.label, count, recent });
+  }
+  return res.sort((a, b) => b.count - a.count);
+}
+
+/** 여러 답장에 걸쳐 되풀이된 단어 (같은 화제·같은 말버릇) */
+function repeatedWords(turns: TextTurn[]): string[] {
+  const mine = turns.filter((t) => t.role === "assistant" && (t.kind === undefined || t.kind === "text")).slice(-8);
+  const df = new Map<string, number>();
+  for (const t of mine) for (const w of new Set(words(t.content))) df.set(w, (df.get(w) ?? 0) + 1);
+  return [...df.entries()]
+    .filter(([, c]) => c >= 3)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([w]) => w);
+}
+
+/**
+ * 이번 턴 프롬프트에 붙일 "반복 금지" 줄들.
+ * @param userText 유저가 방금 한 말 — 유저가 직접 꺼낸 화제는 반복 대상에서 뺀다
+ */
+export function repeatGuardLines(turns: TextTurn[], tz: string, userText: string): string[] {
+  const lines: string[] = [];
+  const asked = (label: string) => {
+    const sc = SCENES.find((s) => s.label === label);
+    return !!sc && sc.re.test(userText);
+  };
+  const scenes = recentScenes(turns).filter((s) => !asked(s.label));
+  const hot = scenes.filter((s) => s.recent || s.count >= 2);
+  if (hot.length > 0) {
+    lines.push(
+      `- 반복 금지(상황·행동): 최근 네 답장에서 이미 ${hot.map((s) => `${s.label}(${s.count}번)`).join(", ")} 이야기를 했다. 같은 행동·장소·음식을 또 "하고 있다/했다"고 말하지 마라. 유저가 직접 그 얘기를 꺼내면 그때만 짧게 받아라. 네가 지금 뭘 하고 있는지는 지금까지와 다른 걸로 하거나, 아예 말하지 마라.`
+    );
+  }
+  const rep = repeatedWords(turns).filter((w) => !words(userText).includes(w));
+  if (rep.length > 0) {
+    lines.push(`- 최근 답장마다 자꾸 나온 단어: ${rep.map((w) => `"${w}"`).join(", ")}. 이번 답장에서는 이 말을 쓰지 말고 다른 화제·표현으로 말해라.`);
+  }
+  const avoid = new Set<string>();
+  for (const s of scenes) for (const k of s.label.split(/[·]/)) avoid.add(k);
+  const seeds = pickSeeds(hourIn(tz), avoid, 3);
+  if (seeds.length > 0) {
+    lines.push(
+      `- 이번 턴에 굳이 네 근황을 꺼낸다면 이런 결에서 골라라(전부 선택 사항, 안 꺼내도 된다. 네 직업·성격·말투에 맞게 구체적으로 바꿔라): ${seeds.map((s) => `「${s}」`).join(" ")}. 유저의 말에 반응하는 게 먼저고, 근황은 두 번에 한 번 이하로만 꺼내라.`
+    );
+  }
+  return lines;
+}

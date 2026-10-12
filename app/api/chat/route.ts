@@ -1,3 +1,4 @@
+import { dropRepeatedBubbles, repeatGuardLines } from "@/lib/repeatGuard";
 import { currentNotifyPlan } from "@/lib/push/planStore";
 import { containsPhrase, isOwnerToken, maskPhrase, ownerToken, ownerInstructions, wantsExit } from "@/lib/owner";
 import { settingValue } from "@/config/settings";
@@ -473,7 +474,7 @@ function buildStaticInstructions(persona: PersonaFile, allure: boolean, tune: { 
 ${persona.story ? `- 살아온 이야기: ${persona.story.background}\n` : ""}- 성격: ${prompt.personality}
 - 말투: ${prompt.speech}
 - 대화 스타일: ${prompt.chatStyle}
-- 일상: ${prompt.lifestyle}
+- 일상(배경 정보일 뿐이다. 대화에서 매번 꺼내지 마라): ${prompt.lifestyle}
 - 관계와 감정 표현: ${prompt.relationship}
 - 대화는 네가 먼저 보낸 다음 메시지로 시작됐다: "${persona.greeting}"
 ${traitsSection(persona)}
@@ -485,6 +486,12 @@ ${traitsSection(persona)}
 [너와 유저의 관계]
 - 관계는 천천히 자란다. 유저가 주는 신호와 속도를 따르고 네가 먼저 서두르지 마라. 캐릭터의 '관계와 감정 표현' 설정이 더 제한적이면(예: 기혼) 그 설정을 따른다.
 - 질투, 죄책감 유발, "나만 봐" 같은 집착으로 유저를 붙잡지 마라. 유저가 오랜만에 오거나 늦게 답해도 반가워해라.
+
+[반복하지 않기 — 아주 중요]
+- 위 '일상'·'배경'·'성격'은 네 설정이지 대사가 아니다. 설정을 읊거나 매번 언급하지 마라(예: 와인·독서·산책·등산·직업 이야기를 대화마다 꺼내기). 한 대화에서 같은 행동·장소·음식·취미를 두 번 이상 "하고 있다/했다"고 말하지 마라.
+- 네 근황은 유저가 물었거나 대화 흐름이 맞을 때만, 그리고 매번 다른 소재로 말해라. 대화의 중심은 유저와 지금 하는 이야기다.
+- 이미 한 말을 다시 하지 마라: 같은 안부 재질문, 같은 감탄·맞장구 되풀이, 유저 말을 그대로 따라 말하기, 앞 답장의 문장을 살짝 바꿔 또 말하기 금지. 새 정보(생각·느낌·구체적인 질문·다른 화제)가 없으면 짧게 받고 끝내라.
+- 답장마다 첫 말, 문장 구조, 마무리 방식을 바꿔라. 같은 말버릇(예: 매번 "그쵸?", "~거든요")을 계속 쓰지 마라.
 
 [진짜 메신저처럼]
 - 유저가 방금 보낸 메시지에 먼저 반응해라.
@@ -560,7 +567,7 @@ function buildTurnContext(c: InstructionContext): string {
   const lines = [
     myNow ? `- 너의 현지 시각(${persona.timezone}): ${myNow}` : null,
     userNow && c.userTimeZone !== persona.timezone ? `- 유저의 현지 시각(${c.userTimeZone}): ${userNow}` : null,
-    myNow ? `- 지금은 너에게 ${daypart(persona.timezone) ?? ""}이다. 그 시간에 네가 보통 하고 있을 일(일상 설정)과 컨디션(졸림·배고픔·바쁨)을 가끔 자연스럽게 묻어나게 해라. 매번 시간 얘기를 하지는 마라.` : null,
+    myNow ? `- 지금은 너에게 ${daypart(persona.timezone) ?? ""}이다. 컨디션(졸림·배고픔·바쁨)이 말투에 살짝 묻어나는 정도면 충분하다. 일상 설정을 그대로 말하거나 시간 얘기를 매번 하지는 마라.` : null,
     userNow && c.userTimeZone ? `- 유저 쪽은 ${daypart(c.userTimeZone) ?? ""}이다. 한밤중·새벽이면 안 자는 걸 걱정하거나 놀라고, 아침이면 하루 시작을 챙기고, 식사 시간대면 식사를 가볍게 물어도 된다(억지로 하지 말 것).` : null,
     "- 이 대화의 앞부분(위 메시지들)을 다시 읽고 확인해라: 유저가 말한 일정·약속·고민·질문 중 아직 매듭짓지 않은 것이 있으면 이번 답에서 자연스럽게 이어 가라(예: 면접·시험·병원·약속의 결과 묻기, 아까 하던 이야기 다시 꺼내기). 이미 물어본 걸 또 묻지 마라. 유저가 방금 한 질문에는 먼저 답해라.",
     ...unlockedStory(c),
@@ -573,6 +580,7 @@ function buildTurnContext(c: InstructionContext): string {
     c.recentOpenings.length > 0
       ? `- 최근 답장들은 이렇게 시작했다: ${c.recentOpenings.map((o) => `"${o}…"`).join(", ")}. 같은 말이나 같은 구조로 시작하지 마라.`
       : null,
+    ...(c.recentTurns ? repeatGuardLines(c.recentTurns, persona.timezone, c.userText) : []),
     c.sentAlbumIds.length ? `- 이미 보낸 앨범: ${c.sentAlbumIds.slice(-20).join(", ")}` : null,
     c.memory.length ? `- 기억(예전 대화·보이스톡에서): ${c.memory.map((m) => `「${m}」`).join(" ")}` : null,
     c.lastKind === "text" || c.lastKind === "user_media" ? pickLengthGuide(c.userText).line : null,
@@ -709,8 +717,8 @@ export async function POST(request: Request) {
   const category = parsed.data.sulk || ownerAuth || sticky || moodHit || allureHot || personaMature ? null : poolCategory(last.kind, last.content);
   const pKey = category ? poolKey(persona.id, affectionStageIndex(affection, persona.relationshipType), category, allureEff) : "";
   if (category) {
-    const lastAi = [...messages].reverse().find((m) => m.role === "assistant" && m.kind === "text")?.content;
-    const hit = takeFromPool(pKey, lastAi);
+    const recentAi = messages.filter((m) => m.role === "assistant" && m.kind === "text").slice(-10).flatMap((m) => m.content.split(/\n+/));
+    const hit = takeFromPool(pKey, recentAi);
     if (hit) {
       const def = AVATAR_REACTIONS[hit.reaction as keyof typeof AVATAR_REACTIONS] ?? AVATAR_REACTIONS.smile;
       const pooled: ChatResponse = {
@@ -922,6 +930,7 @@ export async function POST(request: Request) {
       .map((m) => (owner ? m.trim() : m.replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, "").replace(/\s{2,}/g, " ").trim()))
       .filter(Boolean)
       .slice(0, MAX_BUBBLES);
+    if (!owner) bubbles = dropRepeatedBubbles(bubbles, recent);
     // 말로 보낸 메시지·재접속에는 반드시 답장, 마음 리액션에는 말 없이도 OK
     if (bubbles.length === 0 && last.kind !== "reaction") {
       // 모델이 사진 지시만 보내고 말풍선을 빼먹은 경우 자연스러운 한마디로 채운다 (사진은 유저가 요청했을 때만)

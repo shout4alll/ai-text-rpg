@@ -1,3 +1,4 @@
+import { nearlySame } from "@/lib/repeatGuard";
 import "server-only";
 import { settingValue } from "@/config/settings";
 /**
@@ -79,13 +80,15 @@ export function poolKey(personaId: string, stage: number, category: string, allu
 }
 
 /** 쓸 수 있는 답장이 충분하면 하나를 꺼낸다 (확률) */
-export function takeFromPool(key: string, avoid?: string): PooledReply | null {
+export function takeFromPool(key: string, avoid?: string | string[]): PooledReply | null {
   const P = BALANCE.replyPool;
   const now = Date.now();
   const list = (pool.get(key) ?? []).filter((r) => now - r.at < P.ttlMin * 60_000);
   pool.set(key, list);
   if (list.length < P.minVariants || Math.random() >= P.useChance) return null;
-  const choices = list.filter((r) => r.messages[0] !== avoid);
+  const avoidList = Array.isArray(avoid) ? avoid : avoid ? [avoid] : [];
+  // 최근에 내가 한 말과 같거나 거의 같은 답장은 다시 꺼내지 않는다 (같은 말 반복 방지)
+  const choices = list.filter((r) => !avoidList.some((a) => r.messages.some((m) => nearlySame(m, a))));
   const from = choices.length ? choices : list;
   return from[Math.floor(Math.random() * from.length)];
 }
