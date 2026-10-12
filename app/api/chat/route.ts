@@ -78,6 +78,9 @@ const turnSchema = z.object({
   at: z.number().optional(),
   /** 매혹 모드 중에 오간 말 (앱이 붙임) — 다른 모델에게 보낼 때 요약으로 대체된다 (config/spicy.ts) */
   mature: z.boolean().optional(),
+  /** kind=gift: 좋아하는 선물이었는지 / 삐진 걸 달래려던 선물인지 (없으면 예전 기록) */
+  giftGood: z.boolean().optional(),
+  giftSulk: z.boolean().optional(),
 });
 
 /** 편집값 {항목: 글/숫자/줄 목록} — 정의된 항목만, 길이 제한 */
@@ -254,7 +257,15 @@ function toModelTurns(turns: Turn[]) {
         ? `[${what}] 유저가 직접 찍은 ${what}을 보냈다.${t.mediaType === "video" ? ` (영상의 장면 ${t.images!.length}개를 순서대로 첨부)` : ""}${caption}`
         : `[${what}] 유저가 ${what}을 보냈었다${t.seen ? ` (네가 본 내용: ${t.seen})` : ""}.${caption}`;
     } else if (t.kind === "gift") {
-      content = `[선물] 유저가 토라진 너를 달래려고 ${t.content.slice(0, 40)}을(를) 선물했다. 서운했던 마음이 다 풀렸다.`;
+      const g = t.content.replace(/^🎁\s*/, "").slice(0, 40);
+      content =
+        t.giftSulk
+          ? `[선물] 유저가 토라진 너를 달래려고 ${g}을(를) 선물했다. 네가 좋아하는 선물이라 서운했던 마음이 풀렸다.`
+          : t.giftGood === true
+            ? `[선물] 유저가 ${g}을(를) 선물했다. 네가 좋아하는 선물이라 기뻤다. (삐져 있던 게 아니다 — '풀렸다'는 말은 하지 마라)`
+            : t.giftGood === false
+              ? `[선물] 유저가 ${g}을(를) 선물했다. 네 취향이 아니어서 너는 별 반응 없이 넘겼다(화난 건 아니다). 유저가 그 일을 언급하면 솔직하지만 다정하게 취향을 말해라. 삐져 있던 게 아니니 '풀렸다'는 말은 하지 마라.`
+              : `[선물] 유저가 ${g}을(를) 선물했다.`;
     } else {
       content = t.content;
     }
@@ -342,6 +353,45 @@ interface InstructionContext {
   user?: { name?: string; gender?: "male" | "female" };
   gift?: { name: string; good: boolean };
   touches?: string[];
+  /** 최근 대화 (말투 일관성 판단용) */
+  recentTurns?: Turn[];
+}
+
+/**
+ * 🗣 말투(반말/존댓말) 판별 — 최근 메시지들의 문장 끝을 보고 주로 어느 쪽을 썼는지.
+ *  모델이 맥락 없이 반말↔존댓말을 오가지 않도록 "지금까지의 말투"를 알려 준다.
+ */
+type Register = "존댓말" | "반말" | "섞임" | null;
+function detectRegister(texts: string[]): Register {
+  let polite = 0;
+  let casual = 0;
+  for (const t of texts) {
+    for (const s of t.split(/(?<=[.!?…~])\s+|\n+/)) {
+      const x = s.replace(/[\s.!?…~ㅋㅎㅠㅜ^;:)(♡❤️💕😊😂🥺]+$/u, "").trim();
+      if (x.length < 2) continue;
+      if (/(요|니다|니까|세요|죠|까요|에요|예요|군요|네요|래요|데요|나요|가요)$/.test(x)) polite++;
+      else if (/(어|아|야|지|자|해|냐|니|래|거든|잖아|는데|네|다|게|걸|까|구나|군|ㄴ데|든|라|랑|고)$/.test(x)) casual++;
+    }
+  }
+  const n = polite + casual;
+  if (n < 2) return null;
+  if (polite / n >= 0.7) return "존댓말";
+  if (casual / n >= 0.7) return "반말";
+  return "섞임";
+}
+function registerLine(turns: Turn[]): string | null {
+  const texts = (role: "user" | "assistant") => turns.filter((t) => t.role === role && t.kind === "text").slice(-6).map((t) => t.content);
+  const mine = detectRegister(texts("assistant"));
+  const theirs = detectRegister(texts("user"));
+  if (!mine && !theirs) return null;
+  const me =
+    mine === "존댓말" || mine === "반말"
+      ? `너는 지금까지 유저에게 ${mine}을 써 왔다. 유저가 말을 놓자/높이자고 했거나 관계가 분명히 바뀌는 계기가 없으면 그대로 ${mine}을 유지해라.`
+      : mine === "섞임"
+        ? "최근 네 답장에서 반말과 존댓말이 섞였다. 바로 앞 답장의 말투를 기준으로 하나로 정해 일관되게 써라."
+        : "";
+  const you = theirs === "존댓말" || theirs === "반말" ? ` 유저는 주로 ${theirs}을 쓴다.` : "";
+  return `- 말투 일관성: ${me}${you} 관계 단계 설명에 적힌 말투 예시보다 실제 지금까지의 말투가 우선이다. 한 답장 안에서 반말과 존댓말을 섞지 마라. 말투를 바꿀 때는 "말 편하게 해도 돼요?"처럼 자연스러운 계기를 먼저 만들어라.`;
 }
 
 /** 마지막 대화 뒤 경과 시간에 맞는 첫 답장 지침 (balance.json gapReactions) */
@@ -515,6 +565,7 @@ function buildTurnContext(c: InstructionContext): string {
     "- 이 대화의 앞부분(위 메시지들)을 다시 읽고 확인해라: 유저가 말한 일정·약속·고민·질문 중 아직 매듭짓지 않은 것이 있으면 이번 답에서 자연스럽게 이어 가라(예: 면접·시험·병원·약속의 결과 묻기, 아까 하던 이야기 다시 꺼내기). 이미 물어본 걸 또 묻지 마라. 유저가 방금 한 질문에는 먼저 답해라.",
     ...unlockedStory(c),
     userLine(c.user),
+    c.recentTurns ? registerLine(c.recentTurns) : null,
     c.sinceLast ? `- 직전 대화 이후 ${c.sinceLast}이 지났다. 그동안 각자의 시간이 흘렀다는 걸 자연스럽게 반영해라.` : null,
     gapGuide(c.gapMs),
     c.touches?.length ? `- 방금 유저가 화면 속 너를 터치했다: ${c.touches.join(", ")}. 그 스킨십을 기억하고 관계 단계에 맞게 이어서 반응해라(가까우면 설레거나 장난스럽게, 아직 어색하면 쑥스럽거나 살짝 경계). 매번 언급하지는 마라.` : null,
@@ -742,6 +793,7 @@ export async function POST(request: Request) {
       user: parsed.data.user,
       gift: parsed.data.gift,
       touches: parsed.data.touches,
+      recentTurns: recent,
       album,
       sentAlbumIds: parsed.data.sentAlbumIds ?? [],
       allure: allureEff,

@@ -78,8 +78,8 @@ import type { ChatMessage, ChatResponse } from "@/types/game";
 /*  브라우저 저장: 인물마다 대화방(메시지 + 호감도)이 따로 저장된다               */
 /* -------------------------------------------------------------------------- */
 const OWNER_KEY = "ai-rpg.owner";
-/** 대화창에 이 말을 치면 비밀번호 창이 뜬다 (비밀번호 자체는 서버만 안다) */
-const OWNER_ENTRY_WORD = "주인님입장";
+/** 대화창에 이 말을 그대로(별표 포함) 치면 비밀번호 창이 뜬다 (비밀번호 자체는 서버만 안다) */
+const OWNER_ENTRY_WORD = "**주인님입장**";
 function readOwnerToken(): string | null {
   try {
     return localStorage.getItem(OWNER_KEY);
@@ -252,6 +252,9 @@ interface Turn {
   localKey?: string;
   /** 매혹 모드 중에 오간 말 — 서버가 다른 모델에게는 요약으로 대체 */
   mature?: boolean;
+  /** kind=gift: 좋아하는 선물이었는지 / 삐짐 달래기였는지 */
+  giftGood?: boolean;
+  giftSulk?: boolean;
 }
 
 function toTurns(msgs: ChatMessage[]): Turn[] {
@@ -279,7 +282,7 @@ function toTurns(msgs: ChatMessage[]): Turn[] {
         at: m.at,
       });
     } else if (m.kind === "gift" && m.role === "user") {
-      turns.push({ role: "user", kind: "gift", content: m.text, at: m.at });
+      turns.push({ role: "user", kind: "gift", content: m.text, at: m.at, ...(m.gift ? { giftGood: m.gift.good, giftSulk: !!m.gift.sulk } : {}) });
     }
   }
   // 💰 캐시 절약: 보내는 창을 historyStep 단위로 맞춰 앞부분이 매 턴 바뀌지 않게 한다
@@ -1389,11 +1392,8 @@ export default function ChatApp({
       setSelectorOpen(true);
       return true;
     }
-    if (persona && selectorOpen) {
-      setSelectorOpen(false); // 대화방 위에 띄운 메인을 닫으면 대화방으로
-      return true;
-    }
-    return false; // 메인 화면 → 앱 내리기
+    // 메인(인물 목록)에서 뒤로 → 대화방으로 돌아가지 않고 앱을 내린다
+    return false;
   };
   useEffect(() => {
     let remove: (() => void) | undefined;
@@ -1409,7 +1409,8 @@ export default function ChatApp({
       const push = () => window.history.pushState({ witH: true }, "");
       push();
       const onPop = () => {
-        if (backRef.current()) push();
+        backRef.current();
+        push(); // 웹은 메인에서 뒤로를 눌러도 사이트를 떠나지 않게 한 칸을 다시 깔아 둔다
       };
       window.addEventListener("popstate", onPop);
       remove = () => window.removeEventListener("popstate", onPop);
@@ -1429,7 +1430,7 @@ export default function ChatApp({
     }
     const text = input.trim();
     if (!text) return;
-    // 🔑 "주인님입장" → 비밀번호 창 (문구를 대화에 직접 치지 않게 — 기록·서버 전송 없음)
+    // 🔑 "**주인님입장**" → 비밀번호 창 (문구를 대화에 직접 치지 않게 — 기록·서버 전송 없음)
     if (text.replace(/\s+/g, "") === OWNER_ENTRY_WORD) {
       setInput("");
       setOwnerPwOpen(true);
@@ -1633,7 +1634,7 @@ export default function ChatApp({
     }
     // 삐져 있으면 기존 달래기 선물과 같다 (좋아하는 선물일 때만)
     const good = g.name === persona.traits.gift.name || (persona.traits.giftLikes ?? []).some((x) => x === g.id || x === g.name);
-    const giftMsg: ChatMessage = { id: nextId.current++, role: "user", kind: "gift", text: `${g.emoji} ${g.name}`, at: Date.now() };
+    const giftMsg: ChatMessage = { id: nextId.current++, role: "user", kind: "gift", text: `${g.emoji} ${g.name}`, at: Date.now(), gift: { good, sulk: good && !!sulkRef.current } };
     const msgs = [...messages, giftMsg];
     setMessages(msgs);
     if (!good) {
@@ -1672,7 +1673,7 @@ export default function ChatApp({
     setSulk(null);
     sulkReleasedAt.current = Date.now();
     const gift = persona.traits.gift;
-    const giftMsg: ChatMessage = { id: nextId.current++, role: "user", kind: "gift", text: `${gift.emoji} ${gift.name}`, at: Date.now() };
+    const giftMsg: ChatMessage = { id: nextId.current++, role: "user", kind: "gift", text: `${gift.emoji} ${gift.name}`, at: Date.now(), gift: { good: true, sulk: true } };
     const msgs = [...messages, giftMsg];
     setMessages(msgs);
     spawnBurst(gift.emoji);

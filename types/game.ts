@@ -45,6 +45,8 @@ export interface ChatMessage {
    */
   kind?: "text" | "reaction" | "call" | "media" | "notice" | "gift";
   /** 매혹 모드 중에 오간 말 (화면에는 그대로, 다른 모델에게는 요약으로 전달 — config/spicy.ts) */
+  /** kind=gift: good=좋아하는 선물이었는지, sulk=삐진 걸 달래려고 준 선물인지 (대화 맥락용) */
+  gift?: { good: boolean; sulk?: boolean };
   mature?: boolean;
   /** kind=media */
   media?: {

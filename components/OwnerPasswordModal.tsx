@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 /**
- * 🔑 주인님 입장 — 대화창에 "주인님입장" 을 치면 뜨는 비밀번호 창.
+ * 🔑 주인님 입장 — 대화창에 "**주인님입장**" (별표 포함)을 치면 뜨는 비밀번호 창.
  *  비밀번호(치트 문구)는 대화 기록에 남지 않고 ●●●● 로만 보인다. 서버(/api/owner/enter)가 확인한다.
  */
 export default function OwnerPasswordModal({ onSubmit, onClose }: { onSubmit: (code: string) => Promise<string | null>; onClose: () => void }) {

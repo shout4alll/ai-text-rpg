@@ -11,7 +11,7 @@ export const LOBBY_NOTES = {
   /** 로비에 한 번 머무는 동안 최대 쪽지 수 */
   maxPerVisit: 3,
   /** 쪽지가 화면에 떠 있는 시간 (초) */
-  showSec: 9,
+  showSec: 18,
   /** 같은 인물은 이 시간(시간) 안에 다시 쪽지를 보내지 않는다 */
   samePersonaHours: 6,
 };

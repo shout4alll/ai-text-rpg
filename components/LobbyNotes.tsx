@@ -68,22 +68,29 @@ export default function LobbyNotes({ personas, userGender, userName, onOpen }: {
 
   if (!note) return null;
   return (
-    <button
-      type="button"
-      onClick={() => {
-        onOpen(note.p.id, note.text);
-        setNote(null);
-      }}
-      data-lobby-note={note.p.id}
-      className="fixed inset-x-3 bottom-[max(1rem,env(safe-area-inset-bottom))] z-[60] mx-auto flex max-w-md items-center gap-3 rounded-2xl bg-surface/95 p-3 text-left shadow-2xl ring-1 ring-brand-300/60 backdrop-blur"
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={note.p.assets.poster} alt="" className="h-11 w-11 shrink-0 rounded-full object-cover" style={{ objectPosition: note.p.assets.objectPosition }} />
-      <span className="min-w-0 flex-1">
-        <span className="block text-xs font-bold text-brand-600">💌 {note.p.name}의 쪽지</span>
-        <span className="line-clamp-2 text-sm text-ink">{note.text}</span>
-      </span>
-      <span className="shrink-0 rounded-full bg-brand-500 px-3 py-1.5 text-xs font-semibold text-onbrand">답장</span>
-    </button>
+    <div className="pointer-events-none fixed inset-0 z-[60] flex items-center justify-center p-5" data-lobby-note-wrap>
+      <div className="pointer-events-auto relative w-full max-w-sm rounded-3xl bg-surface/97 p-4 shadow-2xl ring-1 ring-brand-300/60 backdrop-blur" data-lobby-note={note.p.id}>
+        <button type="button" onClick={() => setNote(null)} aria-label="쪽지 닫기" data-lobby-note-close className="absolute right-2.5 top-2.5 flex h-7 w-7 items-center justify-center rounded-full bg-black/[0.06] text-sm text-ink-soft">
+          ✕
+        </button>
+        <div className="flex items-center gap-3 pr-8">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={note.p.assets.poster} alt="" className="h-12 w-12 shrink-0 rounded-full object-cover" style={{ objectPosition: note.p.assets.objectPosition }} />
+          <span className="text-sm font-bold text-brand-600">💌 {note.p.name}의 쪽지</span>
+        </div>
+        <p className="mt-3 text-[15px] leading-relaxed text-ink">{note.text}</p>
+        <button
+          type="button"
+          onClick={() => {
+            onOpen(note.p.id, note.text);
+            setNote(null);
+          }}
+          data-lobby-note-reply
+          className="mt-4 w-full rounded-full bg-brand-500 py-2.5 text-sm font-semibold text-onbrand"
+        >
+          답장하기
+        </button>
+      </div>
+    </div>
   );
 }
