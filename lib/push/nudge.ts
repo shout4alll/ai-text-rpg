@@ -151,6 +151,27 @@ async function ensureChannel() {
   }
 }
 
+/** 안드로이드 12+ '알람 및 리마인더' 허용 여부 (그 아래 버전·iOS 는 항상 true) */
+export async function exactAlarmAllowed(): Promise<boolean> {
+  if (Capacitor.getPlatform() !== "android") return true;
+  try {
+    const r = await (await plugin()).checkExactNotificationSetting();
+    return r.exact_alarm === "granted";
+  } catch {
+    return false;
+  }
+}
+
+/** '알람 및 리마인더' 설정 화면을 연다 (허용하면 알림이 정확한 시각에, 꺼진 화면에서도 더 안정적으로 온다) */
+export async function openExactAlarmSetting(): Promise<boolean> {
+  try {
+    const r = await (await plugin()).changeExactNotificationSetting();
+    return r.exact_alarm === "granted";
+  } catch {
+    return false;
+  }
+}
+
 /** 예약된 선톡 알림을 모두 취소 */
 export async function cancelNudges(): Promise<void> {
   if (!isNativeApp()) return;
@@ -175,6 +196,8 @@ export async function scheduleNudges(candidates: NudgeCandidate[]): Promise<numb
   if (plan.length === 0) return 0;
   try {
     await ensureChannel();
+    // 정확한 알람 권한이 이미 허용돼 있으면 정확한 알람으로(절전 모드에서도 제시간에 옴), 아니면 조용히 부정확 알람으로 예약
+    const exact = await exactAlarmAllowed();
     await (await plugin()).schedule({
       notifications: plan.map((p) => ({
         id: p.id,
@@ -184,15 +207,34 @@ export async function scheduleNudges(candidates: NudgeCandidate[]): Promise<numb
         schedule: { at: p.at, allowWhileIdle: true },
         // ⚠️ 정확한 알람(기본값 true)은 안드로이드 12+ 에서 '알람 및 리마인더' 권한이 없으면 예약할 때마다 설정 화면을 띄우고,
         //    백그라운드로 가는 순간에는 예약이 실패해 알림이 오지 않았다 → 부정확(몇 분 오차) 알람으로 조용히 예약한다
-        isExactNotification: false,
+        isExactNotification: exact,
         extra: { personaId: p.personaId, kind: p.kind, topic: p.topic, at: p.at.getTime() },
       })),
     });
     noteError("");
+    noteSchedule(plan.length, plan[0].at, exact);
     return plan.length;
   } catch (e) {
     noteError(e instanceof Error ? e.message : String(e));
     return 0;
+  }
+}
+
+const SCHEDULE_KEY = "ai-rpg.notify.lastSchedule";
+function noteSchedule(count: number, first: Date, exact: boolean) {
+  try {
+    localStorage.setItem(SCHEDULE_KEY, JSON.stringify({ at: Date.now(), count, first: first.getTime(), exact }));
+  } catch {
+    /* 무시 */
+  }
+}
+/** 마지막 예약 기록 (설정 화면 점검용) */
+export function lastScheduleInfo(): { at: number; count: number; first: number; exact: boolean } | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(SCHEDULE_KEY) ?? "null");
+    return v && typeof v.at === "number" ? v : null;
+  } catch {
+    return null;
   }
 }
 
@@ -335,7 +377,7 @@ export async function nudgeStatus(): Promise<NudgeStatus> {
 
 const TEST_ID = NOTIFY_ID_BASE + NOTIFY_ID_COUNT + 1;
 
-/** 5초 뒤에 시험 알림을 보낸다. 앱을 홈 화면으로 보내 두고 기다리면 알림이 온다. */
+/** 20초 뒤에 시험 알림을 보낸다. 바로 앱을 홈 화면으로 보내 두고 기다리면 알림이 온다. */
 export async function sendTestNotification(): Promise<"ok" | "denied" | "unsupported" | "error"> {
   if (!isNativeApp()) return "unsupported";
   try {
@@ -350,8 +392,8 @@ export async function sendTestNotification(): Promise<"ok" | "denied" | "unsuppo
           title: NOTIFY_TITLE,
           body: "알림이 잘 도착했어요",
           channelId: NOTIFY_CHANNEL.id,
-          schedule: { at: new Date(Date.now() + 5000), allowWhileIdle: true },
-          isExactNotification: false,
+          schedule: { at: new Date(Date.now() + 20_000), allowWhileIdle: true },
+          isExactNotification: await exactAlarmAllowed(),
         },
       ],
     });

@@ -216,7 +216,7 @@ const minuteKey = (t: number) => Math.floor(t / 60000);
 function HeartPicker({ onPick, className = "", S }: { onPick: (h: HeartReactionId) => void; className?: string; S: Styles }) {
   return (
     <div
-      className={`flex flex-wrap gap-1 rounded-2xl p-1.5 shadow-lift ${S.picker} ${className}`}
+      className={`flex max-h-[46vh] max-w-[min(21rem,92vw)] flex-wrap gap-1 overflow-y-auto rounded-2xl p-1.5 shadow-lift ${S.picker} ${className}`}
       role="menu"
       aria-label="마음 리액션"
     >

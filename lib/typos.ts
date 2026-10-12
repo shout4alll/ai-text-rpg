@@ -102,7 +102,8 @@ export function withTypo(bubbles: string[], age: number, r: Rng = Math.random): 
   out[bi] = w2.join(" ");
   if (r() < TYPO.fixChance) {
     // 정정은 오타가 난 말풍선 바로 뒤 (마지막 말풍선이면 그 뒤)
-    const fix = r() < 0.7 ? `*${original.replace(/[~!?.,ㅎㅋ]+$/g, "") || original}` : pick([...TYPO_FIX_PHRASES], r);
+    // 정정: 별표(*) 없이 바른 말만 다시 치거나, 짧은 정정 문구
+    const fix = r() < 0.4 ? original.replace(/[~!?.,ㅎㅋ]+$/g, "") || original : pick([...TYPO_FIX_PHRASES], r);
     out.splice(bi + 1, 0, fix);
   }
   return out;

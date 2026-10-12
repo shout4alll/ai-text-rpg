@@ -1522,6 +1522,9 @@ export default function ChatApp({
         const local: Record<string, AvatarReactionId> = {
           love: "shy", like: "smile", joy: "laugh", shy: "shy", pout: "pout", touched: "touched",
           haha: "laugh", hug: "touched", wow: "surprised", sad: "sad",
+          cute: "shy", kiss: "shy", wink: "smile", tease: "laugh", angry: "pout", cry: "sad", sweat: "shy", think: "thinking", yum: "smile",
+          sleepy: "sleepy", fire: "excited", clap: "smile", fight: "smile", thanks: "touched", party: "excited", sparkle: "smile",
+          heartbeat: "love", eyes: "surprised", flower: "smile", moon: "sleepy",
         };
         playReaction(local[heart] ?? "smile", { kind: "reaction", heart });
         return;

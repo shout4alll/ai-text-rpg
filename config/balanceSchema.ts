@@ -8,7 +8,10 @@ const reactionId = z.enum([
   "idle", "smile", "laugh", "nod", "shake", "shy", "love", "pout", "surprised", "sad",
   "touched", "thinking", "excited", "comfort", "sleepy", "turn_away", "kiss",
 ]);
-const heartId = z.enum(["love", "like", "joy", "shy", "pout", "touched", "haha", "hug", "wow", "sad"]);
+const heartId = z.enum([
+  "love", "like", "joy", "shy", "pout", "touched", "haha", "hug", "wow", "sad",
+  "cute", "kiss", "wink", "tease", "angry", "cry", "sweat", "think", "yum", "sleepy", "fire", "clap", "fight", "thanks", "party", "sparkle", "heartbeat", "eyes", "flower", "moon",
+]);
 const chance = z.number().min(0).max(1);
 const ms = z.number().int().min(0);
 

@@ -78,23 +78,23 @@ export default function PersonaSelector({
       {/* 상단 바 */}
       <div className="sticky top-0 z-10 border-b border-ink-line/70 bg-paper/85 backdrop-blur-xl">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-6">
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2">
             <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-brand-500 to-brand-400 text-onbrand shadow-glow">
               <IconChats className="h-[18px] w-[18px]" />
             </span>
-            <span className="flex items-baseline gap-1.5"><span className="text-[19px] font-extrabold tracking-tight" data-brand>{BRAND.name}</span><span className="text-[12px] font-semibold text-ink-mute">{BRAND.ko}</span></span>
+            <span className="flex items-baseline gap-1.5 whitespace-nowrap"><span className="text-[19px] font-extrabold tracking-tight" data-brand>{BRAND.name}</span><span className="text-[12px] font-semibold text-ink-mute">{BRAND.ko}</span></span>
             {onGems && typeof gems === "number" && <GemBadge gems={gems} onClick={onGems} className="ml-1" />}
           </div>
-          <div className="flex shrink-0 gap-2">
+          <div className="flex shrink-0 gap-1.5 sm:gap-2">
             {onTheme && (
               <button
                 type="button"
                 onClick={onTheme}
                 aria-label="테마"
                 data-selector-theme
-                className="flex items-center gap-1 rounded-full bg-surface px-3 py-1.5 text-sm text-ink-soft shadow-soft ring-1 ring-ink-line transition hover:text-ink"
+                className="flex items-center gap-1 rounded-full bg-surface px-2.5 py-1.5 text-sm text-ink-soft shadow-soft sm:px-3 ring-1 ring-ink-line transition hover:text-ink"
               >
-                <IconSparkle className="h-4 w-4" /> 테마
+                <IconSparkle className="h-4 w-4" /> <span className="hidden sm:inline">테마</span>
               </button>
             )}
             {onNotify && (
@@ -103,26 +103,28 @@ export default function PersonaSelector({
                 onClick={onNotify}
                 aria-label="알림 설정"
                 data-selector-notify
-                className="flex items-center gap-1 rounded-full bg-surface px-3 py-1.5 text-sm text-ink-soft shadow-soft ring-1 ring-ink-line transition hover:text-ink"
+                className="flex items-center gap-1 rounded-full bg-surface px-2.5 py-1.5 text-sm text-ink-soft shadow-soft sm:px-3 ring-1 ring-ink-line transition hover:text-ink"
               >
-                <IconBell className="h-4 w-4" /> 알림
+                <IconBell className="h-4 w-4" /> <span className="hidden sm:inline">알림</span>
               </button>
             )}
             {onBackup && (
               <button
                 type="button"
                 onClick={onBackup}
+                aria-label="백업"
                 data-selector-backup
-                className="flex items-center gap-1 rounded-full bg-surface px-3 py-1.5 text-sm text-ink-soft shadow-soft ring-1 ring-ink-line transition hover:text-ink"
+                className="flex items-center gap-1 rounded-full bg-surface px-2.5 py-1.5 text-sm text-ink-soft shadow-soft sm:px-3 ring-1 ring-ink-line transition hover:text-ink"
               >
-                <IconBackup className="h-4 w-4" /> 백업
+                <IconBackup className="h-4 w-4" /> <span className="hidden sm:inline">백업</span>
               </button>
             )}
             {onClose && (
               <button
                 onClick={onClose}
                 aria-label="닫기"
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-surface text-ink-soft shadow-soft ring-1 ring-ink-line transition hover:text-ink"
+                data-selector-close
+                className="hidden h-9 w-9 items-center justify-center sm:flex rounded-full bg-surface text-ink-soft shadow-soft ring-1 ring-ink-line transition hover:text-ink"
               >
                 <IconClose className="h-[18px] w-[18px]" />
               </button>
