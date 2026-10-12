@@ -23,6 +23,8 @@ export interface RouteInput {
   userTurns: number;
   sulking: boolean;
   allure: boolean;
+  /** 앞 대화가 있어야 이해되는 말이면 그 이유 (lib/continuity.ts) */
+  continuity?: string | null;
 }
 
 /** 가벼운 턴이 연속된 횟수 (인물별) — mainEveryLight 마다 한 번은 메인으로 */
@@ -43,6 +45,7 @@ export function routeTier(input: RouteInput, key: string): { tier: Tier; reason:
   if (R.mainKinds.includes(input.kind)) return pick("chat", `kind:${input.kind}`);
   if (input.sulking && R.mainWhenSulking) return pick("chat", "sulking");
   if (input.allure && R.mainWhenAllure) return pick("chat", "allure");
+  if (input.continuity) return pick("chat", `continuity:${input.continuity}`); // 🧵 맥락이 필요한 말은 메인 모델
   if (R.lightKinds.includes(input.kind)) return pick("light", `kind:${input.kind}`);
   if (input.userTurns <= R.firstTurnsMain) return pick("chat", "first-turns");
   if (R.mainEveryLight > 0 && (lightStreak.get(key) ?? 0) >= R.mainEveryLight) return pick("chat", "refresh");

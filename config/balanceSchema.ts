@@ -162,6 +162,15 @@ export const balanceSchema = z.object({
     mainWhenAllure: z.boolean(),
     mainKeywords: z.array(z.string()),
     lightPatterns: z.array(z.string()).refine((a) => a.every((p) => { try { new RegExp(p, "i"); return true; } catch { return false; } }), "정규식 형식 오류"),
+    /** 🧵 앞 대화가 있어야 이해되는 말(되묻기·정정·지시어·질문에 대한 대답·이어지는 주제)은 고성능 모델로 */
+    continuity: z.object({
+      enabled: z.boolean(),
+      lookbackUserTurns: z.number().int().min(1).max(10),
+      substantiveChars: z.number().int().min(1).max(100),
+      minSubstantive: z.number().int().min(1).max(10),
+      confusionPatterns: z.array(z.string()),
+      referencePatterns: z.array(z.string()),
+    }),
   }),
   replyPool: z.object({
     enabled: z.boolean(),

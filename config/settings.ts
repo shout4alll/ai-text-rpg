@@ -68,6 +68,11 @@ export const SERVER_SETTINGS = [
     desc: "비우면 PERPLEXITY_API_KEY 가 있으면 perplexity:sonar, 없으면 google:gemini-3.8-flash, 둘 다 없으면 메인 모델",
   },
   {
+    key: "deepModel", label: "대화가 꼬였을 때 쓰는 고성능 모델", group: "모델", type: "string",
+    default: "global.anthropic.claude-opus-5", env: "AI_MODEL_DEEP", usedIn: "app/api/chat/route.ts · lib/continuity.ts",
+    desc: "유저가 \"무슨 소리야\"처럼 되묻거나 바로잡는 턴에만 사용 (평소는 메인 모델). 접근 권한이 없거나 실패하면 메인 모델로 자동 대체. 메인과 같게 쓰려면 메인 모델 ID를 적기, 끄려면 AI_MODEL_DEEP=off",
+  },
+  {
     key: "serviceFallback", label: "일반 대화방 모델 우회", group: "모델", type: "enum", options: ["on", "off"],
     default: "on", env: "SERVICE_FALLBACK", usedIn: "app/api/chat/route.ts · lib/modelRouter.ts",
     desc: "on=모델이 실패·지연되면 손님에게 오류를 보이지 않고 다른 모델(우회 목록)로 이어서 답함 / off=기존처럼 해당 모델만 시도",

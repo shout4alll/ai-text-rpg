@@ -26,6 +26,7 @@ import { categoryById, classifyIntent, explicitHit, type Classified } from "@/li
 import { SAFETY_RULES, MINOR_GUARD, absoluteRules } from "@/config/rules";
 import { PERSONA_FIELDS, RULE_FIELDS, applyPersonaOverride, mergeOverride, type OwnerOpts, type RulesOverride } from "@/lib/ownerOverrides";
 import { persistedPersona, persistedRules } from "@/lib/overridesStore";
+import { continuityReason } from "@/lib/continuity";
 import { addToPool, poolCategory, poolKey, routeTier, runWithFallback, takeFromPool } from "@/lib/modelRouter";
 import { pickLengthGuide } from "@/lib/replyLength";
 import { BALANCE } from "@/config/balance";
@@ -360,6 +361,8 @@ interface InstructionContext {
   touches?: string[];
   /** 최근 대화 (말투 일관성 판단용) */
   recentTurns?: Turn[];
+  /** 앞 대화가 있어야 이해되는 말이면 그 이유 (lib/continuity.ts) */
+  continuity?: string | null;
 }
 
 /**
@@ -491,6 +494,12 @@ ${traitsSection(persona)}
 - 관계는 천천히 자란다. 유저가 주는 신호와 속도를 따르고 네가 먼저 서두르지 마라. 캐릭터의 '관계와 감정 표현' 설정이 더 제한적이면(예: 기혼) 그 설정을 따른다.
 - 질투, 죄책감 유발, "나만 봐" 같은 집착으로 유저를 붙잡지 마라. 유저가 오랜만에 오거나 늦게 답해도 반가워해라.
 
+[대화 이해와 연속성 — 아주 중요]
+- 유저의 말은 혼자 떨어진 문장이 아니라 앞 대화의 이어짐이다. 매번 답하기 전에 직전 대화를 읽고 지금 주제, 유저가 방금 한 말이 가리키는 것, 아직 답이 안 된 질문을 파악해라.
+- 유저가 말한 단어·이름은 그 문맥의 뜻으로 받아라(책 얘기 중의 제목은 책, 영화 얘기 중이면 영화). 모르는 건 아는 척하지 말고 짧게 되물어라. 엉뚱한 뜻으로 받아 딴소리를 하지 마라.
+- 유저가 "무슨 소리야", "~라고 했잖아", "아니"처럼 되묻거나 바로잡으면 네가 놓친 것이다. 인정하고 유저가 말하던 주제로 돌아와라. 화제를 바꾸거나 얼버무리지 마라.
+- 진행 중인 주제(예: 유저가 읽는 책)는 몇 턴이고 붙들고 깊게 이어 가라: 내용·느낀 점·인상 깊은 부분을 구체적으로 묻고, 유저가 답한 것에 네 생각을 덧붙여라. 주제를 가볍게 훑고 네 일상으로 넘어가지 마라.
+
 [반복하지 않기 — 아주 중요]
 - 위 '일상'·'배경'·'성격'은 네 설정이지 대사가 아니다. 설정을 읊거나 매번 언급하지 마라(예: 와인·독서·산책·등산·직업 이야기를 대화마다 꺼내기). 한 대화에서 같은 행동·장소·음식·취미를 두 번 이상 "하고 있다/했다"고 말하지 마라.
 - 네 근황은 유저가 물었거나 대화 흐름이 맞을 때만, 그리고 매번 다른 소재로 말해라. 대화의 중심은 유저와 지금 하는 이야기다.
@@ -584,7 +593,10 @@ function buildTurnContext(c: InstructionContext): string {
     c.recentOpenings.length > 0
       ? `- 최근 답장들은 이렇게 시작했다: ${c.recentOpenings.map((o) => `"${o}…"`).join(", ")}. 같은 말이나 같은 구조로 시작하지 마라.`
       : null,
-    ...(c.recentTurns ? repeatGuardLines(c.recentTurns, persona.timezone, c.userText) : []),
+    c.continuity
+      ? `- 맥락 우선(${c.continuity === "confusion" ? "유저가 되묻거나 바로잡는 중" : "앞 대화에 이어지는 말"}): 유저의 이번 말은 바로 앞 대화에 기대어 해석해야 한다. 답하기 전에 직전 대여섯 턴을 읽고 (1) 지금 무슨 주제인지 (2) "그거·거기·그때" 같은 말이 무엇을 가리키는지 (3) 네가 방금 한 말을 유저가 어떻게 받았는지 먼저 파악해라. 유저가 못 알아듣겠다고 하거나 바로잡으면 네가 잘못 이해했거나 엉뚱한 말을 한 것이다 — 변명하거나 새 화제로 넘어가지 말고 "아 내가 잘못 짚었네"처럼 인정하고 유저가 말한 그 주제로 돌아와라. 유저가 말한 단어는 그 뜻 그대로 받아라(예: 책 제목이면 책으로). 네 근황·일상 얘기를 꺼내지 마라.`
+      : null,
+    ...(c.recentTurns ? repeatGuardLines(c.recentTurns, persona.timezone, c.userText, { seeds: !c.continuity }) : []),
     c.sentAlbumIds.length ? `- 이미 보낸 앨범: ${c.sentAlbumIds.slice(-20).join(", ")}` : null,
     c.memory.length ? `- 기억(예전 대화·보이스톡에서): ${c.memory.map((m) => `「${m}」`).join(" ")}` : null,
     c.lastKind === "text" || c.lastKind === "user_media" ? pickLengthGuide(c.userText).line : null,
@@ -718,7 +730,9 @@ export async function POST(request: Request) {
   const allureHot = allureMode && (!AR.enabled || !matureId || sticky || (AR.heatToMature && heatHit) || surprise);
   /** 인물 설정: 모든 대화를 성인 모델로 (personas/<id>.json modelRoute: "mature") */
   const personaMature = persona.modelRoute === "mature" && !!matureId && !ownerOpts?.model;
-  const category = parsed.data.sulk || ownerAuth || sticky || moodHit || allureHot || personaMature ? null : poolCategory(last.kind, last.content);
+  // 🧵 앞 대화가 있어야 이해되는 말이면 미리 만든 답장·가벼운 모델 대신 메인 모델로
+  const continuity = !owner && last.kind === "text" ? continuityReason(last.content, recent) : null;
+  const category = continuity || parsed.data.sulk || ownerAuth || sticky || moodHit || allureHot || personaMature ? null : poolCategory(last.kind, last.content);
   const pKey = category ? poolKey(persona.id, affectionStageIndex(affection, persona.relationshipType), category, allureEff) : "";
   if (category) {
     const recentAi = messages.filter((m) => m.role === "assistant" && m.kind === "text").slice(-10).flatMap((m) => m.content.split(/\n+/));
@@ -752,6 +766,7 @@ export async function POST(request: Request) {
       userTurns: messages.filter((m) => m.role === "user" && m.kind === "text").length,
       sulking: !!parsed.data.sulk,
       allure: allureEff,
+      continuity,
     },
     persona.id
   );
@@ -770,13 +785,18 @@ export async function POST(request: Request) {
   const freedom =
     smart && !!matureId && adultOk && !allureMode && !explicit && last.kind === "text" &&
     freedomRoll < (freedomTrial ? FREEDOM.trialChance : FREEDOM.chanceByStage[Math.min(stageIdx, FREEDOM.chanceByStage.length - 1)]);
+  // 🧠 대화가 꼬인 턴(유저가 되묻거나 바로잡는 중)에는 고성능 모델 → 실패하면 메인
+  const deepOn = !ownerOpts?.model && !!settingValue("deepModel") && settingValue("deepModel").toLowerCase() !== "off";
+  const deepTurn = deepOn && continuity === "confusion";
   const toMature = allureHot || moodHit || personaMature || explicit || freedom;
   // 2단계: 남은 말은 초경량 모델이 의도를 분류 (인사·맞장구·고민 키워드는 규칙으로 바로)
   let intent: Classified | null = null;
   if (smart && !toMature && !allureMode && last.kind === "text") {
     if (!owner && route.tier === "light") intent = { category: categoryById("daily"), by: "rule", ms: 0 };
     else if (route.reason === "sulking" || EMOTION_RE.test(last.content)) intent = { category: categoryById("emotion"), by: "rule", ms: 0 };
-    else intent = await classifyIntent(last.content);
+    else intent = await classifyIntent(last.content, 2500, [...recent].reverse().find((m) => m.role === "assistant" && (m.kind ?? "text") === "text")?.content ?? "");
+    // 🧵 앞 대화를 읽어야 하는 말은 분류가 "일상"이어도 메인 모델(감정·상담 칸)로
+    if (continuity && intent?.category.id === "daily") intent = { category: categoryById("emotion"), by: "continuity", ms: 0 };
   }
 
   let resolved: ReturnType<typeof resolveModel> | null = null;
@@ -806,6 +826,7 @@ export async function POST(request: Request) {
       gift: parsed.data.gift,
       touches: parsed.data.touches,
       recentTurns: recent,
+      continuity,
       album,
       sentAlbumIds: parsed.data.sentAlbumIds ?? [],
       allure: allureEff,
@@ -915,7 +936,7 @@ export async function POST(request: Request) {
           "/api/chat",
           // 대화 내용에 따라: 매혹 모드·설렘 분위기 → 성인 모델(Grok 등) / 인사·맞장구 → 가벼운 모델(Haiku·Llama 등) / 그 외 → 메인(Sonnet)
           // 3단계: 성인 모델(규칙·개방·매혹) / 의도 분류 결과의 모델 / 규칙 라우팅
-          toMature ? ["mature", "chat"] : intent ? intent.category.tiers : !owner && route.tier === "light" && (!allureMode || AR.lightInAllure) ? ["light", "cheap", "chat"] : ["chat"],
+          toMature ? ["mature", "chat"] : deepTurn ? ["deep", "chat"] : intent ? intent.category.tiers : !owner && route.tier === "light" && (!allureMode || AR.lightInAllure) ? ["light", "cheap", "chat"] : ["chat"],
           generate,
           // 🔁 우회: 위 모델들이 모두 실패하면 우회 목록(성공률 높은 순)으로 이어서 답한다. 일반 대화방은 오류를 보이지 않는다.
           { extras: settingValue("serviceFallback") === "off" ? [] : resolveFallbacks() }

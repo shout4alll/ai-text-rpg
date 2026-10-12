@@ -168,7 +168,7 @@ function repeatedWords(turns: TextTurn[]): string[] {
  * 이번 턴 프롬프트에 붙일 "반복 금지" 줄들.
  * @param userText 유저가 방금 한 말 — 유저가 직접 꺼낸 화제는 반복 대상에서 뺀다
  */
-export function repeatGuardLines(turns: TextTurn[], tz: string, userText: string): string[] {
+export function repeatGuardLines(turns: TextTurn[], tz: string, userText: string, opts: { seeds?: boolean } = {}): string[] {
   const lines: string[] = [];
   const asked = (label: string) => {
     const sc = SCENES.find((s) => s.label === label);
@@ -187,7 +187,8 @@ export function repeatGuardLines(turns: TextTurn[], tz: string, userText: string
   }
   const avoid = new Set<string>();
   for (const s of scenes) for (const k of s.label.split(/[·]/)) avoid.add(k);
-  const seeds = pickSeeds(hourIn(tz), avoid, 3);
+  // 이야기가 이어지는 중(opts.seeds=false)에는 새 근황 씨앗을 주지 않는다 — 딴소리의 원인이 된다
+  const seeds = opts.seeds === false ? [] : pickSeeds(hourIn(tz), avoid, 3);
   if (seeds.length > 0) {
     lines.push(
       `- 이번 턴에 굳이 네 근황을 꺼낸다면 이런 결에서 골라라(전부 선택 사항, 안 꺼내도 된다. 네 직업·성격·말투에 맞게 구체적으로 바꿔라): ${seeds.map((s) => `「${s}」`).join(" ")}. 유저의 말에 반응하는 게 먼저고, 근황은 두 번에 한 번 이하로만 꺼내라.`

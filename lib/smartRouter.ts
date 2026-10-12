@@ -26,17 +26,19 @@ export interface Classified {
   ms: number;
 }
 
-export async function classifyIntent(text: string, timeoutMs = 2500): Promise<Classified> {
+export async function classifyIntent(text: string, timeoutMs = 2500, prev = ""): Promise<Classified> {
   const t0 = Date.now();
   const key = text.trim().slice(0, 200);
-  const hit = cache.get(key);
+  const ctx = prev.trim().slice(-120);
+  const ck = `${ctx}|${key}`;
+  const hit = cache.get(ck);
   if (hit && Date.now() - hit.at < 10 * 60_000) return { category: categoryById(hit.id), by: "cache", ms: 0 };
   try {
     const r = resolveModel("router");
     const res = await generateText({
       model: r.model,
       system: classifierPrompt(),
-      prompt: `유저의 마지막 말: """${key}"""\n번호:`,
+      prompt: `${ctx ? `직전에 상대(캐릭터)가 한 말: """${ctx}"""\n` : ""}유저의 마지막 말: """${key}"""\n(앞의 말을 받아서 하는 대답·되묻기·정정이면 일상이 아니라 다른 번호로 분류)\n번호:`,
       maxOutputTokens: 4,
       temperature: 0,
       maxRetries: 0,
@@ -44,7 +46,7 @@ export async function classifyIntent(text: string, timeoutMs = 2500): Promise<Cl
     });
     const n = Number((res.text.match(/\d+/) ?? [""])[0]);
     const cat = ROUTE_CATEGORIES.find((c) => c.n === n) ?? categoryById(DEFAULT_CATEGORY);
-    cache.set(key, { id: cat.id, at: Date.now() });
+    cache.set(ck, { id: cat.id, at: Date.now() });
     if (cache.size > 2000) cache.delete(cache.keys().next().value as string);
     return { category: cat, by: r.modelId, ms: Date.now() - t0 };
   } catch (err) {
