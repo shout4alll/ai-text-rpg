@@ -47,6 +47,48 @@
 
 ---
 
+## 윤지아 (character_b) — 추가 12종 (기존: idle·shy·laugh·love·pout·turn_away·touch_joy·allure gaze/hair/lip)
+
+시작 이미지: `public/avatar/personas/character_b/stage.jpg` (또는 `video-src/character_b/start.jpg` 로 복사). 모든 프롬프트 끝에 공통 끝 문구 + `Fully clothed in the same outfit, tasteful and elegant.`
+
+| # | 파일 | 장면 | 프롬프트 |
+| --- | --- | --- | --- |
+| 1 | `surprise.mp4` | 깜짝 | Her eyes widen in surprise, she covers her mouth with one hand, then breaks into a delighted laugh. |
+| 2 | `tease.mp4` | 놀리기 | She tilts her head, raises one eyebrow with a dry, teasing smirk, and points a finger at the camera as if saying "gotcha". |
+| 3 | `wink.mp4` | 윙크 | She gives a slow confident wink with a sly smile, then looks away and smiles to herself. |
+| 4 | `angry.mp4` | 발끈 | She frowns, puffs her cheeks in mock anger, crosses her arms and shakes her head, then fails to hold back a smile. |
+| 5 | `teary.mp4` | 울컥 | Her eyes grow glossy and moist, she presses her lips together, blinks slowly, then smiles through it softly. |
+| 6 | `hug.mp4` | 안아주기 | She opens both arms toward the camera with a warm inviting smile, as if offering a hug. |
+| 7 | `whisper.mp4` | 속삭임 | She leans close to the camera, cups a hand beside her mouth and whispers a secret with a playful glint in her eyes. |
+| 8 | `premium/kiss.mp4` | 뽀뽀 (유료) | She smiles softly, touches her fingertips to her lips and blows a kiss toward the camera, then gives a shy wink. |
+| 9 | `allure/shoulder.mp4` | 매혹: 어깨너머 | She slowly looks back over her shoulder at the camera with a languid, inviting smile and half-lidded eyes. |
+| 10 | `allure/wine.mp4` | 매혹: 와인 | She swirls a glass of red wine, takes a slow sip while holding eye contact, then smiles with a teasing look. |
+| 11 | `allure/lean.mp4` | 매혹: 다가옴 | She leans in slowly toward the camera, chin resting on her hand, gazing with a soft, knowing, slightly daring smile. |
+| 12 | `allure/stretch.mp4` | 매혹: 나른한 기지개 | She stretches lazily with her arms above her head, relaxes, and gives the camera a sleepy, warm, alluring smile. |
+
+## 한소율 (character_c) — 추가 12종 (기존: idle·shy·laugh·love·pout·turn_away·premium kiss)
+
+시작 이미지: `public/avatar/personas/character_c/stage.jpg`. 프롬프트 끝에 공통 끝 문구 + `Fully clothed in the same outfit, tasteful and elegant.`
+
+| # | 파일 | 장면 | 프롬프트 |
+| --- | --- | --- | --- |
+| 1 | `surprise.mp4` | 깜짝 | Her eyes go wide, she gasps and clasps both hands to her cheeks, then bursts into an excited laugh. |
+| 2 | `tease.mp4` | 놀리기 | She sticks out her tongue slightly with a cheeky grin and flicks a playful finger toward the camera. |
+| 3 | `wink.mp4` | 윙크 | She winks with a bright playful smile and makes a small finger heart. |
+| 4 | `angry.mp4` | 발끈 | She puffs her cheeks, stamps lightly and frowns in an adorable mock-angry way, then cracks a smile. |
+| 5 | `teary.mp4` | 울컥 | Her eyes well up, she wipes the corner of an eye with a finger and smiles through the tears. |
+| 6 | `hug.mp4` | 안아주기 | She opens both arms wide toward the camera with a big warm smile, as if asking for a hug. |
+| 7 | `whisper.mp4` | 속삭임 | She leans toward the camera, covers her mouth with one hand and whispers a secret, eyes sparkling. |
+| 8 | `cheer.mp4` | 응원 | She pumps both fists with an encouraging bright smile, bouncing slightly. |
+| 9 | `allure/gaze.mp4` | 매혹: 그윽한 눈빛 | She slowly leans toward the camera, tilts her head and gives a slow, bold, alluring smile with half-lidded eyes. |
+| 10 | `allure/hair.mp4` | 매혹: 머리 넘기기 | She runs her fingers slowly through her hair, glances away, then looks back with a daring, inviting gaze. |
+| 11 | `allure/lip.mp4` | 매혹: 입술 | She lightly bites her lower lip with a mischievous smile, then breaks into a soft laugh. |
+| 12 | `allure/shoulder.mp4` | 매혹: 어깨너머 | She looks back over her shoulder at the camera with a slow, confident, sultry smile. |
+
+- 크레딧: Stardream 2.5 이미지→비디오 1건당 812 (⚡). 한 번에 몇 건 만들 수 있는지는 충전 후 알려 주세요.
+
+---
+
 - 영상이 없는 리액션은 움직임·이모지로 자동 대체되므로, 일부만 먼저 넣어도 됩니다 (우선순위: idle → shy·laugh·love·pout → turn_away → kiss → 매혹).
 - 생성 도구의 워터마크가 있으면 상용 전에 워터마크 없는 플랜으로 다시 뽑는 걸 권장합니다.
 - `video-src/` 는 원본 보관용입니다(앱에 포함되지 않음).
