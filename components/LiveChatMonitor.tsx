@@ -9,7 +9,11 @@ import { IconBubble } from "@/components/icons";
  * 💬 실시간 대화 모니터 (🛠 주인님 모드 전용)
  *  손님들과 캐릭터가 주고받는 대화를 3초마다 받아 메신저처럼 보여 준다 (GET /api/owner/live · lib/liveFeed.ts).
  *  턴마다 답한 모델·경로·시간이 함께 표시된다. 서버 메모리라 인스턴스별 최근 400턴, 재배포하면 비워진다.
+ *  창: 제목줄을 끌어 이동 · ◢ 로 크기 조절 · ◐ 투명도 · – 접기 · ✕ 닫기 (위치·크기는 이 기기에 기억)
  */
+const POS_KEY = "ai-rpg.dev.livePos";
+const OPACITY = [1, 0.85, 0.6];
+type Ui = { x: number; y: number; w: number; h: number; min: boolean; op: number };
 interface LiveTurn {
   id: number;
   at: number;
@@ -44,6 +48,91 @@ export default function LiveChatMonitor({ token, className = "" }: { token: stri
   const since = useRef(0);
   const listRef = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
+
+  // ── 창 위치·크기 ──
+  const [ui, setUi] = useState<Ui | null>(null);
+  const uiRef = useRef<Ui | null>(null);
+  uiRef.current = ui;
+  const boxRef = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ dx: number; dy: number } | null>(null);
+  const sizing = useRef<{ sx: number; sy: number; w: number; h: number } | null>(null);
+  const fitIn = (u: Ui): Ui => {
+    const W = window.innerWidth;
+    const H = window.innerHeight;
+    const w = Math.min(Math.max(260, u.w), W);
+    const h = Math.min(Math.max(200, u.h), H);
+    return { ...u, w, h, x: Math.min(Math.max(0, u.x), Math.max(0, W - w)), y: Math.min(Math.max(0, u.y), Math.max(0, H - 44)) };
+  };
+  const persist = (u: Ui | null) => {
+    if (!u) return;
+    try {
+      localStorage.setItem(POS_KEY, JSON.stringify(u));
+    } catch {
+      /* 무시 */
+    }
+  };
+  const saveUi = (u: Ui) => {
+    setUi(u);
+    persist(u);
+  };
+  useEffect(() => {
+    if (!open) return;
+    let u: Ui | null = null;
+    try {
+      const raw = localStorage.getItem(POS_KEY);
+      if (raw) u = JSON.parse(raw) as Ui;
+    } catch {
+      /* 무시 */
+    }
+    if (!u) {
+      // 처음: 화면 오른쪽 아래, 너비 최대 26rem, 높이 화면의 75%
+      const w = Math.min(window.innerWidth - 16, 416);
+      const h = Math.round(Math.min(window.innerHeight * 0.75, 704));
+      u = { x: window.innerWidth - w - 8, y: window.innerHeight - h - 8, w, h, min: false, op: 0 };
+    }
+    setUi(fitIn(u));
+    const onResize = () => setUi((cur) => (cur ? fitIn(cur) : cur));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  const onDragDown = (e: React.PointerEvent) => {
+    if (!ui || (e.target as HTMLElement).closest("button")) return;
+    drag.current = { dx: e.clientX - ui.x, dy: e.clientY - ui.y };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onDragMove = (e: React.PointerEvent) => {
+    const d = drag.current;
+    if (!d) return;
+    setUi((u) => (u ? fitIn({ ...u, x: e.clientX - d.dx, y: e.clientY - d.dy }) : u));
+  };
+  const onDragUp = () => {
+    if (drag.current) persist(uiRef.current);
+    drag.current = null;
+  };
+  const onSizeDown = (e: React.PointerEvent) => {
+    e.stopPropagation();
+    const r = boxRef.current?.getBoundingClientRect();
+    sizing.current = { sx: e.clientX, sy: e.clientY, w: r?.width ?? 360, h: r?.height ?? 400 };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onSizeMove = (e: React.PointerEvent) => {
+    const s0 = sizing.current;
+    if (!s0) return;
+    setUi((u) =>
+      u
+        ? {
+            ...u,
+            w: Math.round(Math.min(window.innerWidth - u.x, Math.max(260, s0.w + e.clientX - s0.sx))),
+            h: Math.round(Math.min(window.innerHeight - u.y, Math.max(200, s0.h + e.clientY - s0.sy))),
+          }
+        : u
+    );
+  };
+  const onSizeUp = () => {
+    if (sizing.current) persist(uiRef.current);
+    sizing.current = null;
+  };
 
   // 열려 있으면 3초, 닫혀 있으면 15초마다 (새 대화 표시용)
   useEffect(() => {
@@ -103,17 +192,34 @@ export default function LiveChatMonitor({ token, className = "" }: { token: stri
         {unseen > 0 && <span className="absolute -right-1 -top-1 min-w-[1.1rem] rounded-full bg-rose-500 px-1 text-center text-[10px] text-white">{unseen > 99 ? "99+" : unseen}</span>}
       </button>
       {open &&
+        ui &&
         createPortal(
-          <div data-live-panel className="fixed bottom-2 right-2 z-[81] flex h-[min(80dvh,44rem)] w-[min(96vw,26rem)] flex-col rounded-2xl bg-slate-950 text-[12px] text-slate-200 shadow-2xl ring-1 ring-sky-300/40">
-            <div className="flex items-center gap-2 rounded-t-2xl bg-slate-900 px-3 py-2">
-              <b className="text-sky-300">💬 실시간 대화</b>
+          <div
+            ref={boxRef}
+            data-live-panel
+            style={{ left: ui.x, top: ui.y, width: ui.w, opacity: OPACITY[ui.op] ?? 1, ...(ui.min ? {} : { height: ui.h }) }}
+            className="fixed z-[81] flex flex-col rounded-2xl bg-slate-950 text-[12px] text-slate-200 shadow-2xl ring-1 ring-sky-300/40"
+          >
+            <div
+              onPointerDown={onDragDown}
+              onPointerMove={onDragMove}
+              onPointerUp={onDragUp}
+              onPointerCancel={onDragUp}
+              data-live-drag
+              className={`flex cursor-grab touch-none select-none items-center gap-2 bg-slate-900 px-3 py-2 active:cursor-grabbing ${ui.min ? "rounded-2xl" : "rounded-t-2xl"}`}
+            >
+              <b className="text-sky-300">⠿ 💬 실시간 대화</b>
               <span className={`h-1.5 w-1.5 rounded-full ${paused ? "bg-slate-500" : "animate-pulse bg-emerald-400"}`} />
               <span className="text-[10px] text-slate-400">{paused ? "멈춤" : "3초마다"} · {shown.length}턴</span>
               <span className="ml-auto flex gap-1">
-                <button type="button" onClick={() => setPaused((p) => !p)} className="rounded bg-slate-800 px-2 py-0.5" data-live-pause>{paused ? "▶" : "⏸"}</button>
-                <button type="button" onClick={() => setOpen(false)} className="rounded bg-slate-800 px-2 py-0.5">✕</button>
+                <button type="button" onClick={() => setPaused((p) => !p)} className="rounded bg-slate-800 px-2 py-0.5" title={paused ? "다시 받기" : "멈춤"} data-live-pause>{paused ? "▶" : "⏸"}</button>
+                <button type="button" onClick={() => saveUi({ ...ui, op: (ui.op + 1) % OPACITY.length })} className="rounded bg-slate-800 px-2 py-0.5" title="투명도" data-live-opacity>◐</button>
+                <button type="button" onClick={() => saveUi({ ...ui, min: !ui.min })} className="rounded bg-slate-800 px-2 py-0.5" title={ui.min ? "펼치기" : "접기"} data-live-min>{ui.min ? "▢" : "–"}</button>
+                <button type="button" onClick={() => setOpen(false)} className="rounded bg-slate-800 px-2 py-0.5" title="닫기" data-live-close>✕</button>
               </span>
             </div>
+            {!ui.min && (
+            <>
             <div className="flex items-center gap-1.5 border-b border-slate-800 px-3 py-1.5 text-[11px]">
               <select value={persona} onChange={(e) => setPersona(e.target.value)} className="rounded bg-slate-800 px-1.5 py-0.5 text-base outline-none sm:text-[11px]" data-live-persona>
                 <option value="all">모든 인물</option>
@@ -165,7 +271,20 @@ export default function LiveChatMonitor({ token, className = "" }: { token: stri
                 </div>
               ))}
             </div>
-            <p className="rounded-b-2xl bg-slate-900 px-3 py-1 text-[9px] text-slate-500">서버 메모리(인스턴스별 최근 400턴) · 파일로 저장하지 않아요 · 재배포하면 비워져요</p>
+            <p className="rounded-b-2xl bg-slate-900 py-1 pl-3 pr-8 text-[9px] text-slate-500">서버 메모리(인스턴스별 최근 400턴) · 파일로 저장하지 않아요 · 재배포하면 비워져요</p>
+            <div
+              onPointerDown={onSizeDown}
+              onPointerMove={onSizeMove}
+              onPointerUp={onSizeUp}
+              onPointerCancel={onSizeUp}
+              data-live-resize
+              title="끌어서 크기 조절"
+              className="absolute bottom-0 right-0 z-10 flex h-7 w-7 cursor-nwse-resize touch-none select-none items-end justify-end rounded-br-2xl p-1 text-[13px] leading-none text-sky-300/80"
+            >
+              ◢
+            </div>
+            </>
+            )}
           </div>,
           document.body
         )}

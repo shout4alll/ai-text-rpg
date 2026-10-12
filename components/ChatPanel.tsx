@@ -271,6 +271,43 @@ export default function ChatPanel({
   const settleTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  /** 📎 첨부 방법 고르기 (앨범 / 캡처 붙여넣기) */
+  const [attachMenu, setAttachMenu] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const [clipMsg, setClipMsg] = useState("");
+  const canReadClipboard = typeof navigator !== "undefined" && typeof navigator.clipboard?.read === "function";
+  /** 클립보드·끌어다 놓기에서 받은 사진·영상을 첨부로 (이름이 없으면 "캡처-시각.png") */
+  const attachBlob = (b: Blob, name?: string) => {
+    if (!onAttach) return false;
+    if (!/^(image|video)\//.test(b.type)) return false;
+    const ext = (b.type.split("/")[1] || "png").replace("jpeg", "jpg").replace(/\+.*$/, "");
+    const d = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const file = b instanceof File && b.name && !/^image\.(png|jpe?g)$/i.test(b.name)
+      ? b
+      : new File([b], name ?? `캡처-${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.${ext}`, { type: b.type, lastModified: Date.now() });
+    onAttach(file);
+    return true;
+  };
+  /** 📋 캡처 붙여넣기 버튼 — 클립보드에 복사된 이미지를 읽는다 (브라우저가 권한을 물을 수 있음) */
+  const pasteFromClipboard = async () => {
+    setAttachMenu(false);
+    try {
+      const items = await navigator.clipboard.read();
+      for (const it of items) {
+        const type = it.types.find((t) => t.startsWith("image/"));
+        if (type) {
+          attachBlob(await it.getType(type));
+          setClipMsg("");
+          return;
+        }
+      }
+      setClipMsg("클립보드에 이미지가 없어요. 화면을 캡처하거나 이미지를 복사한 뒤 다시 눌러 주세요.");
+    } catch {
+      setClipMsg("클립보드를 읽지 못했어요. 입력칸을 길게 눌러 '붙여넣기' 하거나 Ctrl+V 로 붙여 주세요.");
+    }
+    setTimeout(() => setClipMsg(""), 4000);
+  };
   // 줄 수에 맞춰 입력칸 높이 자동 조절 (최대 약 4줄)
   useEffect(() => {
     const el = inputRef.current;
@@ -371,7 +408,31 @@ export default function ChatPanel({
   };
 
   return (
-    <div className="flex h-full flex-col">
+    <div
+      className="relative flex h-full flex-col"
+      // 🖱 사진·영상 파일을 대화창에 끌어다 놓으면 첨부
+      onDragOver={(e) => {
+        if (!onAttach || !Array.from(e.dataTransfer.types).includes("Files")) return;
+        e.preventDefault();
+        setDragOver(true);
+      }}
+      onDragLeave={(e) => {
+        if (e.currentTarget === e.target) setDragOver(false);
+      }}
+      onDrop={(e) => {
+        if (!onAttach) return;
+        const f = Array.from(e.dataTransfer.files).find((x) => /^(image|video)\//.test(x.type));
+        setDragOver(false);
+        if (!f) return;
+        e.preventDefault();
+        attachBlob(f);
+      }}
+    >
+      {dragOver && (
+        <div className="pointer-events-none absolute inset-2 z-30 flex items-center justify-center rounded-2xl border-2 border-dashed border-brand-400 bg-white/70 text-sm font-bold text-ink-soft backdrop-blur-sm" data-drop-overlay>
+          여기에 놓으면 사진·영상을 첨부해요
+        </div>
+      )}
       <div className="flex min-h-0 flex-1 flex-col justify-end">
         <div
           ref={scrollRef}
@@ -629,8 +690,9 @@ export default function ChatPanel({
             <button type="button" onClick={onClearAttachment} aria-label="첨부 취소" data-attach-clear className="px-2 text-lg text-ink-mute">×</button>
           </div>
         )}
+        {clipMsg && <p className="px-4 pt-1 text-[11px] text-ink-mute" data-clip-msg>{clipMsg}</p>}
         <form
-          className={`flex items-end gap-1.5 px-3 pt-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] ${S.form}`}
+          className={`relative flex items-end gap-1.5 px-3 pt-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] ${S.form}`}
           onSubmit={(e) => {
             e.preventDefault();
             setPaletteOpen(false);
@@ -651,7 +713,7 @@ export default function ChatPanel({
             <>
               <button
                 type="button"
-                onClick={() => fileRef.current?.click()}
+                onClick={() => (canReadClipboard ? setAttachMenu((o) => !o) : fileRef.current?.click())}
                 disabled={uploading}
                 aria-label="사진·영상 보내기"
                 title="사진·영상 보내기"
@@ -660,6 +722,17 @@ export default function ChatPanel({
               >
                 {uploading ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-ink-mute/40 border-t-ink-soft" /> : <IconImage className="h-[22px] w-[22px]" />}
               </button>
+              {attachMenu && (
+                <div className="absolute bottom-[calc(100%+0.25rem)] left-3 z-30 w-52 overflow-hidden rounded-2xl bg-white text-[13px] text-ink shadow-xl ring-1 ring-black/5" data-attach-menu>
+                  <button type="button" onClick={() => { setAttachMenu(false); fileRef.current?.click(); }} className="block w-full px-4 py-2.5 text-left hover:bg-black/5" data-attach-pick>
+                    🖼 앨범·파일에서 고르기
+                  </button>
+                  <button type="button" onClick={() => void pasteFromClipboard()} className="block w-full border-t border-black/5 px-4 py-2.5 text-left hover:bg-black/5" data-attach-paste>
+                    📋 캡처 붙여넣기
+                    <span className="block text-[10px] text-ink-mute">복사한 이미지·캡처를 바로 첨부</span>
+                  </button>
+                </div>
+              )}
               <input
                 ref={fileRef}
                 type="file"
@@ -679,7 +752,22 @@ export default function ChatPanel({
             rows={1}
             value={input}
             onChange={(e) => onInputChange(e.target.value)}
-            onFocus={() => setPaletteOpen(false)}
+            onFocus={() => {
+              setPaletteOpen(false);
+              setAttachMenu(false);
+            }}
+            // 📋 Ctrl+V / 길게 눌러 붙여넣기: 클립보드에 이미지가 있으면 첨부로 (글자는 그대로 붙는다)
+            onPaste={(e) => {
+              if (!onAttach) return;
+              const f = Array.from(e.clipboardData.items)
+                .filter((it) => it.kind === "file" && /^(image|video)\//.test(it.type))
+                .map((it) => it.getAsFile())
+                .find(Boolean);
+              if (f) {
+                e.preventDefault();
+                attachBlob(f);
+              }
+            }}
             onKeyDown={(e) => {
               // Enter = 전송 / Shift+Enter = 줄바꿈 (한글 조합 중 Enter 는 무시)
               if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
