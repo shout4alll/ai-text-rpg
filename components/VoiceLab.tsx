@@ -41,6 +41,8 @@ const CLIP_LABEL: Record<string, string> = {
   turn_away: "등 돌림",
   touch_joy: "터치 웃음",
   kiss: "손 키스",
+  blow_kiss: "손키스(가벼운)",
+  hair_tuck: "머리 넘김",
 };
 
 /**
