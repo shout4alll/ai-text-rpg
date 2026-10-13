@@ -1483,6 +1483,30 @@ export default function ChatApp({
     requestReply(msgs, "text", userMsg.id);
   }, [input, busy, personaId, messages, requestReply, pendingFile]);
 
+  // 💡 추천 대화: 고르면 입력칸에 넣고 바로 보낸다 (input 이 바뀐 다음 렌더에서 전송)
+  const [quickSend, setQuickSend] = useState(false);
+  useEffect(() => {
+    if (!quickSend) return;
+    setQuickSend(false);
+    handleSubmit();
+  }, [quickSend, handleSubmit]);
+  /** 💡 지금 대화에 맞는 유저 쪽 답장·질문 후보 (가벼운 모델) */
+  const fetchSuggestions = useCallback(async (): Promise<string[]> => {
+    if (!personaId) return [];
+    const turns = toTurns(messages)
+      .filter((t) => t.kind === "text" && t.content)
+      .slice(-12)
+      .map((t) => ({ role: t.role, content: t.content }));
+    const res = await fetch(apiUrl("/api/suggest"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ personaId, turns, userName: userProfileRef.current?.name }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const j = (await res.json()) as { suggestions?: string[] };
+    return j.suggestions ?? [];
+  }, [personaId, messages]);
+
   // 답장이 끝났는데 그 사이에 보낸 말이 있으면 이어서 답을 받는다
   const messagesLive = useRef(messages);
   messagesLive.current = messages;
@@ -1856,7 +1880,45 @@ export default function ChatApp({
     setSelectorOpen(false);
     openChat(pid);
     setAutoAction(null);
-    setTimeout(() => setMessages((prev) => [...prev, { id: nextId.current++, role: "ai", kind: "text", text: `💌 ${text}`, at: Date.now() }]), 0);
+    const lines = text.split("\n").map((t) => t.trim()).filter(Boolean);
+    setTimeout(() => setMessages((prev) => [...prev, ...lines.map((t, i) => ({ id: nextId.current++, role: "ai" as const, kind: "text" as const, text: i === 0 ? `💌 ${t}` : t, at: Date.now() }))]), 0);
+  };
+  /** 💌 이 인물과 대화한 적이 있는지 (쪽지 종류 결정) */
+  const noteHasHistory = (pid: string) => !!loadChat(pid as PersonaId)?.messages.some((m) => (m.kind ?? "text") === "text" && !m.local && m.role === "user");
+  /** 💌 지난 대화·기억·흐른 시간을 바탕으로 쪽지를 AI 로 만든다 (메인 모델, 대화방에는 아직 저장하지 않음) */
+  const composeLobbyNote = async (pid: string): Promise<string[] | null> => {
+    const stored = loadChat(pid as PersonaId);
+    if (!stored) return null;
+    const turns = toTurns(stored.messages).map(({ localKey: _k, ...t }) => t);
+    turns.push({ role: "user", kind: "return", content: "", at: Date.now() });
+    const p = byId.get(pid as PersonaId);
+    try {
+      const res = await fetch(apiUrl("/api/chat"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          personaId: pid,
+          messages: turns,
+          timeZone: userTimeZone(),
+          device: deviceId(),
+          affection: stored.affection,
+          sentAlbumIds: [],
+          allure: false,
+          allureOk: false,
+          sulk: stored.sulk ? sulkSummary(stored.sulk) : null,
+          memory: stored.memory?.facts ?? [],
+          ...(userProfileRef.current ? { user: { name: userProfileRef.current.name, gender: userProfileRef.current.gender } } : {}),
+          nudge: "message",
+          lobbyNote: true,
+        }),
+      });
+      if (!res.ok) return null;
+      const data = (await res.json()) as ChatResponse;
+      const lines = (data.messages ?? []).map((m) => m.trim()).filter(Boolean).slice(0, 2);
+      return lines.length && p ? lines : null;
+    } catch {
+      return null;
+    }
   };
 
   /** 🔑 "주인님입장" 비밀번호 창: 맞으면 주인님 모드 켜짐 (지금 대화방에 그대로 머문다) */
@@ -2057,7 +2119,7 @@ export default function ChatApp({
             </button>
           </div>
         )}
-        {!onboardingOpen && <LobbyNotes personas={listed} userGender={userProfile?.gender} userName={userProfile?.name} onOpen={openFromNote} />}
+        {!onboardingOpen && <LobbyNotes personas={listed} userGender={userProfile?.gender} userName={userProfile?.name} onOpen={openFromNote} hasHistory={noteHasHistory} compose={composeLobbyNote} />}
         {backupOpen && <BackupModal onClose={() => setBackupOpen(false)} onRestored={() => window.location.reload()} />}
       {themeOpen && (
         <ThemePicker
@@ -2391,6 +2453,11 @@ export default function ChatApp({
       onDeleteSelected={deleteSelected}
       onCancelSelect={exitSelect}
       onAttach={(f) => setPendingFile(f)}
+      onSuggest={fetchSuggestions}
+      onQuickSend={(t) => {
+        setInput(t);
+        setQuickSend(true);
+      }}
       uploading={uploading}
       attachment={pendingFile && pendingUrl ? { url: pendingUrl, isVideo: pendingFile.type.startsWith("video/"), name: pendingFile.name } : null}
       onClearAttachment={() => setPendingFile(null)}

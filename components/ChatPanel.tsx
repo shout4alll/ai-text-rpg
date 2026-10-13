@@ -6,7 +6,7 @@ import { HEART_REACTIONS, HEART_REACTION_IDS, isHeartReactionId, type HeartReact
 import type { Persona } from "@/lib/personas/types";
 import type { ChatMessage } from "@/types/game";
 import { mediaUrl } from "@/lib/userMedia";
-import { IconHeart, IconImage, IconSend } from "@/components/icons";
+import { IconHeart, IconImage, IconSend, IconSuggest } from "@/components/icons";
 
 export type ChatVariant = "default" | "kakao";
 
@@ -200,6 +200,10 @@ interface ChatPanelProps {
   onReact: (targetId: number, heart: HeartReactionId) => void;
   /** 사진·영상 보내기 */
   onAttach?: (file: File) => void;
+  /** 💡 추천 대화 만들기 (3~5개) */
+  onSuggest?: () => Promise<string[]>;
+  /** 💡 추천 대화 하나를 골라 바로 보내기 */
+  onQuickSend?: (text: string) => void;
   /** 파일 처리 중 */
   uploading?: boolean;
   /** 화면 모드 (기본 / 카톡 모드) */
@@ -256,6 +260,8 @@ export default function ChatPanel({
   onSubmit,
   onReact,
   onAttach,
+  onSuggest,
+  onQuickSend,
   uploading = false,
   variant = "default",
   onOpenProfile,
@@ -271,6 +277,30 @@ export default function ChatPanel({
   const settleTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  /** 💡 추천 대화 */
+  const [sugOpen, setSugOpen] = useState(false);
+  const [sugs, setSugs] = useState<string[]>([]);
+  const [sugBusy, setSugBusy] = useState(false);
+  const [sugErr, setSugErr] = useState("");
+  /** 마지막으로 추천을 만든 시점의 마지막 메시지 id — 대화가 그대로면 다시 열어도 같은 추천 */
+  const sugFor = useRef<number | null>(null);
+  const lastMsgId = messages.length ? messages[messages.length - 1].id : -1;
+  const loadSugs = async (force = false) => {
+    if (!onSuggest) return;
+    if (!force && sugFor.current === lastMsgId && sugs.length) return;
+    setSugBusy(true);
+    setSugErr("");
+    try {
+      const list = await onSuggest();
+      setSugs(list);
+      sugFor.current = lastMsgId;
+      if (!list.length) setSugErr("추천할 말을 찾지 못했어요.");
+    } catch {
+      setSugErr("추천을 만들지 못했어요. 잠시 후 다시 눌러 주세요.");
+    } finally {
+      setSugBusy(false);
+    }
+  };
   /** 📎 첨부 방법 고르기 (앨범 / 캡처 붙여넣기) */
   const [attachMenu, setAttachMenu] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -691,6 +721,56 @@ export default function ChatPanel({
           </div>
         )}
         {clipMsg && <p className="px-4 pt-1 text-[11px] text-ink-mute" data-clip-msg>{clipMsg}</p>}
+        {sugOpen && onSuggest && (
+          <div className="mx-3 mb-1 rounded-2xl bg-white/95 p-2 shadow-xl ring-1 ring-black/5 backdrop-blur" data-suggest-panel>
+            <div className="mb-1 flex items-center justify-between px-1">
+              <span className="text-[12px] font-bold text-ink-soft">💡 이렇게 말해 볼까요?</span>
+              <span className="flex gap-1">
+                <button type="button" onClick={() => void loadSugs(true)} disabled={sugBusy} className="rounded-full px-2 py-0.5 text-[11px] text-ink-mute hover:bg-black/5 disabled:opacity-40" data-suggest-refresh>↻ 다른 말</button>
+                <button type="button" onClick={() => setSugOpen(false)} aria-label="추천 닫기" className="rounded-full px-2 py-0.5 text-[12px] text-ink-mute hover:bg-black/5">✕</button>
+              </span>
+            </div>
+            {sugBusy ? (
+              <p className="flex items-center gap-2 px-2 py-3 text-[12px] text-ink-mute">
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-ink-mute/30 border-t-ink-soft" /> 지금 대화에 맞는 말을 고르는 중…
+              </p>
+            ) : sugErr ? (
+              <p className="px-2 py-2 text-[12px] text-ink-mute">{sugErr}</p>
+            ) : (
+              <div className="flex flex-col gap-1">
+                {sugs.map((t, i) => (
+                  <div key={i} className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      data-suggest-item
+                      onClick={() => {
+                        setSugOpen(false);
+                        onQuickSend?.(t);
+                      }}
+                      className="min-w-0 flex-1 rounded-xl bg-brand-500/10 px-3 py-2 text-left text-[14px] text-ink hover:bg-brand-500/20"
+                    >
+                      {t}
+                    </button>
+                    <button
+                      type="button"
+                      title="고쳐서 보내기"
+                      aria-label="고쳐서 보내기"
+                      data-suggest-edit
+                      onClick={() => {
+                        setSugOpen(false);
+                        onInputChange(t);
+                        setTimeout(() => inputRef.current?.focus(), 0);
+                      }}
+                      className="shrink-0 rounded-xl px-2 py-2 text-[13px] text-ink-mute hover:bg-black/5"
+                    >
+                      ✏️
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         <form
           className={`relative flex items-end gap-1.5 px-3 pt-2.5 pb-[max(0.625rem,env(safe-area-inset-bottom))] ${S.form}`}
           onSubmit={(e) => {
@@ -775,11 +855,29 @@ export default function ChatPanel({
                 e.currentTarget.form?.requestSubmit();
               }
             }}
-            placeholder={attachment ? "사진·영상과 함께 보낼 말 (생략 가능)" : "메시지를 입력하세요 (Shift+Enter 줄바꿈)"}
+            placeholder={attachment ? "사진·영상과 함께 보낼 말 (생략 가능)" : "메시지를 입력하세요"}
             maxLength={1000}
             enterKeyHint="send"
             className={`max-h-28 min-h-10 min-w-0 flex-1 resize-none px-4 py-[9px] text-base leading-[22px] outline-none transition wide:text-[14.5px] ${S.input} !rounded-[1.25rem]`}
           />
+          {onSuggest && (
+            <button
+              type="button"
+              onClick={() => {
+                const next = !sugOpen;
+                setSugOpen(next);
+                setAttachMenu(false);
+                if (next) void loadSugs();
+              }}
+              disabled={busy}
+              aria-label="추천 대화 보기"
+              title="추천 대화"
+              data-suggest-button
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition disabled:opacity-40 ${S.iconBtn} ${sugOpen ? "ring-2 ring-brand-400" : ""}`}
+            >
+              <IconSuggest className="h-[22px] w-[22px]" />
+            </button>
+          )}
           <button
             type="submit"
             disabled={uploading || (!input.trim() && !attachment)}

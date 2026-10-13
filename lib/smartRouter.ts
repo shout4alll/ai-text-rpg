@@ -54,3 +54,74 @@ export async function classifyIntent(text: string, timeoutMs = 2500, prev = ""):
     return { category: categoryById(DEFAULT_CATEGORY), by: "default", ms: Date.now() - t0 };
   }
 }
+
+
+/* ── 🧭 대화 분석 라우터 (매 턴 · 기본 Sonnet 5.5) ─────────────────────────────
+ *  최근 대화 몇 턴 + 유저의 마지막 말을 보고 이번 답장 등급 하나를 고른다.
+ *    L = 하이쿠(가장 저렴) · M = 소넷 5(메인) · P = 소넷 5.5(맥락 깊음) · T = 오퍼스(고난도)
+ *  💰 비용 절약: ① 뻔한 말·되묻기는 호출 전에 규칙으로 처리(route.ts) ② 대화는 최근 8턴·턴당 160자로 압축
+ *    ③ 출력은 한 줄 JSON ④ 같은 장면(직전 AI 말+유저 말)은 10분 캐시 ⑤ 4.5초 안에 못 정하면 규칙 결과로
+ */
+export type Grade = "L" | "M" | "P" | "T";
+export interface Analyzed {
+  grade: Grade;
+  why: string;
+  by: string;
+  ms: number;
+}
+const ANALYZE_SYSTEM = `너는 메신저 대화 라우터다. 캐릭터와 유저의 최근 대화, 유저의 마지막 말을 보고 이번 답장을 쓸 모델 등급 하나를 고른다.
+반드시 JSON 한 줄만 출력: {"t":"L|M|P|T","r":"이유(12자 이내)"}
+L: 앞 대화 없이도 바로 답할 수 있는 단순한 말 — 인사·작별·고마움·맞장구·웃음·짧은 리액션, 맥락과 무관한 가벼운 질문.
+M: 평범한 대화 — 앞 대화를 이어받는 일상 이야기·감정 교류·가벼운 질문. 대부분의 턴.
+P: 맥락이 깊게 얽힌 턴 — 여러 턴 전 내용 참조, 지시어·생략이 많아 앞뒤를 잘 읽어야 함, 유저가 되묻거나 바로잡음, 진지한 고민·민감한 감정, 미묘한 뉘앙스·관계의 전환점.
+T: 고난도 — 전문 지식·분석·추론·창작이 필요한 어렵고 긴 질문, 앞 답장이 여러 번 어긋나 대화가 꼬임.
+비용이 중요하다: 애매하면 M. 확실할 때만 P·T. 대화 맥락이 필요 없는 게 확실할 때만 L.`;
+const gradeCache = new Map<string, { g: Grade; why: string; at: number }>();
+
+export async function analyzeTurn(
+  text: string,
+  turns: { role: string; content: string; kind?: string }[],
+  personaName: string,
+  timeoutMs = 4500
+): Promise<Analyzed> {
+  const t0 = Date.now();
+  const texts = turns.filter((t) => (t.kind ?? "text") === "text" && t.content);
+  // 마지막 유저 말(이번 말)은 따로 보여 준다
+  const prior = texts.length && texts[texts.length - 1].role === "user" && texts[texts.length - 1].content === text ? texts.slice(0, -1) : texts;
+  const ctx = prior
+    .slice(-8)
+    .map((t) => `${t.role === "user" ? "유저" : personaName}: ${t.content.replace(/\s+/g, " ").slice(0, 160)}`)
+    .join("\n");
+  const key = `${prior.slice(-1)[0]?.content.slice(-80) ?? ""}|${text.slice(0, 200)}`;
+  const hit = gradeCache.get(key);
+  if (hit && Date.now() - hit.at < 10 * 60_000) return { grade: hit.g, why: hit.why, by: "cache", ms: 0 };
+  try {
+    const r = resolveModel("analyzer");
+    const res = await generateText({
+      model: r.model,
+      system: ANALYZE_SYSTEM,
+      prompt: `[최근 대화]\n${ctx || "(없음 — 첫 대화)"}\n\n[유저의 마지막 말]\n${text.slice(0, 400)}`,
+      maxOutputTokens: 600, // Sonnet 5.5 는 짧은 생각을 거친 뒤 답한다
+      maxRetries: 0,
+      abortSignal: AbortSignal.timeout(timeoutMs),
+      ...(r.providerOptions ? { providerOptions: r.providerOptions as never } : {}),
+    });
+    const out = res.text ?? "";
+    const g = ((/"t"\s*:\s*"([LMPT])"/.exec(out) ?? /\b([LMPT])\b/.exec(out))?.[1] ?? "M") as Grade;
+    const why = (/"r"\s*:\s*"([^"]{0,40})"/.exec(out)?.[1] ?? "").trim();
+    gradeCache.set(key, { g, why, at: Date.now() });
+    if (gradeCache.size > 3000) gradeCache.delete(gradeCache.keys().next().value as string);
+    return { grade: g, why, by: r.modelId, ms: Date.now() - t0 };
+  } catch (err) {
+    console.warn(`[smartRouter] 분석 실패 → 규칙 결과: ${err instanceof Error ? err.message.slice(0, 120) : String(err)}`);
+    return { grade: "M", why: "분석 실패", by: "default", ms: Date.now() - t0 };
+  }
+}
+
+/** 등급 → 답할 모델 순서 (실패하면 다음, 마지막은 항상 메인) */
+export const GRADE_TIERS: Record<Grade, string[]> = {
+  L: ["light", "cheap", "chat"],
+  M: ["chat"],
+  P: ["plus", "chat"],
+  T: ["deep", "plus", "chat"],
+};

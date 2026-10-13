@@ -22,7 +22,7 @@ import { sanitizeHistory, stickyMature } from "@/lib/historySanitizer";
 import { SPICY } from "@/config/spicy";
 import { EMOTION_PATTERN, FREEDOM } from "@/config/routing";
 const EMOTION_RE = new RegExp(EMOTION_PATTERN);
-import { categoryById, classifyIntent, explicitHit, type Classified } from "@/lib/smartRouter";
+import { analyzeTurn, categoryById, classifyIntent, explicitHit, GRADE_TIERS, type Classified, type Grade } from "@/lib/smartRouter";
 import { SAFETY_RULES, MINOR_GUARD, absoluteRules } from "@/config/rules";
 import { PERSONA_FIELDS, RULE_FIELDS, applyPersonaOverride, mergeOverride, type OwnerOpts, type RulesOverride } from "@/lib/ownerOverrides";
 import { persistedPersona, persistedRules } from "@/lib/overridesStore";
@@ -131,6 +131,8 @@ const requestSchema = z.object({
   nudge: z.enum(["message", "photo", "video"]).optional(),
   /** 선톡 일과표 슬롯 id (morning·lunch·goodnight …). 문구는 서버(CMS) 일과표에서 찾는다 */
   nudgeTopic: z.string().regex(/^[a-z0-9_]{1,24}$/).optional(),
+  /** 💌 메인(대화 목록)에 머무는 유저에게 건네는 쪽지 (nudge=message 와 함께) */
+  lobbyNote: z.boolean().optional(),
   /** 지금 삐져 있는 상태 (lib/sulk.ts) */
   sulk: z
     .object({
@@ -349,6 +351,8 @@ interface InstructionContext {
   /** 📲 선톡(알림) 종류와, 사진·영상 선톡이면 보낼 앨범 항목 */
   nudge?: "message" | "photo" | "video";
   nudgeTopic?: string;
+  /** 💌 메인 화면 쪽지 */
+  lobbyNote?: boolean;
   nudgeItem?: AlbumItem | null;
   sinceLast: string | null;
   album: AlbumItem[];
@@ -567,6 +571,14 @@ function unlockedStory(c: InstructionContext): string[] {
 
 /** 📲 선톡 턴 지침: 유저가 먼저 말하지 않았는데 네가 먼저 연락했고, 알림이 갔다 */
 function nudgeTurn(c: InstructionContext): string {
+  if (c.lobbyNote) {
+    return [
+      "- 이번 턴: 유저가 앱의 메인 화면(대화 목록)에 들어와 있다. 네가 먼저 짧은 쪽지를 건넨다 — 유저 말에 답하는 게 아니라 네가 먼저 거는 말이다. 말풍선 1~2개, 짧게.",
+      "- 위의 지난 대화와 기억, 마지막 대화 이후 흐른 시간, 지금 시간대를 종합해서 '이 사람과 이어지는' 말을 해라. 우선순위: ① 유저가 말했던 일정·약속·고민·하던 이야기의 후속(결과 묻기, 이어 말하기) ② 마지막 대화의 분위기·주제에서 이어지는 한마디 ③ 흐른 시간(몇 시간·며칠)에 맞는 반가움·안부.",
+      "- 이미 아는 사이다. 처음 만난 듯한 인사·자기소개·'반가워요, 저는 ~예요'는 절대 하지 마라. 지난 대화에 없던 사실을 지어내지 마라. 맥락 없는 범용 인사(\"오늘 날씨 좋네요\" 류)만 덩그러니 보내지 마라.",
+      "- media_action 은 none, tapback 은 none.",
+    ].join("\n");
+  }
   const slot = c.nudgeTopic ? currentNotifyPlan().slots.find((s) => s.id === c.nudgeTopic) : undefined;
   const when = slot ? ` 지금의 상황: ${slot.hint}` : "";
   const base =
@@ -819,8 +831,23 @@ export async function POST(request: Request) {
   const deepTurn = deepOn && !!dep?.deep;
   const toMature = allureHot || moodHit || personaMature || explicit || freedom;
   // 2단계: 남은 말은 초경량 모델이 의도를 분류 (인사·맞장구·고민 키워드는 규칙으로 바로)
+  // 🧭 대화 분석 라우터 (기본 Sonnet 5.5): 등급 L·M·P·T → 하이쿠·소넷5·소넷5.5·오퍼스
+  //    💰 뻔한 말(맥락 의존도 low + 인사·맞장구 패턴)은 분석 없이 바로 L, 되묻기·거듭된 요청은 바로 deep
+  const analyzerOn = smart && !owner && settingValue("analyzerModel").toLowerCase() !== "off" && !!settingValue("analyzerModel");
+  let plan: { grade: Grade; tiers: string[]; by: string; why: string; ms: number } | null = null;
+  if (analyzerOn && !toMature && !allureMode && !deepTurn && last.kind === "text") {
+    if (dep?.level === "low" && route.tier === "light") plan = { grade: "L", tiers: GRADE_TIERS.L, by: "rule", why: "뻔한 말", ms: 0 };
+    else {
+      const a = await analyzeTurn(last.content, recent, persona.name);
+      // 분석이 실패하면 규칙 결과(맥락 의존도)로: high → 메인, 그 외 → 메인 (가벼운 모델로 잘못 보내지 않게)
+      const g: Grade = a.by === "default" ? "M" : a.grade;
+      // 맥락이 필요한 말(high)을 L 로 내리지 않는다
+      const safe: Grade = g === "L" && dep?.level === "high" ? "M" : g;
+      plan = { grade: safe, tiers: GRADE_TIERS[safe], by: a.by === "cache" ? "캐시" : a.by === "default" ? "분석실패" : `분석 ${a.ms}ms`, why: a.why, ms: a.ms };
+    }
+  }
   let intent: Classified | null = null;
-  if (smart && !toMature && !allureMode && last.kind === "text") {
+  if (!plan && smart && !toMature && !allureMode && last.kind === "text") {
     // 애매한 말(mid)은 규칙으로 "일상"이라 단정하지 않고, 분류 모델에게 직전 대화와 함께 한 번 묻는다
     if (!owner && route.tier === "light" && dep?.level !== "mid") intent = { category: categoryById("daily"), by: "rule", ms: 0 };
     else if (route.reason === "sulking" || EMOTION_RE.test(last.content)) intent = { category: categoryById("emotion"), by: "rule", ms: 0 };
@@ -844,6 +871,7 @@ export async function POST(request: Request) {
     const mkContext = (mem: string[], openings: string[]) => buildTurnContext({
       nudge,
       nudgeTopic: nudge ? parsed.data.nudgeTopic : undefined,
+      lobbyNote: !!nudge && parsed.data.lobbyNote === true,
       nudgeItem,
       persona,
       affection,
@@ -968,13 +996,13 @@ export async function POST(request: Request) {
           "/api/chat",
           // 대화 내용에 따라: 매혹 모드·설렘 분위기 → 성인 모델(Grok 등) / 인사·맞장구 → 가벼운 모델(Haiku·Llama 등) / 그 외 → 메인(Sonnet)
           // 3단계: 성인 모델(규칙·개방·매혹) / 의도 분류 결과의 모델 / 규칙 라우팅
-          toMature ? ["mature", "chat"] : deepTurn ? ["deep", "chat"] : intent ? intent.category.tiers : !owner && route.tier === "light" && (!allureMode || AR.lightInAllure) ? ["light", "cheap", "chat"] : ["chat"],
+          toMature ? ["mature", "chat"] : deepTurn ? ["deep", "chat"] : plan ? plan.tiers : intent ? intent.category.tiers : !owner && route.tier === "light" && (!allureMode || AR.lightInAllure) ? ["light", "cheap", "chat"] : ["chat"],
           generate,
           // 🔁 우회: 위 모델들이 모두 실패하면 우회 목록(성공률 높은 순)으로 이어서 답한다. 일반 대화방은 오류를 보이지 않는다.
           { extras: settingValue("serviceFallback") === "off" ? [] : resolveFallbacks() }
         );
     resolved = ran.resolved;
-    const pathLabel = forced ? "forced" : toMature ? "mature" : deepTurn ? "deep" : intent ? `${intent.category.id}(${intent.by})` : route.tier;
+    const pathLabel = forced ? "forced" : toMature ? "mature" : deepTurn ? "deep" : plan ? `${plan.grade}(${plan.by}${plan.why ? `·${plan.why}` : ""})` : intent ? `${intent.category.id}(${intent.by})` : route.tier;
     if (ctxRow) {
       ctxRow.route = pathLabel;
       ctxRow.model = resolved.modelId;
@@ -1055,7 +1083,7 @@ export async function POST(request: Request) {
             debug: {
               model: resolved.modelId,
               label: resolved.label,
-              tier: forced ? "forced" : `${owner ? "owner" : ""}${allureMode ? `${owner ? "·" : ""}allure${surprise ? "·surprise" : heatHit ? "·heat" : allureHot ? "" : "·calm"}` : moodHit ? `${owner ? "·" : ""}mood` : personaMature ? `${owner ? "·" : ""}persona-mature` : explicit ? `${owner ? "·" : ""}explicit` : freedom ? `${owner ? "·" : ""}${freedomTrial ? "trial" : "freedom"}` : deepTurn ? "deep(꼬임)" : intent ? `${owner ? "·" : ""}${intent.category.id}(${intent.by === "rule" ? "규칙" : intent.by === "cache" ? "캐시" : intent.by === "default" ? "분류실패" : `분류 ${intent.ms}ms`})` : owner ? "" : route.tier}` || "owner",
+              tier: forced ? "forced" : `${owner ? "owner" : ""}${allureMode ? `${owner ? "·" : ""}allure${surprise ? "·surprise" : heatHit ? "·heat" : allureHot ? "" : "·calm"}` : moodHit ? `${owner ? "·" : ""}mood` : personaMature ? `${owner ? "·" : ""}persona-mature` : explicit ? `${owner ? "·" : ""}explicit` : freedom ? `${owner ? "·" : ""}${freedomTrial ? "trial" : "freedom"}` : deepTurn ? "deep(꼬임)" : plan ? `등급${plan.grade}(${plan.by})` : intent ? `${owner ? "·" : ""}${intent.category.id}(${intent.by === "rule" ? "규칙" : intent.by === "cache" ? "캐시" : intent.by === "default" ? "분류실패" : `분류 ${intent.ms}ms`})` : owner ? "" : route.tier}` || "owner",
               reason: forced ? "model-override" : route.reason,
               promptMode: owner ? "owner" : "service",
               overrides: appliedOverrides,

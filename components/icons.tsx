@@ -146,3 +146,11 @@ export const IconAllureCloud = ({ on, className }: { on?: boolean; className?: s
     </text>
   </svg>
 );
+
+/** 💡 추천 대화 */
+export const IconSuggest = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M9 18h6M10 21h4" />
+    <path d="M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2V16h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z" />
+  </svg>
+);

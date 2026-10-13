@@ -68,6 +68,16 @@ export const SERVER_SETTINGS = [
     desc: "비우면 PERPLEXITY_API_KEY 가 있으면 perplexity:sonar, 없으면 google:gemini-3.8-flash, 둘 다 없으면 메인 모델",
   },
   {
+    key: "analyzerModel", label: "🧭 대화 분석·라우팅 모델 (매 턴 등급 결정)", group: "모델", type: "string",
+    default: "global.anthropic.claude-sonnet-5-5", env: "AI_ANALYZER_MODEL", usedIn: "lib/smartRouter.ts analyzeTurn",
+    desc: "최근 대화를 읽고 이번 답장을 L(하이쿠)·M(소넷5)·P(소넷5.5)·T(오퍼스) 중 어디로 보낼지 정한다. 인사·맞장구처럼 뻔한 말과 되묻기는 규칙으로 먼저 걸러 호출하지 않음. off 면 예전 규칙+초경량 분류(routerModel)로",
+  },
+  {
+    key: "plusModel", label: "맥락이 깊은 대화용 모델 (P등급)", group: "모델", type: "string",
+    default: "global.anthropic.claude-sonnet-5-5", env: "AI_MODEL_PLUS", usedIn: "config/ai.ts resolveModel('plus')",
+    desc: "분석 모델이 P(여러 턴 전 내용 참조·지시어·민감한 고민·미묘한 뉘앙스)로 판단한 턴. 실패하면 메인 모델로",
+  },
+  {
     key: "deepModel", label: "대화가 꼬였을 때 쓰는 고성능 모델", group: "모델", type: "string",
     default: "global.anthropic.claude-opus-5", env: "AI_MODEL_DEEP", usedIn: "app/api/chat/route.ts · lib/continuity.ts",
     desc: "유저가 \"무슨 소리야\"처럼 되묻거나 바로잡는 턴에만 사용 (평소는 메인 모델). 접근 권한이 없거나 실패하면 메인 모델로 자동 대체. 메인과 같게 쓰려면 메인 모델 ID를 적기, 끄려면 AI_MODEL_DEEP=off",
@@ -132,10 +142,10 @@ export const SERVER_SETTINGS = [
 export type ServerSettingKey = (typeof SERVER_SETTINGS)[number]["key"];
 
 /** 비밀 환경변수 — 값은 절대 화면에 내보내지 않고 "있음/없음"만 */
-export const SECRET_ENV = ["AWS_BEDROCK_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "XAI_API_KEY", "OPENAI_API_KEY", "PERPLEXITY_API_KEY", "VOICE_DEV_PASS", "OWNER_CHEAT_PHRASE"] as const;
+export const SECRET_ENV = ["AWS_BEDROCK_API_KEY", "GOOGLE_GENERATIVE_AI_API_KEY", "XAI_API_KEY", "OPENAI_API_KEY", "PERPLEXITY_API_KEY", "VOICE_DEV_PASS", "OWNER_CHEAT_PHRASE", "KV_REST_API_URL", "KV_REST_API_TOKEN", "UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"] as const;
 
 /** 모델 관련 환경변수 (값을 보여 줘도 되는 것) */
-export const MODEL_ENV = ["AI_PROVIDER", "AI_MODEL", "AI_MODEL_LIGHT", "AI_CHEAP_MODEL", "BEDROCK_REGION", "BEDROCK_MANTLE_REGION", "MANTLE_REASONING_EFFORT", "XAI_BASE_URL", "GEMINI_IMAGE_MODEL", "GEMINI_TTS_MODEL"] as const;
+export const MODEL_ENV = ["AI_PROVIDER", "AI_MODEL", "AI_MODEL_LIGHT", "AI_CHEAP_MODEL", "BEDROCK_REGION", "BEDROCK_MANTLE_REGION", "MANTLE_REASONING_EFFORT", "XAI_BASE_URL", "GEMINI_IMAGE_MODEL", "GEMINI_TTS_MODEL", "AI_MODEL_DEEP", "AI_MODEL_PLUS", "AI_ANALYZER_MODEL"] as const;
 
 /**
  * CMS 덮어쓰기 자리. 나중에 DB 에서 읽은 값을 여기에 채운다 (지금은 비어 있음).

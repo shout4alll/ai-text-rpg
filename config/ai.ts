@@ -372,8 +372,8 @@ export function describeModel(): {
  * 환경변수 > 설정 파일 순으로 프로바이더/모델을 결정해 모델 인스턴스를 만든다.
  * @param purpose "cheap" 이면 보조 작업용 저렴한 모델 (AI_CHEAP_MODEL > cheapModel)
  */
-export type ModelTier = "chat" | "light" | "cheap" | "mature" | "knowledge" | "router" | "deep";
-export const MODEL_TIERS: readonly ModelTier[] = ["chat", "light", "cheap", "mature", "knowledge", "router", "deep"];
+export type ModelTier = "chat" | "light" | "cheap" | "mature" | "knowledge" | "router" | "deep" | "plus" | "analyzer";
+export const MODEL_TIERS: readonly ModelTier[] = ["chat", "light", "cheap", "mature", "knowledge", "router", "deep", "plus", "analyzer"];
 
 /** 모델 이름 앞에 "프로바이더:" 를 붙이면 그 프로바이더로 호출한다. 예) AI_MODEL_MATURE=mantle:xai.grok-4.3 */
 export function splitProviderPrefix(spec: string): { provider?: ProviderId; modelId: string } {
@@ -444,6 +444,14 @@ export function resolveModel(purpose: ModelTier = "chat"): ResolvedModel {
     const spec = k || (keys.perplexity ? "perplexity:sonar" : keys.google ? "google:gemini-3.8-flash" : "");
     if (spec) {
       const sp = splitProviderPrefix(spec);
+      return build(sp.provider ?? requested, sp.modelId);
+    }
+  }
+  // 🧩 plus: 맥락이 깊은 대화 (AI_MODEL_PLUS · 기본 Sonnet 5.5) / 🧭 analyzer: 매 턴 등급을 정하는 분석 모델 (AI_ANALYZER_MODEL)
+  if (purpose === "plus" || purpose === "analyzer") {
+    const v = settingValue(purpose === "plus" ? "plusModel" : "analyzerModel");
+    if (v && v.toLowerCase() !== "off") {
+      const sp = splitProviderPrefix(v);
       return build(sp.provider ?? requested, sp.modelId);
     }
   }

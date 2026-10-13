@@ -55,6 +55,8 @@ function modelName(id: string): string {
 const ROUTE_KO: Record<string, string> = { deep: "대화 꼬임 → 고성능", mature: "성인 모델", light: "가벼운 대화", chat: "메인", forced: "주인님 고정", error: "실패" };
 const routeKo = (r: string) => {
   if (r.startsWith("pool")) return "뻔한 말 → 답장 풀";
+  const g = /^([LMPT])\((.*)\)$/.exec(r);
+  if (g) return `${{ L: "등급L 단순", M: "등급M 보통", P: "등급P 맥락 깊음", T: "등급T 고난도" }[g[1]]} · ${g[2]}`;
   const m = /^(\w+)\((\w+)\)$/.exec(r);
   if (m) return `${{ daily: "일상", emotion: "감정·대화", knowledge: "지식" }[m[1]] ?? m[1]} · ${{ rule: "규칙", cache: "캐시", default: "분류실패", continuity: "맥락↑" }[m[2]] ?? "분류"}`;
   return ROUTE_KO[r] ?? r;
