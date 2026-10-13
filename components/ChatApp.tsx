@@ -1064,6 +1064,8 @@ export default function ChatApp({
 
       const turns = toTurns(msgs);
       if (kind === "return") turns.push({ role: "user", kind: "return", content: "", at: Date.now() });
+      // 마지막이 유저 차례가 아니면(이미 답장·사진을 받았거나 보낼 말이 걸러짐) 서버가 거절하므로 보내지 않는다
+      if (turns[turns.length - 1]?.role !== "user") return;
 
       setBusy(true);
       // 가장 최근에 올린 사진·영상만 실제 장면을 붙인다

@@ -111,9 +111,11 @@ export function createReactionDirector() {
     return typeof b === "number" && Number.isFinite(b) ? Math.max(0, b) : 1;
   };
 
+  /** 모르는 리액션 id(서버가 앱보다 새 버전 등)는 미소로 대체 */
+  const defOf = (id: AvatarReactionId) => AVATAR_REACTIONS[id] ?? AVATAR_REACTIONS.smile;
   /** 영상 cue (실제 영상이 없으면 움직임으로 자동 대체되므로 그대로 넘겨도 안전) */
   const videoCue = (id: AvatarReactionId): ReactionCue => {
-    const d = AVATAR_REACTIONS[id];
+    const d = defOf(id);
     return { clips: d.clips, motion: d.motion, tint: d.tint, hold: d.hold };
   };
   /** 뽀뽀 영상: 가까이 다가오는 키스(kiss_close)가 있으면 손 키스와 번갈아 쓴다 */
@@ -124,7 +126,7 @@ export function createReactionDirector() {
   };
   /** 움직임 + 이모지만 */
   const motionCue = (id: AvatarReactionId): ReactionCue => {
-    const d = AVATAR_REACTIONS[id];
+    const d = defOf(id);
     return { clips: [], motion: d.motion, tint: d.tint };
   };
 
@@ -178,7 +180,7 @@ export function createReactionDirector() {
 
   /** 특별한 순간: 쿨다운 무시하고 영상 */
   const special = (id: AvatarReactionId, ctx: DirectorContext, extra?: Partial<DirectorDecision>): DirectorDecision => {
-    const d = AVATAR_REACTIONS[id];
+    const d = defOf(id);
     markVideo(firstClip(d.clips, ctx), "ai");
     if (id === "kiss") lastKiss = now();
     return { reaction: id, cue: id === "kiss" ? kissCue(ctx) : videoCue(id), particles: d.particles, video: true, ...extra };
@@ -196,7 +198,7 @@ export function createReactionDirector() {
   };
 
   function decideAi(ev: Extract<DirectorEvent, { type: "ai" }>, ctx: DirectorContext): DirectorDecision {
-    let id = ev.reaction;
+    let id: AvatarReactionId = isAvatarReactionId(ev.reaction) ? ev.reaction : "smile";
     const t = now();
     const romance = ctx.relationship === "romance";
 
@@ -275,7 +277,7 @@ export function createReactionDirector() {
 
   function decideTouch(ev: Extract<DirectorEvent, { type: "touch" }>, ctx: DirectorContext): DirectorDecision {
     const t = now();
-    const def = TOUCH_REACTIONS[ev.touch];
+    const def = TOUCH_REACTIONS[ev.touch] ?? TOUCH_REACTIONS.shy;
 
     // 삐져 있는 동안엔 영상 없이 💢 만
     if (ctx.sulking) return { reaction: "turn_away", cue: null, particles: ["💢"], video: false };

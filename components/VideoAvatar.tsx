@@ -146,7 +146,7 @@ export default function VideoAvatar({ persona, cue, reactionKey, speaking = fals
     }
 
     // 영상: clips 순서대로 "준비된" 것 하나 → 즉시 재생 (모든 클립은 미리 받아 첫 장면에서 대기 중)
-    const clip = def.clips.find((c) => !LOOPS.has(c) && ready[c]);
+    const clip = (def.clips ?? []).find((c) => !LOOPS.has(c) && ready[c]);
     const video = clip ? videoRefs.current[clip] : null;
     if (clip && video) {
       for (const n of names) {
@@ -175,10 +175,10 @@ export default function VideoAvatar({ persona, cue, reactionKey, speaking = fals
       holdRef.current = null;
       setActive(null);
     }
-    if (def.motion !== "none" && mediaRef.current) {
+    const m = def.motion && def.motion !== "none" ? MOTIONS[def.motion as Exclude<Motion, "none">] : undefined;
+    if (m && mediaRef.current) {
       // 연속 터치 시 이전 움직임이 겹치지 않도록 정리
       for (const a of mediaRef.current.getAnimations()) a.cancel();
-      const m = MOTIONS[def.motion as Exclude<Motion, "none">];
       mediaRef.current.animate(m.frames, { duration: m.duration, easing: "ease-in-out" });
     }
   }, [reactionKey]);
