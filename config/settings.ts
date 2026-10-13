@@ -69,8 +69,8 @@ export const SERVER_SETTINGS = [
   },
   {
     key: "analyzerModel", label: "🧭 대화 분석·라우팅 모델 (매 턴 등급 결정)", group: "모델", type: "string",
-    default: "global.anthropic.claude-sonnet-5-5", env: "AI_ANALYZER_MODEL", usedIn: "lib/smartRouter.ts analyzeTurn",
-    desc: "최근 대화를 읽고 이번 답장을 L(하이쿠)·M(소넷5)·P(소넷5.5)·T(오퍼스) 중 어디로 보낼지 정한다. 인사·맞장구처럼 뻔한 말과 되묻기는 규칙으로 먼저 걸러 호출하지 않음. off 면 예전 규칙+초경량 분류(routerModel)로",
+    default: "global.anthropic.claude-haiku-5-5", env: "AI_ANALYZER_MODEL", usedIn: "lib/smartRouter.ts analyzeTurn",
+    desc: "기본 Haiku 5.5. 최근 대화를 읽고 이번 답장을 L(하이쿠 5.5)·M(소넷5)·P(소넷5.5)·T(오퍼스, 하루 한도) 중 어디로 보낼지 정한다. L 은 맥락 규칙도 '낮음'일 때만 허용(안전장치). 인사·맞장구처럼 뻔한 말과 되묻기는 규칙으로 먼저 걸러 호출하지 않음. off 면 예전 규칙+초경량 분류(routerModel)로",
   },
   {
     key: "plusModel", label: "맥락이 깊은 대화용 모델 (P등급)", group: "모델", type: "string",

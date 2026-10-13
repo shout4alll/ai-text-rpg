@@ -97,7 +97,8 @@ export function bedrockClaudeOptions(modelId: string): ProviderOptions | undefin
   // Claude 가 아닌 모델(Nova·Llama·Mistral 등)도 구조화 답장은 도구 방식으로 (가장 널리 지원)
   // Nova 는 도구 강제를 지원 → 도구 방식. Llama·Grok·gpt-oss 등은 toolChoice 를 거부하거나 무시하므로 글(JSON) 방식(usesTextJson)
   if (!/anthropic\.claude/.test(modelId)) return /amazon\.nova/.test(modelId) ? { bedrock: { structuredOutputMode: "jsonTool" } } : undefined;
-  const cannotDisableThinking = /claude-(sonnet|opus)-5-5|claude-fable-5-1/.test(modelId);
+  // Haiku 5.5 는 생각(adaptive) 기본값이 medium → low 로 낮춰 빠르고 싸게
+  const cannotDisableThinking = /claude-(sonnet|opus|haiku)-5-5|claude-fable-5-1/.test(modelId);
   return {
     bedrock: cannotDisableThinking
       ? { reasoningConfig: { type: "adaptive", maxReasoningEffort: "low" } }
@@ -215,7 +216,8 @@ const PROVIDERS = {
     create: (modelId) => createBedrockModel(modelId),
     // ⚠️ Haiku 4.5 는 계정에서 "Anthropic 사용 사례 양식"을 제출해야 쓸 수 있다.
     //    아직이면 자동으로 cheapModel(Nova 2 Lite) → 메인 순서로 넘어간다 (lib/modelRouter.ts runWithFallback)
-    lightModel: "global.anthropic.claude-haiku-4-5-20251001-v1:0", // Claude Haiku 4.5 — 빠르고 저렴, 말투 유지 좋음
+    lightModel: "global.anthropic.claude-haiku-5-5", // ✅ Claude Haiku 5.5 (2026-10 출시, $0.10/$0.50) — L등급 답장·분석
+    // lightModel: "global.anthropic.claude-haiku-4-5-20251001-v1:0", // Claude Haiku 4.5 — L등급 실패 시 다음 순서로 자동 사용
     // lightModel: "global.amazon.nova-2-lite-v1:0",                // Amazon Nova 2 Lite — 더 저렴
     // lightModel: "apac.amazon.nova-micro-v1:0",                   // Amazon Nova Micro — 가장 저렴 (APAC)
     cheapModel: "global.amazon.nova-2-lite-v1:0", // Amazon Nova 2 Lite — 기억 정리용
@@ -505,6 +507,7 @@ export const DEFAULT_FALLBACK_MODELS: readonly string[] = [
   "openai:gpt-5", // GPT (OpenAI 직접 — OPENAI_API_KEY 가 있을 때만)
   "google:gemini-3.8-flash", // GOOGLE_GENERATIVE_AI_API_KEY 가 있을 때만
   "global.amazon.nova-2-lite-v1:0",
+  "us.meta.llama4-maverick-17b-instruct-v1:0", // 🦙 Llama 4 Maverick — 비상용(모두 실패했을 때만, 미국 리전)
 ];
 
 export function fallbackSpecs(): string[] {

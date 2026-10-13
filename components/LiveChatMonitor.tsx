@@ -32,8 +32,11 @@ interface LiveTurn {
   fellBack?: boolean;
   tried?: { model: string; ok: boolean; ms: number }[];
   ctx?: { score: number; level: string; reason: string | null } | null;
+  cost?: { usd: number; base: number; analyzer: number };
   error?: string;
 }
+/** $0.00123 → "0.12¢" (센트) */
+const cents = (usd: number) => `${(usd * 100).toFixed(usd * 100 < 0.1 ? 3 : 2)}¢`;
 
 const short = (id: string) => id.replace(/^(global|us|apac|eu)\./, "").replace(/^(anthropic|amazon|mistral|meta)\./, "").replace(/-\d{8}-v\d:\d$/, "");
 const chip = (m: string) =>
@@ -53,7 +56,8 @@ function modelName(id: string): string {
   return short(id);
 }
 const ROUTE_KO: Record<string, string> = { deep: "대화 꼬임 → 고성능", mature: "성인 모델", light: "가벼운 대화", chat: "메인", forced: "주인님 고정", error: "실패" };
-const routeKo = (r: string) => {
+const routeKo = (r: string): string => {
+  if (r.startsWith("Opus한도→")) return `${routeKo(r.slice("Opus한도→".length))} · ⚠ 오늘 Opus 한도 → 소넷5.5`;
   if (r.startsWith("pool")) return "뻔한 말 → 답장 풀";
   const g = /^([LMPT])\((.*)\)$/.exec(r);
   if (g) return `${{ L: "등급L 단순", M: "등급M 보통", P: "등급P 맥락 깊음", T: "등급T 고난도" }[g[1]]} · ${g[2]}`;
@@ -214,6 +218,7 @@ export default function LiveChatMonitor({ token, mine = [], className = "" }: { 
       fellBack: m.fellBack,
       tried: m.attempts.map((a) => ({ model: a.model, ok: a.ok, ms: a.ms })),
       ctx: m.ctx ? { score: m.ctx.score, level: m.ctx.level, reason: m.ctx.reason } : null,
+      cost: m.cost,
     }));
     const dup = (l: LiveTurn) => turns.some((t) => t.owner && t.personaId === l.personaId && Math.abs(t.at - l.at) < 90_000 && t.userText.startsWith(l.userText.slice(0, 40)));
     return [...turns, ...local.filter((l) => !dup(l))].sort((a, b) => a.at - b.at);
@@ -231,7 +236,17 @@ export default function LiveChatMonitor({ token, mine = [], className = "" }: { 
       m.set(k, c);
     }
     const total = [...m.values()].reduce((a, b) => a + b.n, 0);
-    return { total, list: [...m.entries()].sort((a, b) => b[1].n - a[1].n) };
+    // 💵 예상 비용 합계 vs 같은 턴을 모두 소넷 5 로 답했을 때
+    let usd = 0;
+    let base = 0;
+    let n = 0;
+    for (const t of shown) {
+      if (!t.cost) continue;
+      usd += t.cost.usd;
+      base += t.cost.base;
+      n++;
+    }
+    return { total, list: [...m.entries()].sort((a, b) => b[1].n - a[1].n), usd, base, n };
   }, [shown]);
   /** 같은 대화(인물+기기)에서 바로 전 턴의 모델 — 바뀌었으면 표시 */
   const prevModel = useMemo(() => {
@@ -321,6 +336,15 @@ export default function LiveChatMonitor({ token, mine = [], className = "" }: { 
                     <span key={k} className={`rounded px-1.5 ${v.cls}`}>{k} {Math.round((v.n / usage.total) * 100)}% ({v.n})</span>
                   ))}
                 </div>
+                {usage.n > 0 && usage.base > 0 && (
+                  <p className="mt-1 text-[10px] text-slate-300" data-live-cost>
+                    💵 예상 비용 {cents(usage.usd)} · 소넷5 고정이면 {cents(usage.base)} →{" "}
+                    <b className={usage.usd <= usage.base ? "text-emerald-300" : "text-rose-300"}>
+                      {usage.usd <= usage.base ? `${Math.round((1 - usage.usd / usage.base) * 100)}% 절감` : `${Math.round((usage.usd / usage.base - 1) * 100)}% 더 씀`}
+                    </b>{" "}
+                    <span className="text-slate-500">({usage.n}턴 · 추정)</span>
+                  </p>
+                )}
               </div>
             )}
             {err && <p className="px-3 py-1 text-[11px] text-red-400">⚠️ {err}</p>}
@@ -362,6 +386,11 @@ export default function LiveChatMonitor({ token, mine = [], className = "" }: { 
                         <span className="text-slate-400">· {routeKo(t.route)}</span>
                         {t.ctx && <span className={t.ctx.level === "high" ? "text-rose-300" : t.ctx.level === "mid" ? "text-amber-300" : "text-emerald-300"}>· 맥락 {t.ctx.level} {t.ctx.score}</span>}
                         {t.ms > 0 && <span className="text-slate-500">· {(t.ms / 1000).toFixed(1)}s</span>}
+                        {t.cost && (
+                          <span className="text-slate-400" title={`답장 ${cents(t.cost.usd - t.cost.analyzer)} + 분석 ${cents(t.cost.analyzer)} · 소넷5였다면 ${cents(t.cost.base)}`}>
+                            · 💵{cents(t.cost.usd)}{t.cost.base > 0 ? ` (소넷5 대비 ${Math.round((t.cost.usd / t.cost.base) * 100)}%)` : ""}
+                          </span>
+                        )}
                       </div>
                     );
                   })()}

@@ -153,6 +153,8 @@ export const balanceSchema = z.object({
   }),
   routing: z.object({
     enabled: z.boolean(),
+    /** 🧠 Opus(최상위 모델) 손님 1명당 하루 사용 횟수 — 넘으면 Sonnet 5.5 로 (lib/opusQuota.ts) */
+    opusDailyLimit: z.number().int().min(0).max(1000),
     lightMaxChars: z.number().int().min(0).max(200),
     firstTurnsMain: z.number().int().min(0),
     mainEveryLight: z.number().int().min(0),

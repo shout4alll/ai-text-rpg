@@ -1,4 +1,5 @@
 import "server-only";
+import { kvConfig, kvPipeline } from "@/lib/kv";
 
 /**
  * 💬 실시간 대화 모니터 (🛠 주인님 모드 전용) — 손님들과 캐릭터가 주고받은 턴을 서버 메모리에 최근 N개만 보관.
@@ -27,6 +28,8 @@ export interface LiveTurn {
   tried?: { model: string; ok: boolean; ms: number }[];
   /** 맥락 의존도 (lib/continuity.ts) */
   ctx?: { score: number; level: string; reason: string | null } | null;
+  /** 예상 비용(달러): 이번 턴 / 같은 토큰을 소넷 5 로 답했다면 */
+  cost?: { usd: number; base: number; analyzer: number };
   error?: string;
 }
 
@@ -43,29 +46,8 @@ export const INSTANCE = Math.random().toString(36).slice(2, 6);
  *  패키지 없이 REST 로 호출한다. 실패해도 대화에는 영향 없음 (메모리 기록은 그대로).
  */
 const KEY = "with:live";
-function redis(): { url: string; token: string } | null {
-  const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
-  return url && token ? { url: url.replace(/\/$/, ""), token } : null;
-}
-async function redisCall(cmds: (string | number)[][], timeoutMs = 1200): Promise<unknown[] | null> {
-  const r = redis();
-  if (!r) return null;
-  try {
-    const res = await fetch(`${r.url}/pipeline`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${r.token}`, "Content-Type": "application/json" },
-      body: JSON.stringify(cmds),
-      signal: AbortSignal.timeout(timeoutMs),
-      cache: "no-store",
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return ((await res.json()) as { result?: unknown; error?: string }[]).map((x) => x.result);
-  } catch (e) {
-    console.warn(`[liveFeed] redis 실패: ${e instanceof Error ? e.message : String(e)}`);
-    return null;
-  }
-}
+const redis = kvConfig;
+const redisCall = kvPipeline;
 export const liveStore = () => (redis() ? "redis" : "memory");
 
 /** 대화 한 턴 기록 — 공유 저장소가 있으면 거기에도 (최대 1.2초 기다림) */

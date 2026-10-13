@@ -60,8 +60,8 @@ Vercel CLI 가 있으면 `vercel env pull .env.local` 한 번으로 로컬 파�
 
 | 변수 | 기본값 | 설명 |
 |---|---|---|
-| `AI_ANALYZER_MODEL` | `global.anthropic.claude-sonnet-5-5` | 매 턴 최근 대화를 읽고 등급 L·M·P·T 를 정하는 분석 모델. `off` 면 예전 규칙+초경량 분류 |
+| `AI_ANALYZER_MODEL` | `global.anthropic.claude-haiku-5-5` | 매 턴 최근 대화를 읽고 등급 L·M·P·T 를 정하는 분석 모델. `off` 면 예전 규칙+초경량 분류 |
 | `AI_MODEL_PLUS` | `global.anthropic.claude-sonnet-5-5` | P등급(맥락이 깊은 턴) 답장 모델 |
 | `AI_MODEL_DEEP` | `global.anthropic.claude-opus-5` | T등급(고난도)·대화 꼬임 답장 모델. `off` 로 끄기 |
 
-등급: L=가벼운 모델(하이쿠) · M=메인(`AI_MODEL`, 소넷 5) · P=`AI_MODEL_PLUS` · T=`AI_MODEL_DEEP`. 실패하면 한 단계씩 내려가 메인으로.
+등급: L=`AI_MODEL_LIGHT`(기본 Haiku 5.5) · M=메인(`AI_MODEL`, 소넷 5) · P=`AI_MODEL_PLUS` · T=`AI_MODEL_DEEP`. 실패하면 한 단계씩 내려가 메인으로.

@@ -28,6 +28,8 @@ import { PERSONA_FIELDS, RULE_FIELDS, applyPersonaOverride, mergeOverride, type 
 import { persistedPersona, persistedRules } from "@/lib/overridesStore";
 import { contextDependency, insistedAsks, logCtx } from "@/lib/continuity";
 import { pushLive } from "@/lib/liveFeed";
+import { takeOpus } from "@/lib/opusQuota";
+import { BASELINE, costUsd, priceOf } from "@/config/prices";
 import { addToPool, poolCategory, poolKey, routeTier, runWithFallback, takeFromPool } from "@/lib/modelRouter";
 import { pickLengthGuide } from "@/lib/replyLength";
 import { BALANCE } from "@/config/balance";
@@ -835,14 +837,17 @@ export async function POST(request: Request) {
   //    💰 뻔한 말(맥락 의존도 low + 인사·맞장구 패턴)은 분석 없이 바로 L, 되묻기·거듭된 요청은 바로 deep
   const analyzerOn = smart && !owner && settingValue("analyzerModel").toLowerCase() !== "off" && !!settingValue("analyzerModel");
   let plan: { grade: Grade; tiers: string[]; by: string; why: string; ms: number } | null = null;
+  /** 분석 호출 비용 (달러) */
+  let analyzerUsd = 0;
   if (analyzerOn && !toMature && !allureMode && !deepTurn && last.kind === "text") {
     if (dep?.level === "low" && route.tier === "light") plan = { grade: "L", tiers: GRADE_TIERS.L, by: "rule", why: "뻔한 말", ms: 0 };
     else {
       const a = await analyzeTurn(last.content, recent, persona.name);
+      if (a.usage && a.by !== "cache" && a.by !== "default") analyzerUsd = costUsd(priceOf(a.by), a.usage);
       // 분석이 실패하면 규칙 결과(맥락 의존도)로: high → 메인, 그 외 → 메인 (가벼운 모델로 잘못 보내지 않게)
       const g: Grade = a.by === "default" ? "M" : a.grade;
-      // 맥락이 필요한 말(high)을 L 로 내리지 않는다
-      const safe: Grade = g === "L" && dep?.level === "high" ? "M" : g;
+      // 🛡 안전장치: L(하이쿠)로 내리는 건 맥락 규칙도 "낮음"일 때만 — 분석 모델 혼자 내리지 못한다 (올리는 판단은 그대로)
+      const safe: Grade = g === "L" && dep?.level !== "low" ? "M" : g;
       plan = { grade: safe, tiers: GRADE_TIERS[safe], by: a.by === "cache" ? "캐시" : a.by === "default" ? "분석실패" : `분석 ${a.ms}ms`, why: a.why, ms: a.ms };
     }
   }
@@ -990,25 +995,39 @@ export async function POST(request: Request) {
     // 가벼운 턴: lightModel → cheapModel → 메인 순서로 (권한 없는 모델은 자동으로 건너뜀)
     // 🛠 모델을 직접 지정했으면 그 모델만 쓴다 (실패해도 다른 모델로 바꾸지 않고 오류를 그대로 보여 준다)
     const forced = ownerOpts?.model ? resolveOverrideModel(ownerOpts.model.provider, ownerOpts.model.modelId) : null;
+    // 대화 내용에 따라: 매혹 모드·설렘 분위기 → 성인 모델(Grok) / 꼬인 대화 → Opus / 분석 등급 L·M·P·T / 규칙 라우팅
+    let tiers: string[] = toMature ? ["mature", "chat"] : deepTurn ? ["deep", "plus", "chat"] : plan ? plan.tiers : intent ? intent.category.tiers : !owner && route.tier === "light" && (!allureMode || AR.lightInAllure) ? ["light", "cheap", "chat"] : ["chat"];
+    // 🧠 Opus 하루 한도 (손님 1명당 balance.json routing.opusDailyLimit) — 넘으면 Sonnet 5.5 → Sonnet 5
+    let opusCapped = false;
+    if (!forced && !owner && tiers.includes("deep")) {
+      const who = parsed.data.device || (request.headers.get("x-forwarded-for") ?? "").split(",")[0].trim();
+      const q = await takeOpus(who);
+      if (!q.ok) {
+        opusCapped = true;
+        tiers = tiers.filter((t) => t !== "deep");
+        if (!tiers.includes("plus")) tiers = ["plus", ...tiers];
+      }
+    }
     const ran = forced
       ? { result: await generate(forced), resolved: forced, fellBack: false }
       : await runWithFallback(
           "/api/chat",
-          // 대화 내용에 따라: 매혹 모드·설렘 분위기 → 성인 모델(Grok 등) / 인사·맞장구 → 가벼운 모델(Haiku·Llama 등) / 그 외 → 메인(Sonnet)
-          // 3단계: 성인 모델(규칙·개방·매혹) / 의도 분류 결과의 모델 / 규칙 라우팅
-          toMature ? ["mature", "chat"] : deepTurn ? ["deep", "chat"] : plan ? plan.tiers : intent ? intent.category.tiers : !owner && route.tier === "light" && (!allureMode || AR.lightInAllure) ? ["light", "cheap", "chat"] : ["chat"],
+          tiers,
           generate,
           // 🔁 우회: 위 모델들이 모두 실패하면 우회 목록(성공률 높은 순)으로 이어서 답한다. 일반 대화방은 오류를 보이지 않는다.
           { extras: settingValue("serviceFallback") === "off" ? [] : resolveFallbacks() }
         );
     resolved = ran.resolved;
-    const pathLabel = forced ? "forced" : toMature ? "mature" : deepTurn ? "deep" : plan ? `${plan.grade}(${plan.by}${plan.why ? `·${plan.why}` : ""})` : intent ? `${intent.category.id}(${intent.by})` : route.tier;
+    const pathLabel = (opusCapped ? "Opus한도→" : "") + (forced ? "forced" : toMature ? "mature" : deepTurn ? "deep" : plan ? `${plan.grade}(${plan.by}${plan.why ? `·${plan.why}` : ""})` : intent ? `${intent.category.id}(${intent.by})` : route.tier);
     if (ctxRow) {
       ctxRow.route = pathLabel;
       ctxRow.model = resolved.modelId;
     }
     const result = ran.result;
     const { output, usage } = result;
+    // 💵 이번 턴 예상 비용 (config/prices.ts) — 답장 + 분석, 그리고 같은 토큰을 소넷 5 로 답했을 때(비교 기준)
+    const tok = { in: usage?.inputTokens ?? 0, out: usage?.outputTokens ?? 0, cache: usage?.inputTokenDetails?.cacheReadTokens ?? 0 };
+    const turnCost = { usd: costUsd(priceOf(resolved.modelId), tok) + analyzerUsd, base: costUsd(BASELINE, tok), analyzer: analyzerUsd };
 
     if (process.env.NODE_ENV !== "production" || process.env.LOG_AI_USAGE === "true") {
       // 캐시 적중 확인용: cacheRead 가 클수록 절약 중
@@ -1098,6 +1117,7 @@ export async function POST(request: Request) {
               attempts: "attempts" in ran ? ran.attempts : [],
               ctx: depAll ? { score: depAll.score, level: depAll.level, reason: depAll.reason, features: depAll.features } : null,
               path: pathLabel,
+              cost: turnCost,
               userText: last.content.slice(0, 80),
             },
           }
@@ -1116,7 +1136,7 @@ export async function POST(request: Request) {
       media,
     };
     // 💬 실시간 대화 모니터 (🛠)
-    await pushLive({ at: Date.now(), personaId: persona.id, personaName: persona.name, device: (parsed.data.device ?? "").slice(0, 4), userName: parsed.data.user?.name ?? "", owner: ownerAuth, kind: last.kind, userText: last.content, replies: bubbles, model: resolved.modelId, route: pathLabel, ms: Date.now() - startedAt, fellBack: ran.fellBack, tried: ("attempts" in ran ? ran.attempts : []).map((a) => ({ model: a.model, ok: a.ok, ms: a.ms })), ctx: depAll ? { score: depAll.score, level: depAll.level, reason: depAll.reason } : null });
+    await pushLive({ at: Date.now(), personaId: persona.id, personaName: persona.name, device: (parsed.data.device ?? "").slice(0, 4), userName: parsed.data.user?.name ?? "", owner: ownerAuth, kind: last.kind, userText: last.content, replies: bubbles, model: resolved.modelId, route: pathLabel, ms: Date.now() - startedAt, cost: turnCost, fellBack: ran.fellBack, tried: ("attempts" in ran ? ran.attempts : []).map((a) => ({ model: a.model, ok: a.ok, ms: a.ms })), ctx: depAll ? { score: depAll.score, level: depAll.level, reason: depAll.reason } : null });
     // 뻔한 대화 답장은 풀에 모아 두었다가 재사용
     if (category && !media && !ownerAuth) addToPool(pKey, { messages: bubbles, reaction: output.reaction, affectionDelta: delta });
     return NextResponse.json(response, {

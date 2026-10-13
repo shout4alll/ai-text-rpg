@@ -821,6 +821,17 @@ function LiveTab({ token, history }: { token: string; history: TurnLog[] }) {
       {scope === "me" ? (
         <>
           <UsageBar items={history.map((h) => ({ model: h.model, route: h.path }))} />
+          {(() => {
+            const c = history.filter((h) => h.cost);
+            const usd = c.reduce((a, h) => a + (h.cost?.usd ?? 0), 0);
+            const base = c.reduce((a, h) => a + (h.cost?.base ?? 0), 0);
+            return c.length && base > 0 ? (
+              <p className="mb-2 text-[10px] text-slate-300">
+                💵 이 기기 {c.length}턴 예상 {(usd * 100).toFixed(2)}¢ · 소넷5 고정이면 {(base * 100).toFixed(2)}¢ →{" "}
+                <b className={usd <= base ? "text-emerald-300" : "text-rose-300"}>{usd <= base ? `${Math.round((1 - usd / base) * 100)}% 절감` : `${Math.round((usd / base - 1) * 100)}% 더 씀`}</b>
+              </p>
+            ) : null;
+          })()}
           {mine.length === 0 && <p className="text-slate-400">아직 기록이 없어요. 말을 보내면 턴마다 여기에 쌓여요. (모델 탭에서 고정 모델을 풀고, 프롬프트를 &quot;서비스&quot;로 두면 손님과 같은 라우팅을 볼 수 있어요)</p>}
           {mine.map((h, i) => {
             const prev = mine[i + 1];
@@ -846,6 +857,7 @@ function LiveTab({ token, history }: { token: string; history: TurnLog[] }) {
                     <span>맥락 <b className={LEVEL_CLS[h.ctx.level] ?? ""}>{h.ctx.level} {h.ctx.score}</b>{h.ctx.reason ? ` · ${h.ctx.reason}` : ""}</span>
                   )}
                   <span className="text-slate-500">토큰 {h.tokens.in}/{h.tokens.out}{h.tokens.cache ? ` (캐시 ${h.tokens.cache})` : ""}</span>
+                  {h.cost && <span className="text-slate-300">💵{(h.cost.usd * 100).toFixed(3)}¢{h.cost.base > 0 ? ` (소넷5 대비 ${Math.round((h.cost.usd / h.cost.base) * 100)}%)` : ""}</span>}
                 </div>
                 {open === i && (
                   <div className="mt-1 border-t border-slate-700 pt-1 text-[10px] text-slate-400">

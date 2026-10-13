@@ -58,9 +58,10 @@ export async function classifyIntent(text: string, timeoutMs = 2500, prev = ""):
 
 /* ── 🧭 대화 분석 라우터 (매 턴 · 기본 Sonnet 5.5) ─────────────────────────────
  *  최근 대화 몇 턴 + 유저의 마지막 말을 보고 이번 답장 등급 하나를 고른다.
- *    L = 하이쿠(가장 저렴) · M = 소넷 5(메인) · P = 소넷 5.5(맥락 깊음) · T = 오퍼스(고난도)
+ *    L = 하이쿠 5.5(가장 저렴) · M = 소넷 5(메인) · P = 소넷 5.5(맥락 깊음) · T = 오퍼스(고난도, 하루 한도)
+ *  기본 분석 모델: Haiku 5.5 (분석 1회 ≈ 소넷 5 답장의 2%) — config/settings.ts analyzerModel
  *  💰 비용 절약: ① 뻔한 말·되묻기는 호출 전에 규칙으로 처리(route.ts) ② 대화는 최근 8턴·턴당 160자로 압축
- *    ③ 출력은 한 줄 JSON ④ 같은 장면(직전 AI 말+유저 말)은 10분 캐시 ⑤ 4.5초 안에 못 정하면 규칙 결과로
+ *    ③ 출력은 한 줄 JSON ④ 같은 장면(직전 AI 말+유저 말)은 10분 캐시 ⑤ 1.5초 안에 못 정하면 M(소넷 5)
  */
 export type Grade = "L" | "M" | "P" | "T";
 export interface Analyzed {
@@ -68,6 +69,8 @@ export interface Analyzed {
   why: string;
   by: string;
   ms: number;
+  /** 분석 호출에 쓴 토큰 (비용 표시용) */
+  usage?: { in: number; out: number; cache: number };
 }
 const ANALYZE_SYSTEM = `너는 메신저 대화 라우터다. 캐릭터와 유저의 최근 대화, 유저의 마지막 말을 보고 이번 답장을 쓸 모델 등급 하나를 고른다.
 반드시 JSON 한 줄만 출력: {"t":"L|M|P|T","r":"이유(12자 이내)"}
@@ -82,7 +85,7 @@ export async function analyzeTurn(
   text: string,
   turns: { role: string; content: string; kind?: string }[],
   personaName: string,
-  timeoutMs = 4500
+  timeoutMs = 1500
 ): Promise<Analyzed> {
   const t0 = Date.now();
   const texts = turns.filter((t) => (t.kind ?? "text") === "text" && t.content);
@@ -101,7 +104,7 @@ export async function analyzeTurn(
       model: r.model,
       system: ANALYZE_SYSTEM,
       prompt: `[최근 대화]\n${ctx || "(없음 — 첫 대화)"}\n\n[유저의 마지막 말]\n${text.slice(0, 400)}`,
-      maxOutputTokens: 600, // Sonnet 5.5 는 짧은 생각을 거친 뒤 답한다
+      maxOutputTokens: 400, // Haiku 5.5 는 짧은 생각(effort low)을 거친 뒤 답한다
       maxRetries: 0,
       abortSignal: AbortSignal.timeout(timeoutMs),
       ...(r.providerOptions ? { providerOptions: r.providerOptions as never } : {}),
@@ -111,7 +114,7 @@ export async function analyzeTurn(
     const why = (/"r"\s*:\s*"([^"]{0,40})"/.exec(out)?.[1] ?? "").trim();
     gradeCache.set(key, { g, why, at: Date.now() });
     if (gradeCache.size > 3000) gradeCache.delete(gradeCache.keys().next().value as string);
-    return { grade: g, why, by: r.modelId, ms: Date.now() - t0 };
+    return { grade: g, why, by: r.modelId, ms: Date.now() - t0, usage: { in: res.usage?.inputTokens ?? 0, out: res.usage?.outputTokens ?? 0, cache: res.usage?.inputTokenDetails?.cacheReadTokens ?? 0 } };
   } catch (err) {
     console.warn(`[smartRouter] 분석 실패 → 규칙 결과: ${err instanceof Error ? err.message.slice(0, 120) : String(err)}`);
     return { grade: "M", why: "분석 실패", by: "default", ms: Date.now() - t0 };
@@ -120,7 +123,7 @@ export async function analyzeTurn(
 
 /** 등급 → 답할 모델 순서 (실패하면 다음, 마지막은 항상 메인) */
 export const GRADE_TIERS: Record<Grade, string[]> = {
-  L: ["light", "cheap", "chat"],
+  L: ["light", "bedrock:global.anthropic.claude-haiku-4-5-20251001-v1:0", "chat"], // Haiku 5.5 → Haiku 4.5 → 소넷 5
   M: ["chat"],
   P: ["plus", "chat"],
   T: ["deep", "plus", "chat"],
