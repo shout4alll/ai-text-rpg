@@ -49,6 +49,7 @@ import { deleteMediaFor, deleteMediaKeys, getMedia, importFile, mediaUrl, putMed
 import { DEMO_TOPUP, MEDIA_COST } from "@/config/media";
 import { GemBadge, GemShop } from "@/components/GemShop";
 import DevPanel, { type TurnLog } from "@/components/DevPanel";
+import type { ReactionTestActions } from "@/components/ReactionTestTab";
 import LiveChatMonitor from "@/components/LiveChatMonitor";
 import { buildOwnerOpts } from "@/lib/ownerClient";
 import { TYPING } from "@/config/typing";
@@ -928,6 +929,59 @@ export default function ChatApp({
       if (persona) resetChat(persona.id);
     },
   };
+
+  /** 🎬 주인님 관리창 › 리액션 테스트 탭: 확률·쿨다운·이용권을 무시하고 바로 재생 */
+  const reactionTest: ReactionTestActions | undefined = persona
+    ? (() => {
+        const free = persona.assets.clips ?? {};
+        const paid = persona.assets.premiumClips ?? {};
+        const allureC = persona.assets.allureClips ?? {};
+        const clipNames = { free: Object.keys(free), premium: Object.keys(paid), allure: Object.keys(allureC) };
+        const has = (n: string) => n in free || n in paid;
+        const testCtx = () => ({ ...directorCtx(affectionRef.current), premium: true, sulking: false, hasClip: has, hasPremiumClip: (n: string) => n in paid, allureClips: clipNames.allure });
+        const aiEvent = (extra: Partial<AiEvent>): AiEvent => ({ type: "ai", reaction: "smile", affectionDelta: 0, kind: "text", ...extra });
+        const cueOf = (d: { clips: string[]; motion: (typeof AVATAR_REACTIONS)[AvatarReactionId]["motion"]; tint?: string; hold?: boolean }) => ({ clips: d.clips, motion: d.motion, tint: d.tint, hold: d.hold });
+        return {
+          persona: { id: persona.id, name: persona.name, relationshipType: persona.relationshipType, hasAllure: !!persona.allure },
+          personas: listed.map((p) => ({ id: p.id, name: p.name })),
+          openPersona: (id) => openChat(id as PersonaId),
+          affection,
+          clips: clipNames,
+          messengerView: kakaoMode && !voiceOpen,
+          showStage: () => setMessenger(false),
+          premiumUnlocked,
+          allureActive,
+          setAffection: cheatActions.setAffection,
+          playReaction: (id) => {
+            const d = AVATAR_REACTIONS[id];
+            let cue = cueOf(d);
+            // 뽀뽀: 가까이 다가오는 키스(kiss_close)와 손 키스를 번갈아
+            if (id === "kiss" && "kiss_close" in paid && (!has("kiss") || Math.random() < 0.5)) cue = { ...cue, clips: ["kiss_close", ...cue.clips] };
+            applyDecision({ reaction: id, cue, particles: d.particles, video: true });
+          },
+          playClip: (name) => applyDecision({ reaction: "love", cue: { clips: [name], motion: "none" }, video: true }),
+          playTouch: (id: TouchReactionId) => {
+            const d = TOUCH_REACTIONS[id];
+            applyDecision({ reaction: d.avatar, cue: cueOf(d), particles: d.particles, video: true });
+          },
+          scenario: (kind, arg) => {
+            if (kind === "kiss") {
+              const d = AVATAR_REACTIONS.kiss;
+              const close = "kiss_close" in paid && (!has("kiss") || Math.random() < 0.5);
+              applyDecision({ reaction: "kiss", cue: cueOf({ ...d, clips: close ? ["kiss_close", ...d.clips] : d.clips }), particles: d.particles, video: true });
+              return;
+            }
+            const ev =
+              kind === "stageUp" ? aiEvent({ stageUp: arg }) :
+              kind === "return" ? aiEvent({ kind: "return" }) :
+              kind === "sulkStart" ? aiEvent({ sulkStart: true }) :
+              kind === "gift" ? aiEvent({ kind: "gift", sulkRelease: "gift" }) :
+              aiEvent({ sulkRelease: "words" });
+            applyDecision(director.decide(ev, testCtx()));
+          },
+        };
+      })()
+    : undefined;
 
   // 마지막으로 대화한 사람 복원
   const restoredRef = useRef(false);
@@ -2485,6 +2539,7 @@ export default function ChatApp({
             token={ownerTok}
             personaId={persona.id}
             cheat={cheat ? cheatActions : undefined}
+            reactionTest={reactionTest}
             last={lastDebug}
             history={debugLog}
             client={[
@@ -2524,8 +2579,9 @@ export default function ChatApp({
               cue={cue}
               reactionKey={reactionKey}
               speaking={voiceSpeaking}
-              premium={premiumUnlocked}
-              allure={allureActive}
+              // 🔑 주인님 모드: 🎬 리액션 테스트 탭에서 유료·매혹 영상도 재생할 수 있게 미리 받아 둔다 (서비스 연출 조건은 그대로)
+              premium={premiumUnlocked || !!ownerTok}
+              allure={allureActive || !!ownerTok}
               sound={soundOn && !voiceOpen}
             />
             {/* 💋 매혹 모드 분위기 (가장자리 붉은 빛) */}

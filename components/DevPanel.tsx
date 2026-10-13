@@ -6,6 +6,7 @@ import { apiUrl } from "@/lib/apiBase";
 import { loadOwnerOpts, saveOwnerOpts, type StoredOwnerOpts } from "@/lib/ownerClient";
 import { asText, fromText, type FieldDef, type OverrideValue } from "@/lib/ownerOverrides";
 import type { ChatResponse } from "@/types/game";
+import ReactionTestTab, { type ReactionTestActions } from "@/components/ReactionTestTab";
 
 /**
  * 🛠 주인님 모드 관리창 — 떠 있는 창(끌어서 이동·접기·투명도)으로 대화를 보면서 작업한다.
@@ -36,7 +37,7 @@ interface OwnerCfg {
 export type TurnLog = NonNullable<ChatResponse["debug"]> & { at: number; personaId: string; personaName: string; kind: string; replies?: string[] };
 interface ServerRow { at: number; persona: string; text: string; prevAi: string; score: number; level: string; reason: string | null; features: Record<string, number>; route?: string; model?: string }
 
-type Tab = "live" | "status" | "model" | "persona" | "rules" | "check" | "settings" | "cheat";
+type Tab = "live" | "status" | "model" | "persona" | "rules" | "check" | "settings" | "cheat" | "reaction";
 
 /** 🔑 치트룸 전용 조작 (ChatApp 이 넘겨 준다) */
 export interface CheatActions {
@@ -57,6 +58,7 @@ export default function DevPanel({
   client,
   personaId,
   cheat,
+  reactionTest,
   className = "",
 }: {
   token: string;
@@ -68,6 +70,8 @@ export default function DevPanel({
   personaId: string;
   /** 치트룸일 때만 */
   cheat?: CheatActions;
+  /** 대화방 안에서만: 🎬 리액션 테스트 탭 */
+  reactionTest?: ReactionTestActions;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -241,6 +245,7 @@ export default function DevPanel({
 
   const tabs: [Tab, string][] = [
     ...(cheat ? ([["cheat", "🔑치트"]] as [Tab, string][]) : []),
+    ...(reactionTest ? ([["reaction", "🎬리액션"]] as [Tab, string][]) : []),
     ["status", "상태"],
     ["live", "📡실시간"],
     ["model", `모델${curModel ? " ●" : ""}`],
@@ -501,6 +506,8 @@ export default function DevPanel({
                       </Section>
                     </div>
                   )}
+
+                  {tab === "reaction" && reactionTest && <ReactionTestTab t={reactionTest} />}
 
                   {tab === "check" && <CheckTab token={token} serverMain={data?.models.main ?? ""} choices={cfg?.models.choices ?? []} />}
 
