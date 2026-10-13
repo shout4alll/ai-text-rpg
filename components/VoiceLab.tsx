@@ -44,6 +44,11 @@ const CLIP_LABEL: Record<string, string> = {
   blow_kiss: "손키스(가벼운)",
   hair_tuck: "머리 넘김",
   flying_kiss: "날리는 키스",
+  kiss_close: "다가오는 키스",
+  allure_feel: "💋 그윽한 느낌",
+  allure_tease: "💋 도발",
+  allure_seduce2: "💋 유혹 2",
+  allure_seduce3: "💋 유혹 3",
 };
 
 /**

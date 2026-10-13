@@ -23,6 +23,16 @@ export const ALLURE_TRIGGERS = ["love", "shy", "smile", "kiss", "excited", "touc
 /** 매혹 영상을 틀 만한 터치 */
 export const ALLURE_TOUCH_TRIGGERS = ["lovely", "shy"] as const;
 
+/**
+ * 수위가 높은 매혹 영상은 호감도가 충분히 쌓인 뒤에만 나온다 (클립 파일 이름 기준, allure/ 폴더 안).
+ * 여기 없는 영상은 제한 없이 나온다. 호감도 단계: 0 / 25 / 55 / … (config/balance.json affection.stages)
+ */
+export const ALLURE_CLIP_MIN_AFFECTION: Record<string, number> = {
+  seduce3: 40, // 윤서 — 재킷을 벗으며 은근한 유혹
+  seduce2: 55, // 윤서 — 재킷을 벗고 단추를 만지는 유혹
+  tease: 70, // 윤서 — 가장 대담한 도발
+};
+
 /** 매혹 영상 화면 색감 */
 export const ALLURE_TINT = "radial-gradient(ellipse at center, transparent 45%, rgba(190, 24, 93, 0.28) 100%)";
 

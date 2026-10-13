@@ -27,7 +27,7 @@ import {
   type ReactionCue,
   type TouchReactionId,
 } from "@/config/reactions";
-import { ALLURE_TINT, ALLURE_TOUCH_TRIGGERS, ALLURE_TRIGGERS, ALLURE_TUNING } from "@/config/allure";
+import { ALLURE_CLIP_MIN_AFFECTION, ALLURE_TINT, ALLURE_TOUCH_TRIGGERS, ALLURE_TRIGGERS, ALLURE_TUNING } from "@/config/allure";
 import { BALANCE } from "@/config/balance";
 
 /** 연출 수치 — config/balance.json 의 director */
@@ -116,6 +116,12 @@ export function createReactionDirector() {
     const d = AVATAR_REACTIONS[id];
     return { clips: d.clips, motion: d.motion, tint: d.tint, hold: d.hold };
   };
+  /** 뽀뽀 영상: 가까이 다가오는 키스(kiss_close)가 있으면 손 키스와 번갈아 쓴다 */
+  const kissCue = (ctx: DirectorContext): ReactionCue => {
+    const cue = videoCue("kiss");
+    if (ctx.hasClip("kiss_close") && (!ctx.hasClip("kiss") || Math.random() < 0.5)) return { ...cue, clips: ["kiss_close", ...cue.clips] };
+    return cue;
+  };
   /** 움직임 + 이모지만 */
   const motionCue = (id: AvatarReactionId): ReactionCue => {
     const d = AVATAR_REACTIONS[id];
@@ -149,7 +155,8 @@ export function createReactionDirector() {
    * 너무 자주 나오지 않게 간격·같은 영상 반복·확률로 거른다.
    */
   const pickAllure = (ctx: DirectorContext, chance: number, force = false): string | undefined => {
-    const pool = ctx.allureClips ?? [];
+    // 호감도가 모자라면 수위 높은 영상은 제외 (이름: allure_<파일명>)
+    const pool = (ctx.allureClips ?? []).filter((c) => ctx.nextAffection >= (ALLURE_CLIP_MIN_AFFECTION[c.replace(/^allure_/, "")] ?? 0));
     if (pool.length === 0) return undefined;
     const t = now();
     if (!force && (t - lastAllure < ALLURE_TUNING.gapMs || Math.random() >= chance)) return undefined;
@@ -174,7 +181,7 @@ export function createReactionDirector() {
     const d = AVATAR_REACTIONS[id];
     markVideo(firstClip(d.clips, ctx), "ai");
     if (id === "kiss") lastKiss = now();
-    return { reaction: id, cue: videoCue(id), particles: d.particles, video: true, ...extra };
+    return { reaction: id, cue: id === "kiss" ? kissCue(ctx) : videoCue(id), particles: d.particles, video: true, ...extra };
   };
 
   /** 보상 리액션 (kiss 는 조건이 맞을 때만, 아니면 설렘/잠금 안내) */
@@ -292,7 +299,7 @@ export function createReactionDirector() {
       if (k === "ok") {
         lastKiss = t;
         markVideo("kiss", "touch");
-        return { reaction: "kiss", cue: videoCue("kiss"), particles: AVATAR_REACTIONS.kiss.particles, video: true };
+        return { reaction: "kiss", cue: kissCue(ctx), particles: AVATAR_REACTIONS.kiss.particles, video: true };
       }
     }
 
