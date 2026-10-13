@@ -1590,7 +1590,13 @@ export default function ChatApp({
 
   const buyPhoto = async () => {
     const offer = photoOffer;
-    if (!offer || photoBusy) return;
+    if (!offer) return;
+    if (photoBusy) {
+      // 이전 촬영이 진행 중이면 조용히 무시하지 말고 알려 준다
+      setPhotoOffer(null);
+      addNotice("📸 이전 사진을 아직 찍는 중이에요. 끝나면 다시 요청해 주세요");
+      return;
+    }
     const isVideo = offer.kind === "video";
     // 구독 사진이 남았으면 그걸로(사진만), 아니면 캐시
     const usePlan = isVideo ? false : consumePlanPhoto();
@@ -1652,6 +1658,7 @@ export default function ChatApp({
         method: "POST",
         headers: { "Content-Type": "application/json", ...(pass ? { "x-voice-pass": pass } : {}) },
         body: JSON.stringify({ personaId: offer.personaId, request: offer.request, timeZone: userTimeZone() }),
+        signal: AbortSignal.timeout(120_000), // 응답이 끊겨도 촬영 중 상태가 영영 남지 않게
       });
       const data = (await res.json().catch(() => ({}))) as { image?: string; mimeType?: string; error?: string };
       if (!res.ok || !data.image) throw new Error(data.error ?? `HTTP ${res.status}`);
