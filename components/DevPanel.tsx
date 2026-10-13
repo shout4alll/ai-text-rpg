@@ -48,7 +48,7 @@ export interface CheatActions {
   resetChat: () => void;
 }
 const SRC: Record<string, string> = { env: "환경변수", default: "기본값", cms: "CMS" };
-const POS_KEY = "ai-rpg.dev.ui2"; // v2: 크기(w·h) 추가 — 처음엔 화면 아래쪽에 뜬다
+const POS_KEY = "ai-rpg.dev.ui3"; // v3: 기본 위치를 더 아래로 (저장된 위치가 있으면 그게 우선이라 키를 올려 한 번 초기화)
 const OPACITY = [1, 0.8, 0.55];
 
 export default function DevPanel({
@@ -120,10 +120,10 @@ export default function DevPanel({
       const v = JSON.parse(localStorage.getItem(POS_KEY) ?? "null");
       if (v) setUi((u) => ({ ...u, ...v }));
       else {
-        // 처음: 화면 아래쪽, 가로 가득(최대 34rem), 높이는 화면의 55%
+        // 처음: 화면 맨 아래쪽, 가로 가득(최대 34rem), 높이는 화면의 42% (인물 얼굴이 가리지 않게 낮게)
         const w = Math.min(window.innerWidth - 16, 544);
-        const h = Math.round(Math.min(window.innerHeight * 0.55, 560));
-        setUi((u) => ({ ...u, w, h, x: Math.max(8, (window.innerWidth - w) / 2), y: Math.max(8, window.innerHeight - h - 12) }));
+        const h = Math.round(Math.min(window.innerHeight * 0.42, 460));
+        setUi((u) => ({ ...u, w, h, x: Math.max(8, (window.innerWidth - w) / 2), y: Math.max(8, window.innerHeight - h - 4) }));
       }
     } catch {
       /* 무시 */

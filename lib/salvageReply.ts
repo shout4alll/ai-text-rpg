@@ -81,12 +81,50 @@ export function repairReply(text: string): Record<string, unknown> | null {
   return out;
 }
 
+/**
+ * 모델이 JSON 대신 "reaction: love" 처럼 `키: 값` 줄로 답한 경우: 그 줄들을 떼어 내 필드로 돌려주고, 나머지 글만 남긴다.
+ *  예) 안녕하세요!\nreaction: love\ntapback: none\naffection_delta: 5\nmedia_action: none
+ */
+const META_KEYS = ["reaction", "tapback", "affection_delta", "media_action", "album_id", "custom_request", "custom_kind", "soothed", "seen"];
+const META_LINE = new RegExp(`^\\s*[-*•>]*\\s*\\**\\s*"?(messages|${META_KEYS.join("|")})"?\\s*\\**\\s*[:=：]\\s*(.*?)\\s*,?\\s*$`, "i");
+export function stripMetaLines(text: string): { body: string; meta: Record<string, unknown>; said: string[] } {
+  const meta: Record<string, unknown> = {};
+  const said: string[] = [];
+  const keep: string[] = [];
+  for (const line of text.split("\n")) {
+    const m = META_LINE.exec(line);
+    if (!m) {
+      keep.push(line);
+      continue;
+    }
+    const key = m[1].toLowerCase();
+    const raw = m[2].replace(/^["'`]+|["'`]+$/g, "").trim();
+    if (key === "messages") {
+      if (raw && raw !== "[" && raw !== "[]") said.push(raw);
+    } else if (key === "affection_delta") {
+      const n = Number(raw.replace(/^\+/, ""));
+      if (Number.isFinite(n)) meta[key] = n;
+    } else if (key === "soothed") meta[key] = /^true$/i.test(raw);
+    else meta[key] = raw;
+  }
+  return { body: keep.join("\n"), meta, said };
+}
+
+/** JSON 이 없을 때: 글에서 답장 전체(말풍선 + `키: 값` 줄로 온 reaction 등)를 복구 */
+export function proseToReply(text: string): Record<string, unknown> {
+  const fixed = repairReply(text);
+  if (fixed) return fixed;
+  const { body, meta, said } = stripMetaLines(text);
+  const messages = proseToBubbles(body);
+  return { ...meta, messages: messages.length ? messages : said.slice(0, 5) };
+}
+
 /** JSON 이 없을 때: 글을 말풍선(최대 5개)으로 */
 export function proseToBubbles(text: string): string[] {
   // JSON 조각이 섞여 있으면 말풍선만 건지고, 중괄호·키 이름이 그대로 화면에 나가지 않게 한다
   const fixed = repairReply(text);
   if (fixed) return (fixed.messages as string[]).slice(0, 5).map((x) => x.slice(0, 600));
-  const t = text
+  const t = stripMetaLines(text).body
     .replace(/<think>[\s\S]*?<\/think>/g, "")
     .replace(/```[\s\S]*?```/g, "")
     .replace(/^\s*\{[\s\S]*\}\s*$/, "")

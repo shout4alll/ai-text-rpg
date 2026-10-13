@@ -4,7 +4,7 @@ import { containsPhrase, isOwnerToken, maskPhrase, ownerToken, ownerInstructions
 import { settingValue } from "@/config/settings";
 import { NextResponse } from "next/server";
 import { generateText, NoObjectGeneratedError, Output } from "ai";
-import { extractJsonObject, proseToBubbles } from "@/lib/salvageReply";
+import { extractJsonObject, proseToReply } from "@/lib/salvageReply";
 import { z } from "zod";
 import type { ChatResponse } from "@/types/game";
 import {
@@ -975,7 +975,7 @@ export async function POST(request: Request) {
       const raw = res.text ?? "";
       const obj = extractJsonObject(raw);
       const parsedObj = obj ? replySchema.safeParse(obj) : null;
-      const output = parsedObj?.success ? parsedObj.data : replySchema.parse({ messages: proseToBubbles(raw) });
+      const output = parsedObj?.success ? parsedObj.data : replySchema.parse(proseToReply(raw));
       if (!output.messages.length && !parsedObj?.success) throw new Error(`응답을 해석하지 못함 (finish=${res.finishReason}, 글 ${raw.length}자: ${raw.replace(/\s+/g, " ").slice(0, 160)})`);
       return { output, usage: res.usage };
     }).catch((e: unknown) => {
@@ -984,7 +984,7 @@ export async function POST(request: Request) {
       const raw = e.text ?? "";
       const obj = extractJsonObject(raw);
       const parsedObj = obj ? replySchema.safeParse(obj) : null;
-      const output = parsedObj?.success ? parsedObj.data : replySchema.parse({ messages: proseToBubbles(raw) });
+      const output = parsedObj?.success ? parsedObj.data : replySchema.parse(proseToReply(raw));
       if (!output.messages.length) {
         throw new Error(`응답을 해석하지 못함 (finish=${e.finishReason ?? "?"}, 글 ${raw.length}자: ${raw.replace(/\s+/g, " ").slice(0, 160)})`);
       }
