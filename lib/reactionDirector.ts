@@ -34,7 +34,7 @@ import { BALANCE } from "@/config/balance";
 export const DIRECTOR_TUNING = BALANCE.director;
 
 /** 평소에도 영상으로 보여 줄 만한 "강한" 감정 */
-const STRONG: ReadonlySet<AvatarReactionId> = new Set(["laugh", "shy", "love", "pout", "excited", "surprised", "touched", "sad"]);
+const STRONG: ReadonlySet<AvatarReactionId> = new Set(["laugh", "shy", "love", "pout", "excited", "surprised", "touched", "sad", "blow_kiss", "hair_tuck"]);
 /** 화해 장면에 쓸 수 있는 긍정 반응 */
 const POSITIVE: ReadonlySet<AvatarReactionId> = new Set(["smile", "laugh", "shy", "love", "touched", "excited", "comfort", "kiss", "blow_kiss", "hair_tuck"]);
 
