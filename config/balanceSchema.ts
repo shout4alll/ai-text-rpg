@@ -6,7 +6,7 @@ import { z } from "zod";
  */
 const reactionId = z.enum([
   "idle", "smile", "laugh", "nod", "shake", "shy", "love", "pout", "surprised", "sad",
-  "touched", "thinking", "excited", "comfort", "sleepy", "turn_away", "kiss", "blow_kiss", "hair_tuck",
+  "touched", "thinking", "excited", "comfort", "sleepy", "turn_away", "kiss", "blow_kiss", "hair_tuck", "flying_kiss",
 ]);
 const heartId = z.enum([
   "love", "like", "joy", "shy", "pout", "touched", "haha", "hug", "wow", "sad",

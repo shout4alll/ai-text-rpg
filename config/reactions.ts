@@ -100,6 +100,16 @@ const AVATAR_REACTION_DEFS = {
     emotion: "happy",
     animation: "jump",
   },
+  flying_kiss: {
+    label: "날리는 키스",
+    when: "귀엽게 뽀뽀를 날리며 애교 부릴 때(고마울 때·기분 좋을 때·인사할 때). 가끔만",
+    clips: ["flying_kiss", "love", "shy"],
+    motion: "pop",
+    particles: ["😘", "💕"],
+    tint: "rgba(244,63,94,0.12)",
+    emotion: "happy",
+    animation: "jump",
+  },
   hair_tuck: {
     label: "머리 넘김",
     when: "머리카락을 귀 뒤로 넘기며 수줍게 미소 지을 때(설레는 말·칭찬·눈이 마주친 순간)",
