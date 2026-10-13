@@ -49,7 +49,7 @@ ${recent || "(아직 대화가 없다 — 첫 인사·호기심 질문을 제안
         model: r.model,
         system: SYSTEM,
         prompt,
-        maxOutputTokens: 400,
+        maxOutputTokens: 600,
         maxRetries: 0,
         abortSignal: AbortSignal.timeout(12_000),
         ...(r.providerOptions ? { providerOptions: r.providerOptions as never } : {}),
@@ -66,7 +66,17 @@ ${recent || "(아직 대화가 없다 — 첫 인사·호기심 질문을 제안
         /* 아래에서 줄 단위로 */
       }
     }
-    if (!list.length) list = text.split(/\n+/).map((l) => l.replace(/^[\s\-*\d.)"]+|"$/g, "").trim());
+    if (!list.length) {
+      // 깨지거나 잘린 JSON({"s":["..., "...) 은 따옴표 문자열만 뽑는다 (닫히지 않은 마지막 항목은 버림)
+      const body = text.includes("[") ? text.slice(text.indexOf("[") + 1) : "";
+      const quoted = [...body.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((x) => x[1].replace(/\\(["\\])/g, "$1"));
+      list = quoted.length
+        ? quoted
+        : text
+            .split(/\n+/)
+            .map((l) => l.replace(/^[\s\-*\d.)"]+|"$/g, "").trim())
+            .filter((l) => !/[{}\[\]]|^\s*"?s"?\s*:/.test(l));
+    }
     const out = [...new Set(list.map((s) => s.trim().replace(/^["']|["']$/g, "").slice(0, 60)).filter((s) => s.length > 0))].slice(0, 5);
     return NextResponse.json({ suggestions: out, model: ran.resolved.modelId });
   } catch (e) {
