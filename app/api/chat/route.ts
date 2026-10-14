@@ -1,4 +1,4 @@
-import { dropRepeatedBubbles, leadLines, repeatGuardLines } from "@/lib/repeatGuard";
+import { deliverLines, dropRepeatedBubbles, leadLines, repeatGuardLines } from "@/lib/repeatGuard";
 import { worldStatic, worldTurnLines } from "@/lib/personaWorld";
 import { currentNotifyPlan } from "@/lib/push/planStore";
 import { containsPhrase, isOwnerToken, maskPhrase, ownerToken, ownerInstructions, wantsExit } from "@/lib/owner";
@@ -990,7 +990,7 @@ export async function POST(request: Request) {
       usedSafe = !!historySafe && r.modelId !== matureId;
       const hist = usedSafe ? historySafe! : history;
       // 단답 대화 루프 보정은 Grok 이 답할 때만 (다른 모델은 영향 없음)
-      const leadNote = /grok/i.test(r.modelId) ? leadLines(recent, last.content).join("\n") : "";
+      const leadNote = /grok/i.test(r.modelId) ? [...leadLines(recent, last.content), ...deliverLines(recent, last.content)].join("\n") : "";
       const withContext = contextFor(hist, (usedSafe ? ctxSafe : ctxRaw) + (leadNote ? `\n${leadNote}` : ""));
       if (ownerAuth) sentPreview = hist.slice(-12).map((t) => ({ role: t.role, text: t.content.replace(/\s+/g, " ").slice(0, 90) }));
       // Llama·Grok 등 (Bedrock 의 도구 강제 미지원): 구조화 출력 대신 글로 쓴 JSON 을 받아 읽는다
