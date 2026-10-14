@@ -42,7 +42,7 @@ function stylesOf(v: ChatVariant) {
   }
   return {
     scroll:
-      "fade-top-mask max-h-[54dvh] overflow-y-auto px-3 pb-2 pt-16 wide:no-mask wide:max-h-none wide:flex-1 wide:px-6 wide:pt-6",
+      "fade-top-mask max-h-[34dvh] overflow-y-auto px-3 pb-2 pt-10 wide:no-mask wide:max-h-none wide:flex-1 wide:px-6 wide:pt-6",
     ai: "bg-ai/95 text-ai-ink shadow-soft backdrop-blur-md wide:bg-ai wide:backdrop-blur-none",
     user: "bg-me text-me-ink shadow-[0_4px_14px_-8px_rgb(var(--b500)/.7)]",
     aiShape: "rounded-[20px] rounded-tl-md",

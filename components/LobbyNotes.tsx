@@ -103,9 +103,9 @@ export default function LobbyNotes({
 
   if (!note) return null;
   return (
-    <div className="pointer-events-none fixed inset-0 z-[60] flex items-center justify-center p-5" data-lobby-note-wrap>
-      <div className="pointer-events-auto relative w-full max-w-sm rounded-3xl bg-surface/97 p-4 shadow-2xl ring-1 ring-brand-300/60 backdrop-blur" data-lobby-note={note.p.id}>
-        <button type="button" onClick={() => setNote(null)} aria-label="쪽지 닫기" data-lobby-note-close className="absolute right-2.5 top-2.5 flex h-7 w-7 items-center justify-center rounded-full bg-black/[0.06] text-sm text-ink-soft">
+    <div className="pointer-events-none fixed inset-0 z-[60] flex items-center justify-center bg-black/35 p-5" data-lobby-note-wrap>
+      <div className="pointer-events-auto relative w-full max-w-sm rounded-3xl bg-surface p-4 shadow-2xl ring-2 ring-brand-400" data-lobby-note={note.p.id}>
+        <button type="button" onClick={() => setNote(null)} aria-label="쪽지 닫기" data-lobby-note-close className="absolute right-2.5 top-2.5 flex h-8 w-8 items-center justify-center rounded-full bg-black/75 text-base font-bold text-white shadow-md active:scale-95">
           ✕
         </button>
         <div className="flex items-center gap-3 pr-8">

@@ -333,6 +333,14 @@ function toSdkMessages(turns: ModelTurn[], cache = false) {
   });
 }
 
+/** Grok 전용: 습관적인 질문형 끝맺음·반복 응대를 줄인다 */
+const GROK_STYLE_NOTE = `
+
+[말투 보정 — 끝맺음과 반복]
+- 답장을 질문으로 끝내는 습관을 버려라. 대부분의 답장은 평서·감탄·여운·짐작·농담·짧은 반응으로 끝내고, 질문은 정말 궁금할 때만(네댓 번에 한 번 이하).
+- 끝맺음 방식을 섞어라: 단정("~했겠다"), 혼잣말, 감탄, 말줄임("…"), 짧은 제안, 장난. 매번 같은 어미·같은 문형으로 끝내지 마라.
+- 유저가 같은 요청을 되풀이해도 같은 문장·같은 구조로 반응하지 마라. 이전 답장과 단어·순서·길이·톤을 다르게 하고, 상황이 진전되거나 방향이 바뀌게 한 걸음 나아가라.`;
+
 function extractRecentOpenings(turns: Turn[]): string[] {
   return turns
     .filter((m) => m.role === "assistant" && m.kind === "text")
@@ -974,7 +982,7 @@ export async function POST(request: Request) {
       model: r.model,
       instructions: {
         role: "system",
-        content: (owner ? ownerInstructions(persona, { rules: typeof rulesOv?.ownerRules === "string" ? rulesOv.ownerRules : persona.cheatRules, absolute: Array.isArray(rulesOv?.absolute) ? (rulesOv.absolute as string[]) : undefined, extra: personaExtra }) : buildStaticInstructions(persona, allureEff, { extra: personaExtra, rules: rulesOv })) + heatNote + (textJson ? TEXT_JSON_GUIDE : ""),
+        content: (owner ? ownerInstructions(persona, { rules: typeof rulesOv?.ownerRules === "string" ? rulesOv.ownerRules : persona.cheatRules, absolute: Array.isArray(rulesOv?.absolute) ? (rulesOv.absolute as string[]) : undefined, extra: personaExtra }) : buildStaticInstructions(persona, allureEff, { extra: personaExtra, rules: rulesOv })) + heatNote + (/grok/i.test(r.modelId) ? GROK_STYLE_NOTE : "") + (textJson ? TEXT_JSON_GUIDE : ""),
         // Bedrock(Claude): 여기까지를 캐시 (Gemini 는 같은 앞부분을 자동으로 캐시)
         // (Claude·Nova 만 — Llama·Grok 등은 cachePoint 를 보내면 오류)
         ...(r.provider !== "bedrock" || supportsBedrockCache(r.modelId) ? { providerOptions: { bedrock: { cachePoint: { type: "default" as const } } } } : {}),
@@ -1022,7 +1030,12 @@ export async function POST(request: Request) {
     // 🛠 모델을 직접 지정했으면 그 모델만 쓴다 (실패해도 다른 모델로 바꾸지 않고 오류를 그대로 보여 준다)
     const forced = ownerOpts?.model ? resolveOverrideModel(ownerOpts.model.provider, ownerOpts.model.modelId) : null;
     // 대화 내용에 따라: 매혹 모드·설렘 분위기 → 성인 모델(Grok) / 꼬인 대화 → Opus / 분석 등급 L·M·P·T / 규칙 라우팅
-    let tiers: string[] = toMature ? ["mature", "chat"] : deepTurn ? ["deep", "plus", "chat"] : plan ? plan.tiers : intent ? intent.category.tiers : !owner && route.tier === "light" && (!allureMode || AR.lightInAllure) ? ["light", "cheap", "chat"] : ["chat"];
+    // 🔞 Grok 4.3 은 유저가 같은 걸 거듭 조르면 같은 문장·같은 형식으로 반복 대응하기 쉽다 → 그 턴은 상위 모델이 대신 답한다 (유저가 계속 조르는 동안 1~2번)
+    const topOn = !!settingValue("matureTopModel") && settingValue("matureTopModel").toLowerCase() !== "off";
+    const userTexts = recent.filter((t) => t.role === "user" && (t.kind ?? "text") === "text").map((t) => t.content.replace(/[s.,!?~ㅋㅎ]+/g, ""));
+    const userRepeats = userTexts.length >= 2 && userTexts[userTexts.length - 1].length >= 2 && userTexts[userTexts.length - 1] === userTexts[userTexts.length - 2];
+    const matureTop = toMature && topOn && !ownerOpts?.model && (continuity === "insist" || userRepeats);
+    let tiers: string[] = toMature ? (matureTop ? ["matureTop", "mature", "chat"] : ["mature", "chat"]) : deepTurn ? ["deep", "plus", "chat"] : plan ? plan.tiers : intent ? intent.category.tiers : !owner && route.tier === "light" && (!allureMode || AR.lightInAllure) ? ["light", "cheap", "chat"] : ["chat"];
     // 🧠 Opus 하루 한도 (손님 1명당 balance.json routing.opusDailyLimit) — 넘으면 Sonnet 5.5 → Sonnet 5
     let opusCapped = false;
     if (!forced && !owner && tiers.includes("deep")) {
@@ -1044,7 +1057,7 @@ export async function POST(request: Request) {
           { extras: settingValue("serviceFallback") === "off" ? [] : resolveFallbacks() }
         );
     resolved = ran.resolved;
-    const pathLabel = (opusCapped ? "Opus한도→" : "") + (forced ? "forced" : toMature ? "mature" : deepTurn ? "deep" : plan ? `${plan.grade}${plan.len ? `·${plan.len}` : ""}(${plan.by}${plan.why ? `·${plan.why}` : ""})` : intent ? `${intent.category.id}(${intent.by})` : route.tier);
+    const pathLabel = (opusCapped ? "Opus한도→" : "") + (forced ? "forced" : toMature ? (matureTop ? "mature↑" : "mature") : deepTurn ? "deep" : plan ? `${plan.grade}${plan.len ? `·${plan.len}` : ""}(${plan.by}${plan.why ? `·${plan.why}` : ""})` : intent ? `${intent.category.id}(${intent.by})` : route.tier);
     if (ctxRow) {
       ctxRow.route = pathLabel;
       ctxRow.model = resolved.modelId;

@@ -374,8 +374,8 @@ export function describeModel(): {
  * 환경변수 > 설정 파일 순으로 프로바이더/모델을 결정해 모델 인스턴스를 만든다.
  * @param purpose "cheap" 이면 보조 작업용 저렴한 모델 (AI_CHEAP_MODEL > cheapModel)
  */
-export type ModelTier = "chat" | "light" | "cheap" | "mature" | "knowledge" | "router" | "deep" | "plus" | "analyzer";
-export const MODEL_TIERS: readonly ModelTier[] = ["chat", "light", "cheap", "mature", "knowledge", "router", "deep", "plus", "analyzer"];
+export type ModelTier = "chat" | "light" | "cheap" | "mature" | "matureTop" | "knowledge" | "router" | "deep" | "plus" | "analyzer";
+export const MODEL_TIERS: readonly ModelTier[] = ["chat", "light", "cheap", "mature", "matureTop", "knowledge", "router", "deep", "plus", "analyzer"];
 
 /** 모델 이름 앞에 "프로바이더:" 를 붙이면 그 프로바이더로 호출한다. 예) AI_MODEL_MATURE=mantle:xai.grok-4.3 */
 export function splitProviderPrefix(spec: string): { provider?: ProviderId; modelId: string } {
@@ -438,6 +438,15 @@ export function resolveModel(purpose: ModelTier = "chat"): ResolvedModel {
       const sp = splitProviderPrefix(m);
       return build(sp.provider ?? requested, sp.modelId);
     }
+  }
+  // 🔞 matureTop: Grok 4.3 이 반복 대응하기 쉬운 상황에서 한두 번 대신 답하는 상위 모델 (AI_MODEL_MATURE_TOP · off 면 성인 모델)
+  if (purpose === "matureTop") {
+    const t = settingValue("matureTopModel");
+    if (t && t.toLowerCase() !== "off") {
+      const sp = splitProviderPrefix(t);
+      return build(sp.provider ?? requested, sp.modelId);
+    }
+    return resolveModel("mature");
   }
   // 📚 knowledge: 과학·취미·정보 질문 (AI_MODEL_KNOWLEDGE · 없으면 Perplexity → Gemini → 메인 순)
   if (purpose === "knowledge") {

@@ -16,6 +16,7 @@ export const PRICES: { re: RegExp; p: Price }[] = [
   { re: /claude-sonnet-5/, p: { label: "Sonnet 5", in: 2, out: 10, cacheRead: 0.2 } },
   { re: /claude-opus-5-5/, p: { label: "Opus 5.5", in: 4, out: 20, cacheRead: 0.2 } },
   { re: /claude-opus-5/, p: { label: "Opus 5", in: 5, out: 25, cacheRead: 0.5 } },
+  { re: /grok-4\.7/, p: { label: "Grok 4.7", in: 2, out: 6, cacheRead: 0.5 } },
   { re: /grok-4\.3/, p: { label: "Grok 4.3", in: 1.25, out: 2.5, cacheRead: 0.2 } },
   { re: /grok/, p: { label: "Grok", in: 2, out: 10, cacheRead: 0.5 } },
   { re: /llama4-maverick/, p: { label: "Llama 4 Maverick", in: 0.17, out: 0.85, cacheRead: 0.17 } },

@@ -53,6 +53,11 @@ export const SERVER_SETTINGS = [
     desc: "비우면 메인 모델. 매혹·설렘 모드를 켠 대화방의 텍스트 톡에만 쓰인다. 다른 프로바이더는 앞에 붙임: mantle:xai.grok-4.3(권장·빠름) · global.xai.grok-4.7 · google:gemini-3.8-flash",
   },
   {
+    key: "matureTopModel", label: "성인 모델 상위 (Grok 반복 대응용)", group: "모델", type: "string",
+    default: "global.xai.grok-4.7", env: "AI_MODEL_MATURE_TOP", usedIn: "app/api/chat/route.ts · config/ai.ts resolveModel('matureTop')",
+    desc: "Grok 4.3 이 같은 말·같은 형식으로 반복 대응하기 쉬운 상황(유저가 같은 걸 거듭 요청·재촉)이면 그 턴은 이 상위 모델로 1~2번 답한다. off 면 끔(항상 성인 모델 한 가지)",
+  },
+  {
     key: "smartRouting", label: "3단계 라우팅 (규칙 → 의도 분류 → 목적지 모델)", group: "모델", type: "enum", options: ["on", "off"],
     default: "on", env: "SMART_ROUTING", usedIn: "lib/smartRouter.ts · config/routing.ts",
     desc: "on=규칙·키워드로 먼저 거르고, 남은 말은 초경량 모델이 일상/감정/지식으로 분류해 알맞은 모델에 보냄 / off=규칙 라우팅만(가벼운 대화만 가벼운 모델)",
