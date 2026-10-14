@@ -32,13 +32,13 @@ const EXPLAIN_RE = /추천|알려|어떻게|왜|설명|방법|무슨\s*뜻|이�
 const EMOTION_RE = new RegExp(EMOTION_PATTERN);
 
 /** 이번 턴에 어울리는 모드별 가중치 배수 */
-function tilt(userText: string, hint?: ReplyLen): Record<LengthModeId, number> {
+function tilt(userText: string, hint?: ReplyLen, ackLead = false): Record<LengthModeId, number> {
   const len = userText.replace(/\s+/g, "").length;
   const w: Record<LengthModeId, number> = { tiny: 1, short: 1, two: 1, burst: 1, long: 0, story: 0 };
   const needLong = hint === "L" || len >= 50 || EXPLAIN_RE.test(userText) || (len >= 15 && EMOTION_RE.test(userText));
 
-  // 유저가 "그래·알았어·ㅇㅇ" 같은 단답으로 받았을 때 같이 한마디로 받으면 대화가 죽는다 → 네가 이야기를 꺼낼 분량(2개·길게)을 준다
-  if (isAck(userText)) return { tiny: 0.1, short: 0.7, two: 1.5, burst: 0.8, long: 1.1, story: 0.3 };
+  // (Grok 전용 ackLead) 유저가 "그래·알았어·ㅇㅇ" 같은 단답으로 받았을 때 같이 한마디로 받으면 대화가 죽는다 → 네가 이야기를 꺼낼 분량(2개·길게)을 준다
+  if (ackLead && isAck(userText)) return { tiny: 0.1, short: 0.7, two: 1.5, burst: 0.8, long: 1.1, story: 0.3 };
   if (hint === "S") return { tiny: 1.6, short: 1.3, two: 0.7, burst: 0.3, long: 0, story: 0 };
   if (len <= 4) {
     // "ㅇㅇ", "ㅋㅋ", "응" 같은 짧은 말
@@ -56,8 +56,8 @@ function tilt(userText: string, hint?: ReplyLen): Record<LengthModeId, number> {
 }
 
 /** 이번 턴 분량 지침 한 줄 (프롬프트에 그대로 넣는다). hint = 분석 모델이 판단한 분량 */
-export function pickLengthGuide(userText: string, hint?: ReplyLen, rng: () => number = Math.random): { id: LengthModeId; line: string } {
-  const w = tilt(userText, hint);
+export function pickLengthGuide(userText: string, hint?: ReplyLen, rng: () => number = Math.random, ackLead = false): { id: LengthModeId; line: string } {
+  const w = tilt(userText, hint, ackLead);
   const total = MODES.reduce((s, m) => s + m.weight * w[m.id], 0);
   let r = rng() * total;
   let chosen = MODES[1];

@@ -1,4 +1,4 @@
-import { dropRepeatedBubbles, repeatGuardLines } from "@/lib/repeatGuard";
+import { dropRepeatedBubbles, leadLines, repeatGuardLines } from "@/lib/repeatGuard";
 import { worldStatic, worldTurnLines } from "@/lib/personaWorld";
 import { currentNotifyPlan } from "@/lib/push/planStore";
 import { containsPhrase, isOwnerToken, maskPhrase, ownerToken, ownerInstructions, wantsExit } from "@/lib/owner";
@@ -393,6 +393,8 @@ interface InstructionContext {
   continuity?: string | null;
   /** 분석 모델이 판단한 답장 분량 (S·N·L) */
   lenHint?: "S" | "N" | "L";
+  /** 이번 턴이 Grok(성인 모델) 경로 — 단답 대응 분량을 쓴다 */
+  grokLead?: boolean;
   /** 유저가 거듭한 질문·요청 (continuity === "insist" 일 때) */
   asks?: string[];
 }
@@ -658,7 +660,7 @@ function buildTurnContext(c: InstructionContext): string {
     ...(c.continuity ? [] : worldTurnLines(persona, persona.timezone)),
     c.sentAlbumIds.length ? `- 이미 보낸 앨범: ${c.sentAlbumIds.slice(-20).join(", ")}` : null,
     c.memory.length ? `- 기억(예전 대화·보이스톡에서): ${c.memory.map((m) => `「${m}」`).join(" ")}` : null,
-    c.lastKind === "text" || c.lastKind === "user_media" ? pickLengthGuide(c.userText, c.lenHint).line : null,
+    c.lastKind === "text" || c.lastKind === "user_media" ? pickLengthGuide(c.userText, c.lenHint, undefined, c.grokLead).line : null,
   ].filter(Boolean);
 
   const turn =
@@ -926,6 +928,7 @@ export async function POST(request: Request) {
       recentTurns: recent,
       continuity,
       lenHint: plan?.len,
+      grokLead: toMature,
       asks: continuity === "insist" ? insistedAsks(last.content, recent) : undefined,
       album,
       sentAlbumIds: parsed.data.sentAlbumIds ?? [],
@@ -966,7 +969,9 @@ export async function POST(request: Request) {
       // 성인 전용 모델이 아닌 모델(메인·가벼운·대체)에는 정화한 대화를 보낸다
       usedSafe = !!historySafe && r.modelId !== matureId;
       const hist = usedSafe ? historySafe! : history;
-      const withContext = contextFor(hist, usedSafe ? ctxSafe : ctxRaw);
+      // 단답 대화 루프 보정은 Grok 이 답할 때만 (다른 모델은 영향 없음)
+      const leadNote = /grok/i.test(r.modelId) ? leadLines(recent, last.content).join("\n") : "";
+      const withContext = contextFor(hist, (usedSafe ? ctxSafe : ctxRaw) + (leadNote ? `\n${leadNote}` : ""));
       if (ownerAuth) sentPreview = hist.slice(-12).map((t) => ({ role: t.role, text: t.content.replace(/\s+/g, " ").slice(0, 90) }));
       // Llama·Grok 등 (Bedrock 의 도구 강제 미지원): 구조화 출력 대신 글로 쓴 JSON 을 받아 읽는다
       const textJson = usesTextJson(r.provider, r.modelId);

@@ -199,7 +199,6 @@ export function repeatGuardLines(turns: TextTurn[], tz: string, userText: string
       `- 이번 턴에 굳이 네 근황을 꺼낸다면 이런 결에서 골라라(전부 선택 사항, 안 꺼내도 된다. 네 직업·성격·말투에 맞게 구체적으로 바꿔라): ${seeds.map((s) => `「${s}」`).join(" ")}. 유저의 말에 반응하는 게 먼저고, 근황은 두 번에 한 번 이하로만 꺼내라.`
     );
   }
-  lines.push(...leadLines(turns, userText));
   lines.push(...questionGuardLines(turns));
   return lines;
 }
@@ -264,7 +263,7 @@ export const ACK_RE = /^(응|웅|ㅇㅇ|ㅇㅋ|오키|ok|okay|네|넵|넹|예|�
 export const isAck = (t: string) => ACK_RE.test(t.trim());
 
 /**
- * 유저가 단답만 이어 가면(그래·알았어·ㅇㅇ) 같이 단답으로 받아 대화가 죽는다 → 이번 턴은 네가 대화를 이끌라고 알린다.
+ * (Grok 전용 — route.ts 가 Grok 이 답할 때만 붙인다) 유저가 단답만 이어 가면(그래·알았어·ㅇㅇ) 같이 단답으로 받아 대화가 죽는다 → 이번 턴은 네가 대화를 이끌라고 알린다.
  * (질문으로 떠넘기지 않고, 평서문으로 새 이야기·생각·상황을 던지게 한다)
  */
 export function leadLines(turns: TextTurn[], userText: string): string[] {
