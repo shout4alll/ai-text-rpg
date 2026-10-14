@@ -21,6 +21,8 @@ export interface ChatResponse {
   media: MediaDirective | null;
   /** 토라져 있을 때: 이번 말이 진심으로 달래 줬는지 (AI 판단) */
   soothed: boolean;
+  /** 인물이 자리를 비운다고 했다 — 앱이 이 시간 동안 다음 답장을 미룬다 */
+  away?: { minutes: number; reason: string };
   /** 유저가 보낸 사진·영상에서 AI가 본 것 (기억용 한 줄) */
   seen: string;
   /** 주인 모드 인증 토큰 (인증된 턴에만) / 모드 해제 */

@@ -308,6 +308,23 @@ function toTurns(msgs: ChatMessage[]): Turn[] {
   return turns.slice(start);
 }
 
+/* ── ⏳ 자리 비움: 인물이 "잠깐 ~하고 올게"라고 하면 그 시간 동안 다음 답장을 미룬다 ─────────────── */
+interface AwayState {
+  until: number;
+  minutes: number;
+  reason: string;
+}
+const awayKey = (pid: string) => `ai-rpg.away.${pid}`;
+function readAway(pid: string): AwayState | null {
+  try {
+    const v = JSON.parse(readStorage(awayKey(pid)) ?? "null") as AwayState | null;
+    return v && typeof v.until === "number" ? v : null;
+  } catch {
+    return null;
+  }
+}
+const writeAway = (pid: string, a: AwayState | null) => void writeStorage(awayKey(pid), a ? JSON.stringify(a) : null);
+
 function userTimeZone(): string | undefined {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -1116,12 +1133,41 @@ export default function ChatApp({
   const userProfileRef = useRef<UserProfile | null>(null);
   userProfileRef.current = userProfile;
 
+  /** 최신 대화·답장 함수 (자리 비움 타이머가 쓴다) */
+  const messagesRef = useRef<ChatMessage[]>([]);
+  messagesRef.current = messages;
+  const requestReplyRef = useRef<((msgs: ChatMessage[], kind: Turn["kind"], tapbackTargetId: number | null) => Promise<void>) | null>(null);
+  const awayTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** ⏳ 자리 비움이 끝나는 시각에 다시 요청한다 (그 사이 유저가 보낸 말이 있으면 답하고, 없으면 돌아왔다고 한마디) */
+  const scheduleAwayReturn = (pid: string, a: AwayState) => {
+    if (awayTimer.current) clearTimeout(awayTimer.current);
+    awayTimer.current = setTimeout(() => {
+      awayTimer.current = null;
+      if (personaIdRef.current !== pid) return; // 다른 방이면 다음에 이 방을 열 때 처리
+      const msgs = messagesRef.current;
+      const pending = toTurns(msgs).slice(-1)[0]?.role === "user";
+      void requestReplyRef.current?.(msgs, pending ? "text" : "return", null);
+    }, Math.max(500, a.until - Date.now() + 300));
+  };
+
   const requestReply = useCallback(
     async (msgs: ChatMessage[], kind: Turn["kind"], tapbackTargetId: number | null, heart?: HeartReactionId, nudge?: NudgeKind, nudgeTopic?: string) => {
       if (!personaId) return;
       const pid = personaId;
       const session = sessionRef.current;
       const same = () => session === sessionRef.current;
+
+      // ⏳ 인물이 자리를 비운 동안엔 답장을 미룬다 (유저 말은 그대로 쌓이고, 돌아오면 한꺼번에 답한다)
+      let awayReturn: { minutes: number; reason: string } | undefined;
+      const away = readAway(pid);
+      if (away) {
+        if (Date.now() < away.until) {
+          scheduleAwayReturn(pid, away);
+          return;
+        }
+        awayReturn = { minutes: away.minutes, reason: away.reason };
+        writeAway(pid, null);
+      }
 
       const turns = toTurns(msgs);
       if (kind === "return") turns.push({ role: "user", kind: "return", content: "", at: Date.now() });
@@ -1154,6 +1200,7 @@ export default function ChatApp({
           ...(kind === "text" || kind === "reaction" ? (() => { const t = takeTouches(); return t ? { touches: t } : {}; })() : {}),
           ...(kind === "gift" && giftRef.current ? { gift: giftRef.current } : {}),
           ...(kind === "return" && nudge ? { nudge, ...(nudgeTopic ? { nudgeTopic } : {}) } : {}),
+          ...(awayReturn ? { awayReturn } : {}),
           ...(readOwnerToken() ? { ownerToken: readOwnerToken(), ownerOpts: buildOwnerOpts(pid) } : {}),
         }),
       }).then(async (res) => {
@@ -1330,6 +1377,14 @@ export default function ChatApp({
           setTyping(false);
         }
 
+        // ⏳ 자리 비움: 이 시간 동안 다음 답장을 미룬다
+        if (data.away && same()) {
+          const st: AwayState = { until: Date.now() + data.away.minutes * 60_000, minutes: data.away.minutes, reason: data.away.reason };
+          writeAway(pid, st);
+          addNotice(`⏳ ${persona?.name ?? "상대"} 님이 잠시 자리를 비웠어요 (약 ${st.minutes}분${st.reason ? ` · ${st.reason}` : ""}). 돌아오면 답장해요`);
+          scheduleAwayReturn(pid, st);
+        }
+
         // 사진·영상: 앨범이면 "찍어 둔 거 보내 줄게요" 하고 바로 전송, 새 사진이면 유료 안내 모달
         const media = data.media;
         if (media?.action === "album") {
@@ -1363,6 +1418,7 @@ export default function ChatApp({
     },
     [personaId, playReaction, persistToRoom, allureActive, persona, setSulk, applyAffection]
   );
+  requestReplyRef.current = requestReply;
 
   // 대화방을 연 직후 자동 동작 (한 번만)
   useEffect(() => {

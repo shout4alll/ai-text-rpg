@@ -134,6 +134,8 @@ const requestSchema = z.object({
   nudge: z.enum(["message", "photo", "video"]).optional(),
   /** 선톡 일과표 슬롯 id (morning·lunch·goodnight …). 문구는 서버(CMS) 일과표에서 찾는다 */
   nudgeTopic: z.string().regex(/^[a-z0-9_]{1,24}$/).optional(),
+  /** 자리를 비웠던 인물이 돌아왔다 (앱이 약속한 시간이 지나 다시 요청할 때) */
+  awayReturn: z.object({ minutes: z.number().min(0).max(60), reason: z.string().max(40).optional() }).optional(),
   /** 💌 메인(대화 목록)에 머무는 유저에게 건네는 쪽지 (nudge=message 와 함께) */
   lobbyNote: z.boolean().optional(),
   /** 지금 삐져 있는 상태 (lib/sulk.ts) */
@@ -190,6 +192,11 @@ const replySchema = z.object({
     .boolean()
     .catch(false)
     .describe("네가 토라져 있을 때만: 유저의 이번 말이 진심으로 너를 달래 줬으면 true. 평소엔 false."),
+  away_minutes: z
+    .number()
+    .catch(0)
+    .describe("이번 답장에서 네가 지금 바로 대화할 수 없는 일(화장실·샤워·회의·통화·이동·식사 준비 등)을 하러 간다고 말했을 때만: 그 일이 끝나기까지 걸릴 현실적인 시간(분, 1~15). 그동안 앱이 다음 답장을 미룬다. 대부분은 0."),
+  away_reason: z.string().catch("").describe("away_minutes 가 0 이 아닐 때: 무엇을 하러 가는지 짧게(예: 화장실, 회의, 샤워). 아니면 빈 문자열"),
   seen: z
     .string()
     .catch("")
@@ -201,11 +208,12 @@ const TEXT_JSON_GUIDE = `
 
 [출력 형식 — 반드시 지킬 것]
 다른 말 없이 아래 형태의 JSON 객체 하나만 출력한다. 코드 블록(\`\`\`)·설명·생각 과정은 쓰지 않는다.
-{"messages":["말풍선1","말풍선2"],"reaction":"smile","tapback":"none","affection_delta":0,"media_action":"none","album_id":"","custom_request":"","custom_kind":"photo","soothed":false,"seen":""}
+{"messages":["말풍선1","말풍선2"],"reaction":"smile","tapback":"none","affection_delta":0,"media_action":"none","album_id":"","custom_request":"","custom_kind":"photo","soothed":false,"seen":"","away_minutes":0,"away_reason":""}
 - messages: 메신저 말풍선 0~5개 (한국어)
 - reaction: ${AVATAR_REACTION_IDS.join(" | ")} 중 하나
 - tapback: none | ${HEART_REACTION_IDS.join(" | ")} 중 하나 (대부분 none)
 - affection_delta: -5 ~ 5 정수 / media_action: none | album | custom
+- away_minutes: 지금 바로 대화할 수 없는 일(화장실·샤워·회의·통화·이동 등)을 하러 간다고 말했을 때만 1~15(분), 평소 0 / away_reason: 그 일(짧게), 아니면 빈 문자열
 - album_id, custom_request, seen: 해당 없으면 빈 문자열 / custom_kind: photo | video (media_action=custom 일 때만 video 가능) / soothed: true 또는 false`;
 
 type Turn = z.infer<typeof turnSchema>;
@@ -414,6 +422,7 @@ interface InstructionContext {
   lenHint?: "S" | "N" | "L";
   /** 이번 턴이 Grok(성인 모델) 경로 — 단답 대응 분량을 쓴다 */
   grokLead?: boolean;
+  awayReturn?: { minutes: number; reason?: string };
   /** 유저가 거듭한 질문·요청 (continuity === "insist" 일 때) */
   asks?: string[];
 }
@@ -561,6 +570,11 @@ ${traitsSection(persona)}${worldStatic(persona)}
 - 네 일상·취미·소지품은 대화 흐름에 필요할 때만 꺼내라. 지금 하던 이야기와 상관없는 새 활동(악기 연습, 간식 구입, 집 도착 같은 것)을 갑자기 끼워 넣어 장면을 점프시키지 마라.
 - 분위기·수위·관계의 진전도 앞 대화의 속도를 따라 한 걸음씩만 나아가라. 유저의 반응이 없거나 짧은데 갑자기 급진전시키지 마라.
 
+[시간의 흐름 — 행동에는 시간이 걸린다]
+- 메신저 대화에서 답장은 몇 초 간격이다. 화장실·샤워·식사·이동·회의·통화·장보기처럼 시간이 걸리는 일은 한 번의 답장 사이에 끝낼 수 없다. "갔다 왔어", "도착했어", "다 먹었어"를 방금 한 말 바로 다음 턴에 하지 마라.
+- 지금 바로 대화할 수 없는 일(화장실·샤워·회의·통화·이동·운전 등)을 하러 갈 때는 "잠깐 ~하고 올게"라고 말하고 away_minutes 에 현실적인 시간(1~15분)과 away_reason 을 채워라. 그러면 앱이 그 시간 동안 답장을 미룬다. 그동안 유저가 보낸 말에는 돌아와서 답한다. 돌아온 척하는 다음 말은 유저가 기다린 뒤에만 나온다.
+- 자리를 비우는 일은 정말 그럴 법할 때만, 가끔. 대화가 한창 재밌을 때 자꾸 비우지 마라.
+
 [반복하지 않기 — 아주 중요]
 - 위 '일상'·'배경'·'성격'은 네 설정이지 대사가 아니다. 설정을 읊거나 매번 언급하지 마라(예: 와인·독서·산책·등산·직업 이야기를 대화마다 꺼내기). 한 대화에서 같은 행동·장소·음식·취미를 두 번 이상 "하고 있다/했다"고 말하지 마라.
 - 네 근황은 유저가 물었거나 대화 흐름이 맞을 때만, 그리고 매번 다른 소재로 말해라. 대화의 중심은 유저와 지금 하는 이야기다.
@@ -679,6 +693,7 @@ function buildTurnContext(c: InstructionContext): string {
     "- 이 대화의 앞부분(위 메시지들)을 다시 읽고 확인해라: 유저가 말한 일정·약속·고민·질문 중 아직 매듭짓지 않은 것이 있으면 이번 답에서 자연스럽게 이어 가라(예: 면접·시험·병원·약속의 결과 묻기, 아까 하던 이야기 다시 꺼내기). 이미 물어본 걸 또 묻지 마라. 유저가 방금 한 질문에는 먼저 답해라.",
     ...unlockedStory(c),
     userLine(c.user),
+    c.awayReturn ? `- ⏱ 네가 ${c.awayReturn.reason ? `${c.awayReturn.reason} 때문에 ` : ""}약 ${Math.max(1, Math.round(c.awayReturn.minutes))}분 자리를 비웠다가 방금 돌아왔다. 그 시간 동안 유저가 보낸 말이 있으면 이제 답하고("다녀왔어", "늦었지" 정도로 짧게 한마디 곁들여), 없으면 돌아왔다고 가볍게 한마디 한 뒤 하던 이야기로 이어라. 자리를 비운 일(예: ${c.awayReturn.reason || "볼일"})이 있었음을 기억해라.` : null,
     genderFacts(persona, c.user).line,
     c.recentTurns ? registerLine(c.recentTurns) : null,
     c.sinceLast ? `- 직전 대화 이후 ${c.sinceLast}이 지났다. 그동안 각자의 시간이 흘렀다는 걸 자연스럽게 반영해라.` : null,
@@ -711,6 +726,8 @@ function buildTurnContext(c: InstructionContext): string {
         ? `- 이번 턴: 유저가 너를 달래려고 선물을 줬고, 서운함이 다 풀렸다. 고마움과 풀린 마음을 네 말투로 표현해라(1~2개 말풍선). reaction 은 love 나 shy 같은 기쁜 표정.`
         : c.lastKind === "reaction"
           ? `- 이번 턴: 유저가 말 없이 마음 리액션을 보냈다. 관계 단계와 기분에 맞게 반응해라. 말 없이 표정만 지어도 되고(messages 빈 배열), 짧은 한두 마디로 답해도 된다.`
+          : c.lastKind === "return" && c.awayReturn
+            ? `- 이번 턴: 네가 자리를 비웠다가 돌아왔다. 유저가 먼저 말한 게 아니라 네가 먼저 돌아왔다고 한마디 건넨다(말풍선 1~2개, 짧게). 하던 이야기가 있었다면 자연스럽게 이어라.`
           : c.lastKind === "return" && c.nudge
             ? nudgeTurn(c)
             : c.lastKind === "return"
@@ -848,7 +865,7 @@ export async function POST(request: Request) {
         features: dep.features,
       })
     : null;
-  const category = (dep && dep.level !== "low") || parsed.data.sulk || ownerAuth || sticky || moodHit || allureHot || personaMature ? null : poolCategory(last.kind, last.content);
+  const category = (dep && dep.level !== "low") || parsed.data.sulk || !!parsed.data.awayReturn || ownerAuth || sticky || moodHit || allureHot || personaMature ? null : poolCategory(last.kind, last.content);
   const pKey = category ? poolKey(persona.id, affectionStageIndex(affection, persona.relationshipType), category, allureEff) : "";
   if (category) {
     const recentAi = messages.filter((m) => m.role === "assistant" && m.kind === "text").slice(-10).flatMap((m) => m.content.split(/\n+/));
@@ -967,6 +984,7 @@ export async function POST(request: Request) {
       recentTurns: recent,
       continuity,
       lenHint: plan?.len,
+      awayReturn: parsed.data.awayReturn,
       grokLead: toMature,
       asks: continuity === "insist" ? insistedAsks(last.content, recent) : undefined,
       album,
@@ -1214,6 +1232,7 @@ export async function POST(request: Request) {
       tapback: last.kind === "text" && output.tapback !== "none" ? output.tapback : null,
       affectionDelta: owner ? 0 : delta,
       soothed: !!parsed.data.sulk && output.soothed === true,
+      ...(!owner && output.away_minutes > 0 ? { away: { minutes: Math.min(15, Math.max(1, Math.round(output.away_minutes))), reason: (output.away_reason ?? "").trim().slice(0, 20) } } : {}),
       seen: last.kind === "user_media" ? output.seen.trim().slice(0, 200) : "",
       emotion: def.emotion,
       animation: def.animation,
