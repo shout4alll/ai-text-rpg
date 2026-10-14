@@ -49,6 +49,8 @@ export interface AvatarReactionDef {
   when: string;
   /** 찾아볼 영상 이름 순서 (첫 번째는 보통 리액션 id 자신) */
   clips: string[];
+  /** 같은 감정의 다른 영상 — 이 인물에게 있으면 기본 영상과 번갈아 재생한다 (예: 설렘 → 날리는 키스) */
+  variants?: string[];
   /** 영상이 없을 때의 화면 움직임 */
   motion: Motion;
   /** 화면에 떠오르는 효과 */
@@ -70,7 +72,8 @@ const AVATAR_REACTION_DEFS = {
   nod: { label: "끄덕", when: "공감·동의·맞장구", clips: ["nod"], motion: "nod", emotion: "neutral", animation: "nod" },
   shake: { label: "도리도리", when: "아니라고 할 때, 장난스러운 부정", clips: ["shake"], motion: "shake", emotion: "neutral", animation: "shake" },
   shy: { label: "쑥스러움", when: "칭찬이나 설레는 말에 수줍을 때", clips: ["shy", "smile", "happy"], motion: "tilt", particles: ["💗"], tint: "rgba(244,114,182,0.16)", emotion: "happy", animation: "nod" },
-  love: { label: "설렘", when: "마음이 두근거릴 때, 애정을 느낄 때", clips: ["love", "shy", "happy"], motion: "pop", particles: ["❤️", "💕"], tint: "rgba(244,63,94,0.14)", emotion: "happy", animation: "jump" },
+  love: { label: "설렘", when: "마음이 두근거릴 때, 애정을 느낄 때", clips: ["love", "shy", "happy"],
+    variants: ["flying_kiss"], motion: "pop", particles: ["❤️", "💕"], tint: "rgba(244,63,94,0.14)", emotion: "happy", animation: "jump" },
   pout: { label: "삐짐", when: "살짝 서운하거나 귀엽게 토라질 때", clips: ["pout", "angry", "shake"], motion: "sway", particles: ["💢"], emotion: "angry", animation: "shake" },
   surprised: { label: "놀람", when: "깜짝 놀랐을 때", clips: ["surprised"], motion: "pop", particles: ["❗"], emotion: "surprised", animation: "jump" },
   sad: { label: "속상함", when: "속상하거나 안타까울 때", clips: ["sad", "shake"], motion: "sink", particles: ["💧"], tint: "rgba(30,41,59,0.30)", emotion: "sad", animation: "shake" },

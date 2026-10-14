@@ -114,9 +114,12 @@ export function createReactionDirector() {
   /** 모르는 리액션 id(서버가 앱보다 새 버전 등)는 미소로 대체 */
   const defOf = (id: AvatarReactionId) => AVATAR_REACTIONS[id] ?? AVATAR_REACTIONS.smile;
   /** 영상 cue (실제 영상이 없으면 움직임으로 자동 대체되므로 그대로 넘겨도 안전) */
-  const videoCue = (id: AvatarReactionId): ReactionCue => {
+  const videoCue = (id: AvatarReactionId, ctx?: DirectorContext): ReactionCue => {
     const d = defOf(id);
-    return { clips: d.clips, motion: d.motion, tint: d.tint, hold: d.hold };
+    // 같은 감정의 다른 영상(variants)이 이 인물에게 있으면 절반쯤은 그걸로
+    const vs = ctx ? (d.variants ?? []).filter((v) => ctx.hasClip(v)) : [];
+    const clips = vs.length && Math.random() < 0.5 ? [vs[Math.floor(Math.random() * vs.length)], ...d.clips] : d.clips;
+    return { clips, motion: d.motion, tint: d.tint, hold: d.hold };
   };
   /** 뽀뽀 영상: 가까이 다가오는 키스(kiss_close)가 있으면 손 키스와 번갈아 쓴다 */
   const kissCue = (ctx: DirectorContext): ReactionCue => {
@@ -183,7 +186,7 @@ export function createReactionDirector() {
     const d = defOf(id);
     markVideo(firstClip(d.clips, ctx), "ai");
     if (id === "kiss") lastKiss = now();
-    return { reaction: id, cue: id === "kiss" ? kissCue(ctx) : videoCue(id), particles: d.particles, video: true, ...extra };
+    return { reaction: id, cue: id === "kiss" ? kissCue(ctx) : videoCue(id, ctx), particles: d.particles, video: true, ...extra };
   };
 
   /** 보상 리액션 (kiss 는 조건이 맞을 때만, 아니면 설렘/잠금 안내) */
@@ -270,7 +273,7 @@ export function createReactionDirector() {
 
     if (canVideo) {
       markVideo(clip, "ai");
-      return { reaction: id, cue: videoCue(id), particles: def.particles, video: true };
+      return { reaction: id, cue: videoCue(id, ctx), particles: def.particles, video: true };
     }
     return { reaction: id, cue: motionCue(id), particles: def.particles, video: false };
   }
