@@ -333,6 +333,25 @@ function toSdkMessages(turns: ModelTurn[], cache = false) {
   });
 }
 
+/**
+ * 대화 전에 "나와 상대의 성별"을 못 박는다 — 모든 모델 공통 (특히 Grok 은 남녀·호칭·대명사를 종종 뒤바꾼다)
+ * 시스템 프롬프트 맨 앞에 붙고, 매 턴 상황에도 한 줄 다시 알려 준다.
+ */
+function genderFacts(persona: PersonaFile, user?: { name?: string; gender?: "male" | "female" }) {
+  const me = persona.gender === "male" ? "남성" : "여성";
+  const you = user?.gender === "male" ? "남성" : user?.gender === "female" ? "여성" : null;
+  const youName = user?.name ? `"${user.name}"` : "대화 상대";
+  const wrongYou = you === "남성" ? "그녀·언니·여자분" : "그·형·남자분";
+  const head = `[성별 확인 — 대화 전에 반드시 기억]
+- 너(${persona.name})는 ${me}이다. 스스로를 ${me}로만 말하고 행동해라. 반대 성별의 말투·역할·관점으로 바뀌지 마라.
+- ${you ? `대화 상대(${youName})는 ${you}이다. 상대를 "${wrongYou}"처럼 반대 성별로 부르거나 지칭하지 마라.` : "대화 상대(유저)의 성별은 아직 모른다. 단정하지 말고 성별이 드러나는 호칭·표현을 쓰지 마라."}
+- 너와 상대의 성별을 서로 바꿔 말하지 마라: 네가 한 일·느낌과 상대가 한 일·느낌을 섞지 말고, 호칭(오빠·누나·언니·형·자기 등)과 대명사는 위 성별에 맞게만 써라. 헷갈리면 호칭 없이 이름이나 "너"로 말해라.
+
+`;
+  const line = `- (성별 재확인) 너는 ${me}, 대화 상대는 ${you ?? "성별 미상"}. 호칭·대명사를 바꾸지 마라.`;
+  return { head, line };
+}
+
 /** Grok 전용: 습관적인 질문형 끝맺음·반복 응대를 줄인다 */
 const GROK_STYLE_NOTE = `
 
@@ -641,6 +660,7 @@ function buildTurnContext(c: InstructionContext): string {
     "- 이 대화의 앞부분(위 메시지들)을 다시 읽고 확인해라: 유저가 말한 일정·약속·고민·질문 중 아직 매듭짓지 않은 것이 있으면 이번 답에서 자연스럽게 이어 가라(예: 면접·시험·병원·약속의 결과 묻기, 아까 하던 이야기 다시 꺼내기). 이미 물어본 걸 또 묻지 마라. 유저가 방금 한 질문에는 먼저 답해라.",
     ...unlockedStory(c),
     userLine(c.user),
+    genderFacts(persona, c.user).line,
     c.recentTurns ? registerLine(c.recentTurns) : null,
     c.sinceLast ? `- 직전 대화 이후 ${c.sinceLast}이 지났다. 그동안 각자의 시간이 흘렀다는 걸 자연스럽게 반영해라.` : null,
     gapGuide(c.gapMs),
@@ -988,7 +1008,7 @@ export async function POST(request: Request) {
       model: r.model,
       instructions: {
         role: "system",
-        content: (owner ? ownerInstructions(persona, { rules: typeof rulesOv?.ownerRules === "string" ? rulesOv.ownerRules : persona.cheatRules, absolute: Array.isArray(rulesOv?.absolute) ? (rulesOv.absolute as string[]) : undefined, extra: personaExtra }) : buildStaticInstructions(persona, allureEff, { extra: personaExtra, rules: rulesOv })) + heatNote + (/grok/i.test(r.modelId) ? GROK_STYLE_NOTE : "") + (textJson ? TEXT_JSON_GUIDE : ""),
+        content: genderFacts(persona, parsed.data.user).head + (owner ? ownerInstructions(persona, { rules: typeof rulesOv?.ownerRules === "string" ? rulesOv.ownerRules : persona.cheatRules, absolute: Array.isArray(rulesOv?.absolute) ? (rulesOv.absolute as string[]) : undefined, extra: personaExtra }) : buildStaticInstructions(persona, allureEff, { extra: personaExtra, rules: rulesOv })) + heatNote + (/grok/i.test(r.modelId) ? GROK_STYLE_NOTE : "") + (textJson ? TEXT_JSON_GUIDE : ""),
         // Bedrock(Claude): 여기까지를 캐시 (Gemini 는 같은 앞부분을 자동으로 캐시)
         // (Claude·Nova 만 — Llama·Grok 등은 cachePoint 를 보내면 오류)
         ...(r.provider !== "bedrock" || supportsBedrockCache(r.modelId) ? { providerOptions: { bedrock: { cachePoint: { type: "default" as const } } } } : {}),
