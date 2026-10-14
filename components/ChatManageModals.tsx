@@ -228,9 +228,9 @@ export function BackupModal({ onClose, onRestored, personaId, personaName }: { o
             setMsg(null);
             try {
               const r = await downloadBackup({ includeMedia, personaId, personaName });
-              setMsg(`✅ 대화방 ${r.rooms}개${r.media ? `, 사진·영상 ${r.media}개` : ""}를 저장했어요 (${(r.bytes / 1024 / 1024).toFixed(1)}MB). 다운로드 폴더를 확인하세요.`);
-            } catch {
-              setMsg("⚠️ 백업 파일을 만들지 못했어요.");
+              setMsg(`✅ 대화방 ${r.rooms}개${r.media ? `, 사진·영상 ${r.media}개` : ""}를 저장했어요 (${(r.bytes / 1024 / 1024).toFixed(1)}MB) · ${r.where}`);
+            } catch (e) {
+              setMsg(`⚠️ 백업 파일을 만들지 못했어요: ${e instanceof Error ? e.message : "알 수 없는 오류"}`);
             } finally {
               setBusy(false);
             }

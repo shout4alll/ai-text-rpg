@@ -36,7 +36,7 @@ async function dataUrlToBlob(d: string): Promise<Blob> {
   return (await fetch(d)).blob();
 }
 
-const CHUNK = 768 * 1024; // 3의 배수 (base64 조각 경계 유지)
+const CHUNK = 384 * 1024; // 3의 배수 (base64 조각 경계 유지) — 앱 브리지가 한 번에 받기 편한 크기
 
 function bufToBase64(buf: ArrayBuffer): string {
   const u = new Uint8Array(buf);
@@ -52,23 +52,12 @@ interface FileSaver {
   abort(): Promise<void>;
 }
 
-/** 앱(안드로이드)이면 '다운로드' 폴더에 직접 저장, 브라우저(PC)면 일반 다운로드 */
-async function saveFile(name: string, blob: Blob): Promise<void> {
-  const cap = (typeof window !== "undefined" ? (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean; registerPlugin?: <T>(n: string) => T } }).Capacitor : undefined);
-  if (cap?.isNativePlatform?.() && cap.registerPlugin) {
-    const saver = cap.registerPlugin<FileSaver>("FileSaver");
-    await saver.begin({ name, mime: "application/json" });
-    try {
-      for (let off = 0; off < blob.size; off += CHUNK) {
-        await saver.append({ data: bufToBase64(await blob.slice(off, off + CHUNK).arrayBuffer()) });
-      }
-      await saver.finish();
-    } catch (e) {
-      await saver.abort().catch(() => undefined);
-      throw e;
-    }
-    return;
-  }
+type CapacitorLike = { isNativePlatform?: () => boolean; isPluginAvailable?: (n: string) => boolean; registerPlugin?: <T>(n: string) => T };
+const capacitor = (): CapacitorLike | undefined => (typeof window !== "undefined" ? (window as unknown as { Capacitor?: CapacitorLike }).Capacitor : undefined);
+const errText = (e: unknown) => (e instanceof Error ? e.message : typeof e === "string" ? e : JSON.stringify(e)).slice(0, 160);
+
+/** 브라우저 다운로드 (PC·웹) */
+function browserDownload(name: string, blob: Blob) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -76,7 +65,56 @@ async function saveFile(name: string, blob: Blob): Promise<void> {
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}
+
+/**
+ * 앱(안드로이드)이면 '다운로드' 폴더에 직접 저장, 브라우저(PC)면 일반 다운로드.
+ * 앱 저장이 실패하면 공유 시트(파일 공유)·브라우저 다운로드로 한 번씩 더 시도하고, 모두 실패하면 이유를 담아 오류를 던진다.
+ * @returns 저장 위치 설명
+ */
+async function saveFile(name: string, blob: Blob): Promise<string> {
+  const cap = capacitor();
+  if (!(cap?.isNativePlatform?.() && cap.registerPlugin)) {
+    browserDownload(name, blob);
+    return "다운로드 폴더";
+  }
+  let nativeErr = "";
+  try {
+    if (cap.isPluginAvailable && !cap.isPluginAvailable("FileSaver")) throw new Error("앱에 저장 기능(FileSaver)이 없어요 — 앱을 최신 버전으로 다시 설치해 주세요");
+    const saver = cap.registerPlugin<FileSaver>("FileSaver");
+    await saver.begin({ name, mime: "application/json" });
+    try {
+      for (let off = 0; off < blob.size; off += CHUNK) {
+        await saver.append({ data: bufToBase64(await blob.slice(off, off + CHUNK).arrayBuffer()) });
+      }
+      const r = await saver.finish();
+      return r?.path ? `다운로드 폴더 (${r.path})` : "다운로드 폴더";
+    } catch (e) {
+      await saver.abort().catch(() => undefined);
+      throw e;
+    }
+  } catch (e) {
+    nativeErr = errText(e);
+  }
+  // 대체 1: 공유 시트 (카카오톡·드라이브 등으로 보내 두면 안전)
+  try {
+    const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
+    const file = new File([blob], name, { type: "application/json" });
+    if (nav.share && (!nav.canShare || nav.canShare({ files: [file] }))) {
+      await nav.share({ files: [file], title: name });
+      return "공유로 보냈어요";
+    }
+  } catch {
+    /* 아래로 */
+  }
+  // 대체 2: 브라우저 다운로드
+  try {
+    browserDownload(name, blob);
+    return "다운로드 (앱 저장은 실패: " + nativeErr + ")";
+  } catch {
+    throw new Error(nativeErr || "저장하지 못했어요");
+  }
 }
 
 /** 파일명에 쓸 수 없는 글자 제거 */
@@ -88,7 +126,7 @@ const safeName = (s: string) => s.replace(/[\\/:*?"<>|\s]+/g, "_").slice(0, 30);
  *  - personaId 있음: 그 인물과의 대화(기록·호감도·기억)와 사진·영상만
  * @returns 저장한 대화방 수
  */
-export async function downloadBackup(opts: { includeMedia: boolean; personaId?: string; personaName?: string }): Promise<{ rooms: number; media: number; bytes: number }> {
+export async function downloadBackup(opts: { includeMedia: boolean; personaId?: string; personaName?: string }): Promise<{ rooms: number; media: number; bytes: number; where: string }> {
   const pid = opts.personaId;
   const storage: Record<string, string> = {};
   for (let i = 0; i < localStorage.length; i++) {
@@ -98,30 +136,34 @@ export async function downloadBackup(opts: { includeMedia: boolean; personaId?: 
     const v = localStorage.getItem(k);
     if (v !== null) storage[k] = v;
   }
-  const media: BackupFile["media"] = [];
-  if (opts.includeMedia) {
-    for (const r of await listAllMedia()) {
-      if (pid && r.personaId !== pid) continue;
-      media.push({ key: r.key, personaId: r.personaId, type: r.type, dataUrl: await blobToDataUrl(r.blob), frames: r.frames, duration: r.duration, at: r.at });
-    }
-  }
-  const file: BackupFile = {
+  // 사진·영상이 많아도 한 덩어리 문자열을 만들지 않게, 조각(Blob 파트)으로 이어 붙인다
+  const head = {
     app: "charactalk",
     v: 1,
     scope: pid ? "persona" : "all",
     ...(pid ? { personaId: pid, personaName: opts.personaName } : {}),
     exportedAt: new Date().toISOString(),
     storage,
-    media,
   };
-  const blob = new Blob([JSON.stringify(file)], { type: "application/json" });
+  const parts: BlobPart[] = [JSON.stringify(head).slice(0, -1) + ',"media":['];
+  let mediaCount = 0;
+  if (opts.includeMedia) {
+    for (const r of await listAllMedia()) {
+      if (pid && r.personaId !== pid) continue;
+      const item: BackupFile["media"][number] = { key: r.key, personaId: r.personaId, type: r.type, dataUrl: await blobToDataUrl(r.blob), frames: r.frames, duration: r.duration, at: r.at };
+      parts.push((mediaCount > 0 ? "," : "") + JSON.stringify(item));
+      mediaCount++;
+    }
+  }
+  parts.push("]}");
+  const blob = new Blob(parts, { type: "application/json" });
   const d = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
   const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
   const name = pid ? `WitH-chat-${safeName(opts.personaName || pid)}-${stamp}.json` : `WitH-backup-all-${stamp}.json`;
-  await saveFile(name, blob);
+  const where = await saveFile(name, blob);
   const rooms = Object.keys(storage).filter((k) => k.startsWith("ai-rpg.chat.")).length;
-  return { rooms, media: media.length, bytes: blob.size };
+  return { rooms, media: mediaCount, bytes: blob.size, where };
 }
 
 /** 백업 파일 읽기 (형식 검사) */
