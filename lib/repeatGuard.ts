@@ -269,7 +269,7 @@ export const isAck = (t: string) => ACK_RE.test(t.trim());
  */
 export function leadLines(turns: TextTurn[], userText: string): string[] {
   const users = turns.filter((t) => t.role === "user" && (t.kind === undefined || t.kind === "text") && t.content.trim());
-  const minimal = (c: string) => isAck(c) || (c.replace(/s+/g, "").length <= 3 && !/[ㅋㅎ?？]/.test(c));
+  const minimal = (c: string) => isAck(c) || (c.replace(/\s+/g, "").length <= 3 && !/[ㅋㅎ?？]/.test(c));
   if (!minimal(userText)) return [];
   let streak = 0;
   for (let i = users.length - 1; i >= 0; i--) {
@@ -278,7 +278,7 @@ export function leadLines(turns: TextTurn[], userText: string): string[] {
     else break;
   }
   const mine = turns.filter((t) => t.role === "assistant" && (t.kind === undefined || t.kind === "text") && t.content.trim()).slice(-3);
-  const shortEcho = mine.filter((t) => t.content.replace(/s+/g, "").length <= 14).length;
+  const shortEcho = mine.filter((t) => t.content.replace(/\s+/g, "").length <= 14).length;
   const stalled = streak >= 2 || shortEcho >= 2;
   return [
     `- 대화 주도(유저가 단답으로 받았다${streak >= 2 ? `: 연속 ${streak}번` : ""}): 유저가 짧게 답해도 대화를 네가 이어 가라. "알았어", "응", "그래", "생각나면 말해" 같은 짧은 맞장구로 받아 끝내지 마라. 네 쪽에서 새 이야기를 평서문으로 꺼내라 — 방금 있었던 일·떠오른 생각·네 취향이나 의견·재미있는 관찰 중 하나를 구체적으로 한 토막 말하고(말풍선 1~3개), 질문 없이 끝내라. 유저가 대답하기 쉽게 이야기 속에 반응할 거리만 남겨 둬라.${stalled ? " 지금까지 대화가 단답으로 맴돌았다. 이전 말을 반복하지 말고 화제를 완전히 새로 열어라." : ""}`,
