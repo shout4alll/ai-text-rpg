@@ -199,5 +199,61 @@ export function repeatGuardLines(turns: TextTurn[], tz: string, userText: string
       `- 이번 턴에 굳이 네 근황을 꺼낸다면 이런 결에서 골라라(전부 선택 사항, 안 꺼내도 된다. 네 직업·성격·말투에 맞게 구체적으로 바꿔라): ${seeds.map((s) => `「${s}」`).join(" ")}. 유저의 말에 반응하는 게 먼저고, 근황은 두 번에 한 번 이하로만 꺼내라.`
     );
   }
+  lines.push(...questionGuardLines(turns));
+  return lines;
+}
+
+/** 이번 턴에 권하는 "말을 이어 가는 방식" — 매번 질문으로 공을 넘기는 패턴을 깬다 */
+const BRIDGES = [
+  "유저 말에서 한 단어를 집어 네 느낌을 덧붙이기",
+  "비슷한 네 경험 한 조각을 짧게 꺼내기",
+  "가볍게 놀리거나 농담으로 받아치기",
+  "솔직한 감탄·리액션 한마디로 끝내기",
+  "유저 편을 들어 주거나 공감만 하고 끝내기",
+  "네 짐작을 말해 보기(\"혹시 ~해서 그런 거 아니에요?\" 대신 \"~해서 그랬겠다\"처럼 단정형으로)",
+  "앞에서 나온 이야기와 지금 말을 엮어 한마디",
+  "작은 제안이나 상상 한마디(\"그럼 다음엔 ~해 봐요\")",
+];
+
+/** 문장 끝 3~6글자 — 질문 틀 비교용 ("어땠어요", "했어요", "있어요" 등) */
+function questionFrame(q: string): string {
+  const t = q.replace(/[\s?？!~.ㅋㅎㅠㅜ^]+$/g, "").replace(/\s+/g, " ");
+  return t.slice(-3);
+}
+
+/**
+ * 질문 패턴 감지: 최근 답장이 연달아 질문으로 끝나거나, 같은 틀의 질문을 되풀이하면 이번 턴에 바꾸라고 알린다.
+ */
+export function questionGuardLines(turns: TextTurn[]): string[] {
+  const mine = turns.filter((t) => t.role === "assistant" && (t.kind === undefined || t.kind === "text") && t.content.trim()).slice(-6);
+  if (mine.length === 0) return [];
+  const lastBubble = (c: string) => c.split(/\n+/).map((s) => s.trim()).filter(Boolean).pop() ?? "";
+  const endsQ = mine.map((t) => /[?？]\s*[ㅋㅎ~^]*$/.test(lastBubble(t.content)));
+  let streak = 0;
+  for (let i = endsQ.length - 1; i >= 0 && endsQ[i]; i--) streak++;
+  const qCount = endsQ.filter(Boolean).length;
+  const questions = mine
+    .flatMap((t) => t.content.split(/(?<=[?？])/))
+    .map((s) => s.split(/\n/).pop()!.trim())
+    .filter((s) => /[?？]/.test(s) && s.length >= 4);
+  const frames = new Map<string, number>();
+  for (const q of questions) {
+    const f = questionFrame(q);
+    if (f.length >= 2) frames.set(f, (frames.get(f) ?? 0) + 1);
+  }
+  const dupFrames = [...frames.entries()].filter(([, n]) => n >= 2).map(([f]) => `"~${f}?"`);
+  const lines: string[] = [];
+  if (streak >= 2 || qCount >= 4) {
+    const pick = [...BRIDGES].sort(() => Math.random() - 0.5).slice(0, 2);
+    lines.push(
+      `- 질문 패턴 주의: 최근 답장 ${mine.length}개 중 ${qCount}개가 질문으로 끝났다${streak >= 2 ? `(마지막 ${streak}개 연속)` : ""}. 이번 답장은 질문 없이 끝내라. 대신 이런 식으로 이어 가라: ${pick.map((b) => `「${b}」`).join(" 또는 ")}. 질문이 없어도 유저는 할 말이 생긴다.`
+    );
+  }
+  if (questions.length > 0) {
+    const recentQs = questions.slice(-3).map((q) => `「${q.slice(-28)}」`).join(" ");
+    lines.push(
+      `- 최근에 네가 한 질문: ${recentQs}${dupFrames.length ? ` — 특히 ${dupFrames.join(", ")} 같은 끝맺음을 되풀이했다` : ""}. 같은 질문·같은 틀·같은 어미로 다시 묻지 마라. 같은 뜻이라도 다른 단어·다른 각도·다른 말투로 말하고, 굳이 안 물어도 되면 묻지 마라.`
+    );
+  }
   return lines;
 }
