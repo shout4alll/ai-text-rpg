@@ -146,6 +146,29 @@ export const personaFileSchema = z.object({
       chapters: z.array(z.object({ min: z.number().int().min(0).max(100), title: z.string().min(1), text: z.string().min(1) })).default([]),
     })
     .optional(),
+  /**
+   * (선택) 세계관·일상 확장 — 캐릭터가 같은 소재(직업·대표 취미)만 맴돌지 않게 하는 이야깃거리 창고.
+   * 캐릭터성·기본 정보는 그대로 두고, 대화의 소재·장면·방향을 넓힌다. 고정 목록(people·places·quirks)은 프롬프트 고정부에,
+   * 나머지(scenes·topics·interests·moods)는 매 턴 몇 개씩만 뽑아 "이번 턴 참고"로 붙인다. (lib/personaWorld.ts)
+   */
+  world: z
+    .object({
+      /** 본업·대표 취미 밖의 관심사·요즘 빠진 것 (한 줄씩) */
+      interests: z.array(z.string().min(1)).default([]),
+      /** 먼저 꺼내거나 이어 갈 수 있는 대화 소재: 생각·궁금증·고민·추억·가벼운 논쟁거리 */
+      topics: z.array(z.string().min(1)).default([]),
+      /** 오늘의 상황(일상 에피소드). when 이 있으면 그 시간대에만 쓴다 */
+      scenes: z.array(z.object({ when: z.enum(["morning", "day", "evening", "night", "weekend"]).optional(), text: z.string().min(1) })).default([]),
+      /** 주변 사람들 (이름·관계·한마디 특징) */
+      people: z.array(z.object({ name: z.string().min(1), relation: z.string().min(1), note: z.string().min(1) })).default([]),
+      /** 자주 가는 곳·생활 공간 */
+      places: z.array(z.string().min(1)).default([]),
+      /** 대화 방향성·분위기 (예: "장난스럽게 유저를 놀리며 이어 가기", "진지하게 들어 주기") */
+      moods: z.array(z.string().min(1)).default([]),
+      /** 말버릇·습관·소소한 특징 */
+      quirks: z.array(z.string().min(1)).default([]),
+    })
+    .optional(),
   prompt: z.object({
     identity: z.string().min(1),
     personality: z.string().min(1),
