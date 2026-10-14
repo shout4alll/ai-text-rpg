@@ -58,7 +58,7 @@ export function worldTurnLines(p: PersonaFile, tz: string): string[] {
   if (fit.length) {
     // 오늘의 장면: 같은 날·같은 시간대엔 같은 장면(하루 안에서 일관되게), 날이 바뀌면 다른 장면
     const today = fit[hash(`${p.id}|${day}|${slot}`) % fit.length];
-    lines.push(`- 네 오늘의 장면(배경일 뿐, 유저가 묻거나 흐름이 맞을 때만 한마디로): ${today.text}`);
+    lines.push(`- 네 오늘의 장면(배경일 뿐이다. 앞 대화에서 이미 정해진 시각·장소·상태와 어긋나면 쓰지 마라. 유저가 묻거나 흐름이 맞을 때만 한마디로): ${today.text}`);
   }
   const topics = sample(w.topics, 2);
   if (topics.length) lines.push(`- 이번 턴에 이어 가거나 꺼내 볼 만한 소재(전부 선택 사항, 지금 하던 이야기가 있으면 그게 먼저): ${topics.map((t) => `「${t}」`).join(" ")}`);

@@ -1,4 +1,4 @@
-import { deliverLines, dropRepeatedBubbles, leadLines, repeatGuardLines } from "@/lib/repeatGuard";
+import { deliverLines, dropRepeatedBubbles, isAck, leadLines, repeatGuardLines } from "@/lib/repeatGuard";
 import { worldStatic, worldTurnLines } from "@/lib/personaWorld";
 import { currentNotifyPlan } from "@/lib/push/planStore";
 import { containsPhrase, isOwnerToken, maskPhrase, ownerToken, ownerInstructions, wantsExit } from "@/lib/owner";
@@ -358,7 +358,7 @@ const GROK_STYLE_NOTE = `
 [말투 보정 — 끝맺음과 반복]
 - 답장을 질문으로 끝내는 습관을 버려라. 대부분의 답장은 평서·감탄·여운·짐작·농담·짧은 반응으로 끝내고, 질문은 정말 궁금할 때만(네댓 번에 한 번 이하).
 - 끝맺음 방식을 섞어라: 단정("~했겠다"), 혼잣말, 감탄, 말줄임("…"), 짧은 제안, 장난. 매번 같은 어미·같은 문형으로 끝내지 마라.
-- 유저가 "그래", "알았어", "ㅇㅇ"처럼 단답으로 받아도 같은 단답("알았어", "응, 용", "생각나면 말해")으로 맞받아 대화를 끊지 마라. 네가 먼저 새 이야기(근황·생각·관찰·취향)를 평서문으로 꺼내 대화를 끌고 가라. 단답 주고받기가 두 번 이상 이어졌다면 화제를 완전히 새로 열어라.
+- 유저가 "그래", "알았어", "ㅇㅇ"처럼 단답으로 받아도 같은 단답("알았어", "응, 용", "생각나면 말해")으로 맞받아 대화를 끊지 마라. 네가 먼저 지금 대화의 시각·장소·상황 안에서 이야기(생각·관찰·취향)를 평서문으로 꺼내 대화를 끌고 가라(갑자기 장소·시간대·하는 일을 바꾸지 마라). 단답 주고받기가 두 번 이상 이어졌다면 화제를 완전히 새로 열어라.
 - 유저가 같은 요청을 되풀이해도 같은 문장·같은 구조로 반응하지 마라. 이전 답장과 단어·순서·길이·톤을 다르게 하고, 상황이 진전되거나 방향이 바뀌게 한 걸음 나아가라.`;
 
 function extractRecentOpenings(turns: Turn[]): string[] {
@@ -556,6 +556,11 @@ ${traitsSection(persona)}${worldStatic(persona)}
 - 고집을 부리거나 장난으로 튕기는 건 한 번이면 충분하다. 유저가 진지하게 다시 요청하면 바로 들어줘라(정책·수위 규칙에 걸리는 것만 예외).
 - 진행 중인 주제(예: 유저가 읽는 책)는 몇 턴이고 붙들고 깊게 이어 가라: 내용·느낀 점·인상 깊은 부분을 구체적으로 묻고, 유저가 답한 것에 네 생각을 덧붙여라. 주제를 가볍게 훑고 네 일상으로 넘어가지 마라.
 
+[시간·장소·행동의 연속성 — 아주 중요]
+- 대화 속 지금의 시각·장소·네 상태(예: 사무실에서 일하는 중, 퇴근 전, 집, 이동 중)는 앞 대화에서 정해진 그대로 이어진다. 유저가 요청하지 않았는데 갑자기 퇴근하거나 귀가하거나 물건을 사거나 장소·시간대를 바꾸지 마라. 바꿔야 한다면 한 단계씩 자연스러운 이유와 함께(예: "슬슬 일 마무리해야겠다" → 나중에 "퇴근했어").
+- 네 일상·취미·소지품은 대화 흐름에 필요할 때만 꺼내라. 지금 하던 이야기와 상관없는 새 활동(악기 연습, 간식 구입, 집 도착 같은 것)을 갑자기 끼워 넣어 장면을 점프시키지 마라.
+- 분위기·수위·관계의 진전도 앞 대화의 속도를 따라 한 걸음씩만 나아가라. 유저의 반응이 없거나 짧은데 갑자기 급진전시키지 마라.
+
 [반복하지 않기 — 아주 중요]
 - 위 '일상'·'배경'·'성격'은 네 설정이지 대사가 아니다. 설정을 읊거나 매번 언급하지 마라(예: 와인·독서·산책·등산·직업 이야기를 대화마다 꺼내기). 한 대화에서 같은 행동·장소·음식·취미를 두 번 이상 "하고 있다/했다"고 말하지 마라.
 - 네 근황은 유저가 물었거나 대화 흐름이 맞을 때만, 그리고 매번 다른 소재로 말해라. 대화의 중심은 유저와 지금 하는 이야기다.
@@ -645,6 +650,20 @@ function nudgeTurn(c: InstructionContext): string {
   return base;
 }
 
+/**
+ * 세계관 소재(오늘의 장면·대화 소재)를 이번 턴에 줄지 — 대화가 한창 진행 중이면 주지 않는다(장면·시간 점프 방지).
+ * 새 대화·한참 뒤 복귀·선톡·쪽지, 또는 대화가 단답으로 맴돌 때만.
+ */
+function worldFresh(c: InstructionContext): boolean {
+  if (c.lastKind === "return" || c.nudge || c.lobbyNote) return true;
+  if ((c.gapMs ?? 0) > 20 * 60_000) return true;
+  const turns = (c.recentTurns ?? []).filter((t) => (t.kind ?? "text") === "text");
+  if (turns.length <= 3) return true;
+  const users = turns.filter((t) => t.role === "user").slice(-3).map((t) => t.content.trim());
+  const minimal = (t: string) => isAck(t) || t.replace(/s+/g, "").length <= 2;
+  return users.length >= 2 && users.slice(-2).every(minimal);
+}
+
 /** 이번 턴에만 해당하는 상황 (마지막 유저 메시지 앞에 붙는다) */
 function buildTurnContext(c: InstructionContext): string {
   const { persona } = c;
@@ -675,9 +694,9 @@ function buildTurnContext(c: InstructionContext): string {
     c.continuity
       ? `- 맥락 우선(${c.continuity === "confusion" ? "유저가 되묻거나 바로잡는 중" : "앞 대화에 이어지는 말"}): 유저의 이번 말은 바로 앞 대화에 기대어 해석해야 한다. 답하기 전에 직전 대여섯 턴을 읽고 (1) 지금 무슨 주제인지 (2) "그거·거기·그때" 같은 말이 무엇을 가리키는지 (3) 네가 방금 한 말을 유저가 어떻게 받았는지 먼저 파악해라. 유저가 못 알아듣겠다고 하거나 바로잡으면 네가 잘못 이해했거나 엉뚱한 말을 한 것이다 — 변명하거나 새 화제로 넘어가지 말고 "아 내가 잘못 짚었네"처럼 인정하고 유저가 말한 그 주제로 돌아와라. 유저가 말한 단어는 그 뜻 그대로 받아라(예: 책 제목이면 책으로). 네 근황·일상 얘기를 꺼내지 마라.`
       : null,
-    ...(c.recentTurns ? repeatGuardLines(c.recentTurns, persona.timezone, c.userText, { seeds: !c.continuity }) : []),
+    ...(c.recentTurns ? repeatGuardLines(c.recentTurns, persona.timezone, c.userText, { seeds: !c.continuity && worldFresh(c) }) : []),
     // 🌍 세계관 확장: 이야기가 이어지는 중(continuity)에는 새 소재를 주지 않는다
-    ...(c.continuity ? [] : worldTurnLines(persona, persona.timezone)),
+    ...(c.continuity || !worldFresh(c) ? [] : worldTurnLines(persona, persona.timezone)),
     c.sentAlbumIds.length ? `- 이미 보낸 앨범: ${c.sentAlbumIds.slice(-20).join(", ")}` : null,
     c.memory.length ? `- 기억(예전 대화·보이스톡에서): ${c.memory.map((m) => `「${m}」`).join(" ")}` : null,
     c.lastKind === "text" || c.lastKind === "user_media" ? pickLengthGuide(c.userText, c.lenHint, undefined, c.grokLead).line : null,
