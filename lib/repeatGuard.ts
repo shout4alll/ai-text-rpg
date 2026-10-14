@@ -199,6 +199,7 @@ export function repeatGuardLines(turns: TextTurn[], tz: string, userText: string
       `- 이번 턴에 굳이 네 근황을 꺼낸다면 이런 결에서 골라라(전부 선택 사항, 안 꺼내도 된다. 네 직업·성격·말투에 맞게 구체적으로 바꿔라): ${seeds.map((s) => `「${s}」`).join(" ")}. 유저의 말에 반응하는 게 먼저고, 근황은 두 번에 한 번 이하로만 꺼내라.`
     );
   }
+  lines.push(...leadLines(turns, userText));
   lines.push(...questionGuardLines(turns));
   return lines;
 }
@@ -256,4 +257,30 @@ export function questionGuardLines(turns: TextTurn[]): string[] {
     );
   }
   return lines;
+}
+
+/** 유저의 단답(맞장구·확인·응답)인지 — 웃음(ㅋㅋ)만 있는 말은 제외 */
+export const ACK_RE = /^(응|웅|ㅇㅇ|ㅇㅋ|오키|ok|okay|네|넵|넹|예|그래|그랭|그러게|그렇지|그치|맞아|알았어|알겠어|알았어요|알겠어요|음|흠|아|오|어|ㅇㅎ|그렇구나|그렇군|아하|좋아|좋지|괜찮아|몰라|글쎄)[s.!~…]*$/i;
+export const isAck = (t: string) => ACK_RE.test(t.trim());
+
+/**
+ * 유저가 단답만 이어 가면(그래·알았어·ㅇㅇ) 같이 단답으로 받아 대화가 죽는다 → 이번 턴은 네가 대화를 이끌라고 알린다.
+ * (질문으로 떠넘기지 않고, 평서문으로 새 이야기·생각·상황을 던지게 한다)
+ */
+export function leadLines(turns: TextTurn[], userText: string): string[] {
+  const users = turns.filter((t) => t.role === "user" && (t.kind === undefined || t.kind === "text") && t.content.trim());
+  const minimal = (c: string) => isAck(c) || (c.replace(/s+/g, "").length <= 3 && !/[ㅋㅎ?？]/.test(c));
+  if (!minimal(userText)) return [];
+  let streak = 0;
+  for (let i = users.length - 1; i >= 0; i--) {
+    const c = users[i].content.trim();
+    if (minimal(c)) streak++;
+    else break;
+  }
+  const mine = turns.filter((t) => t.role === "assistant" && (t.kind === undefined || t.kind === "text") && t.content.trim()).slice(-3);
+  const shortEcho = mine.filter((t) => t.content.replace(/s+/g, "").length <= 14).length;
+  const stalled = streak >= 2 || shortEcho >= 2;
+  return [
+    `- 대화 주도(유저가 단답으로 받았다${streak >= 2 ? `: 연속 ${streak}번` : ""}): 유저가 짧게 답해도 대화를 네가 이어 가라. "알았어", "응", "그래", "생각나면 말해" 같은 짧은 맞장구로 받아 끝내지 마라. 네 쪽에서 새 이야기를 평서문으로 꺼내라 — 방금 있었던 일·떠오른 생각·네 취향이나 의견·재미있는 관찰 중 하나를 구체적으로 한 토막 말하고(말풍선 1~3개), 질문 없이 끝내라. 유저가 대답하기 쉽게 이야기 속에 반응할 거리만 남겨 둬라.${stalled ? " 지금까지 대화가 단답으로 맴돌았다. 이전 말을 반복하지 말고 화제를 완전히 새로 열어라." : ""}`,
+  ];
 }

@@ -9,6 +9,7 @@
  */
 import type { ReplyLen } from "@/lib/smartRouter";
 import { EMOTION_PATTERN } from "@/config/routing";
+import { isAck } from "@/lib/repeatGuard";
 
 export type LengthModeId = "tiny" | "short" | "two" | "burst" | "long" | "story";
 
@@ -36,6 +37,8 @@ function tilt(userText: string, hint?: ReplyLen): Record<LengthModeId, number> {
   const w: Record<LengthModeId, number> = { tiny: 1, short: 1, two: 1, burst: 1, long: 0, story: 0 };
   const needLong = hint === "L" || len >= 50 || EXPLAIN_RE.test(userText) || (len >= 15 && EMOTION_RE.test(userText));
 
+  // 유저가 "그래·알았어·ㅇㅇ" 같은 단답으로 받았을 때 같이 한마디로 받으면 대화가 죽는다 → 네가 이야기를 꺼낼 분량(2개·길게)을 준다
+  if (isAck(userText)) return { tiny: 0.1, short: 0.7, two: 1.5, burst: 0.8, long: 1.1, story: 0.3 };
   if (hint === "S") return { tiny: 1.6, short: 1.3, two: 0.7, burst: 0.3, long: 0, story: 0 };
   if (len <= 4) {
     // "ㅇㅇ", "ㅋㅋ", "응" 같은 짧은 말
