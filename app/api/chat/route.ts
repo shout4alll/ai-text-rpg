@@ -373,6 +373,8 @@ interface InstructionContext {
   recentTurns?: Turn[];
   /** 앞 대화가 있어야 이해되는 말이면 그 이유 (lib/continuity.ts) */
   continuity?: string | null;
+  /** 분석 모델이 판단한 답장 분량 (S·N·L) */
+  lenHint?: "S" | "N" | "L";
   /** 유저가 거듭한 질문·요청 (continuity === "insist" 일 때) */
   asks?: string[];
 }
@@ -627,7 +629,7 @@ function buildTurnContext(c: InstructionContext): string {
     ...(c.continuity ? [] : worldTurnLines(persona, persona.timezone)),
     c.sentAlbumIds.length ? `- 이미 보낸 앨범: ${c.sentAlbumIds.slice(-20).join(", ")}` : null,
     c.memory.length ? `- 기억(예전 대화·보이스톡에서): ${c.memory.map((m) => `「${m}」`).join(" ")}` : null,
-    c.lastKind === "text" || c.lastKind === "user_media" ? pickLengthGuide(c.userText).line : null,
+    c.lastKind === "text" || c.lastKind === "user_media" ? pickLengthGuide(c.userText, c.lenHint).line : null,
   ].filter(Boolean);
 
   const turn =
@@ -839,11 +841,11 @@ export async function POST(request: Request) {
   // 🧭 대화 분석 라우터 (기본 Sonnet 5.5): 등급 L·M·P·T → 하이쿠·소넷5·소넷5.5·오퍼스
   //    💰 뻔한 말(맥락 의존도 low + 인사·맞장구 패턴)은 분석 없이 바로 L, 되묻기·거듭된 요청은 바로 deep
   const analyzerOn = smart && !owner && settingValue("analyzerModel").toLowerCase() !== "off" && !!settingValue("analyzerModel");
-  let plan: { grade: Grade; tiers: string[]; by: string; why: string; ms: number } | null = null;
+  let plan: { grade: Grade; tiers: string[]; by: string; why: string; ms: number; len?: "S" | "N" | "L" } | null = null;
   /** 분석 호출 비용 (달러) */
   let analyzerUsd = 0;
   if (analyzerOn && !toMature && !deepTurn && last.kind === "text") {
-    if (dep?.level === "low" && route.tier === "light") plan = { grade: "L", tiers: GRADE_TIERS.L, by: "rule", why: "뻔한 말", ms: 0 };
+    if (dep?.level === "low" && route.tier === "light") plan = { grade: "L", tiers: GRADE_TIERS.L, by: "rule", why: "뻔한 말", ms: 0, len: "S" };
     else {
       const a = await analyzeTurn(last.content, recent, persona.name);
       if (a.usage && a.by !== "cache" && a.by !== "default") analyzerUsd = costUsd(priceOf(a.by), a.usage);
@@ -851,7 +853,7 @@ export async function POST(request: Request) {
       const g: Grade = a.by === "default" ? "M" : a.grade;
       // 🛡 안전장치: L(하이쿠)로 내리는 건 맥락 규칙도 "낮음"일 때만 — 분석 모델 혼자 내리지 못한다 (올리는 판단은 그대로)
       const safe: Grade = g === "L" && dep?.level !== "low" ? "M" : g;
-      plan = { grade: safe, tiers: GRADE_TIERS[safe], by: a.by === "cache" ? "캐시" : a.by === "default" ? "분석실패" : `분석 ${a.ms}ms`, why: a.why, ms: a.ms };
+      plan = { grade: safe, tiers: GRADE_TIERS[safe], by: a.by === "cache" ? "캐시" : a.by === "default" ? "분석실패" : `분석 ${a.ms}ms`, why: a.why, ms: a.ms, len: a.len };
     }
   }
   let intent: Classified | null = null;
@@ -894,6 +896,7 @@ export async function POST(request: Request) {
       touches: parsed.data.touches,
       recentTurns: recent,
       continuity,
+      lenHint: plan?.len,
       asks: continuity === "insist" ? insistedAsks(last.content, recent) : undefined,
       album,
       sentAlbumIds: parsed.data.sentAlbumIds ?? [],
@@ -1021,7 +1024,7 @@ export async function POST(request: Request) {
           { extras: settingValue("serviceFallback") === "off" ? [] : resolveFallbacks() }
         );
     resolved = ran.resolved;
-    const pathLabel = (opusCapped ? "Opus한도→" : "") + (forced ? "forced" : toMature ? "mature" : deepTurn ? "deep" : plan ? `${plan.grade}(${plan.by}${plan.why ? `·${plan.why}` : ""})` : intent ? `${intent.category.id}(${intent.by})` : route.tier);
+    const pathLabel = (opusCapped ? "Opus한도→" : "") + (forced ? "forced" : toMature ? "mature" : deepTurn ? "deep" : plan ? `${plan.grade}${plan.len ? `·${plan.len}` : ""}(${plan.by}${plan.why ? `·${plan.why}` : ""})` : intent ? `${intent.category.id}(${intent.by})` : route.tier);
     if (ctxRow) {
       ctxRow.route = pathLabel;
       ctxRow.model = resolved.modelId;

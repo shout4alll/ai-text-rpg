@@ -71,15 +71,19 @@ export interface Analyzed {
   ms: number;
   /** 분석 호출에 쓴 토큰 (비용 표시용) */
   usage?: { in: number; out: number; cache: number };
+  /** 이번 답장에 어울리는 분량 (S 짧게 · N 보통 · L 길게) — 분석 실패면 없음 */
+  len?: ReplyLen;
 }
+export type ReplyLen = "S" | "N" | "L";
 const ANALYZE_SYSTEM = `너는 메신저 대화 라우터다. 캐릭터와 유저의 최근 대화, 유저의 마지막 말을 보고 이번 답장을 쓸 모델 등급 하나를 고른다.
-반드시 JSON 한 줄만 출력: {"t":"L|M|P|T","r":"이유(12자 이내)"}
+반드시 JSON 한 줄만 출력: {"t":"L|M|P|T","l":"S|N|L","r":"이유(12자 이내)"}
 L: 앞 대화 없이도 바로 답할 수 있는 단순한 말 — 인사·작별·고마움·맞장구·웃음·짧은 리액션, 맥락과 무관한 가벼운 질문.
 M: 평범한 대화 — 앞 대화를 이어받는 일상 이야기·감정 교류·가벼운 질문. 대부분의 턴.
 P: 맥락이 깊게 얽힌 턴 — 여러 턴 전 내용 참조, 지시어·생략이 많아 앞뒤를 잘 읽어야 함, 유저가 되묻거나 바로잡음, 진지한 고민·민감한 감정, 미묘한 뉘앙스·관계의 전환점.
 T: 고난도 — 전문 지식·분석·추론·창작이 필요한 어렵고 긴 질문, 앞 답장이 여러 번 어긋나 대화가 꼬임.
-비용이 중요하다: 애매하면 M. 확실할 때만 P·T. 대화 맥락이 필요 없는 게 확실할 때만 L.`;
-const gradeCache = new Map<string, { g: Grade; why: string; at: number }>();
+비용이 중요하다: 애매하면 M. 확실할 때만 P·T. 대화 맥락이 필요 없는 게 확실할 때만 L.
+l(답장 분량): S=짧게(맞장구·리액션·가벼운 말·짧은 대답이면 충분) / N=보통(일상 대화 대부분) / L=길게(유저가 길게 털어놓음·고민·감정 상담, 설명·추천·방법을 물음, 이야기를 들려 달라고 함). 필요 없는데 길게 쓰면 대화가 흐트러진다 — 애매하면 S 나 N.`;
+const gradeCache = new Map<string, { g: Grade; why: string; at: number; len?: ReplyLen }>();
 
 export async function analyzeTurn(
   text: string,
@@ -97,7 +101,7 @@ export async function analyzeTurn(
     .join("\n");
   const key = `${prior.slice(-1)[0]?.content.slice(-80) ?? ""}|${text.slice(0, 200)}`;
   const hit = gradeCache.get(key);
-  if (hit && Date.now() - hit.at < 10 * 60_000) return { grade: hit.g, why: hit.why, by: "cache", ms: 0 };
+  if (hit && Date.now() - hit.at < 10 * 60_000) return { grade: hit.g, why: hit.why, by: "cache", ms: 0, len: hit.len };
   try {
     const r = resolveModel("analyzer");
     const res = await generateText({
@@ -112,9 +116,10 @@ export async function analyzeTurn(
     const out = res.text ?? "";
     const g = ((/"t"\s*:\s*"([LMPT])"/.exec(out) ?? /\b([LMPT])\b/.exec(out))?.[1] ?? "M") as Grade;
     const why = (/"r"\s*:\s*"([^"]{0,40})"/.exec(out)?.[1] ?? "").trim();
-    gradeCache.set(key, { g, why, at: Date.now() });
+    const len = /"l"\s*:\s*"([SNL])"/.exec(out)?.[1] as ReplyLen | undefined;
+    gradeCache.set(key, { g, why, at: Date.now(), len });
     if (gradeCache.size > 3000) gradeCache.delete(gradeCache.keys().next().value as string);
-    return { grade: g, why, by: r.modelId, ms: Date.now() - t0, usage: { in: res.usage?.inputTokens ?? 0, out: res.usage?.outputTokens ?? 0, cache: res.usage?.inputTokenDetails?.cacheReadTokens ?? 0 } };
+    return { grade: g, why, len, by: r.modelId, ms: Date.now() - t0, usage: { in: res.usage?.inputTokens ?? 0, out: res.usage?.outputTokens ?? 0, cache: res.usage?.inputTokenDetails?.cacheReadTokens ?? 0 } };
   } catch (err) {
     console.warn(`[smartRouter] 분석 실패 → 규칙 결과: ${err instanceof Error ? err.message.slice(0, 120) : String(err)}`);
     const timedOut = err instanceof Error && /timeout|abort/i.test(err.name + err.message);
