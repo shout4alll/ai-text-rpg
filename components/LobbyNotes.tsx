@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { DAYPART_LINES, LOBBY_NOTES, MOOD_LINES, SEASON_LINES } from "@/config/lobbyNotes";
+import { DAYPART_LINES, INTRO_LINES, INVITE_LINES, LOBBY_NOTES, SEASON_LINES } from "@/config/lobbyNotes";
 import type { Persona } from "@/lib/personas/types";
 import type { UserGender } from "@/lib/userProfile";
 
@@ -16,17 +16,20 @@ const SENT_KEY = "ai-rpg.lobbyNotes";
 const pick = <T,>(a: readonly T[]) => a[Math.floor(Math.random() * a.length)];
 const rand = ([a, b]: [number, number]) => (a + Math.random() * (b - a)) * 1000;
 
-function season(m: number): keyof typeof SEASON_LINES {
+function season_(m: number): keyof typeof SEASON_LINES {
   return m >= 2 && m <= 4 ? "spring" : m >= 5 && m <= 7 ? "summer" : m >= 8 && m <= 10 ? "autumn" : "winter";
 }
 function daypart(h: number): keyof typeof DAYPART_LINES {
   return h >= 5 && h < 11 ? "morning" : h >= 11 && h < 17 ? "noon" : h >= 17 && h < 22 ? "evening" : "night";
 }
-export function makeNote(userName?: string): string {
+/** 처음 말 거는 쪽지: 인사(+자기소개) → 대화 초청 */
+export function makeNote(userName?: string, personaName?: string): string {
   const now = new Date();
   const nm = userName ? ` ${userName} 씨` : "";
-  const parts = [pick(DAYPART_LINES[daypart(now.getHours())]).replace("{name}", nm), Math.random() < 0.6 ? pick(SEASON_LINES[season(now.getMonth())]) : null, pick(MOOD_LINES)];
-  return parts.filter(Boolean).join(" ");
+  const greet = pick(DAYPART_LINES[daypart(now.getHours())]).replace("{name}", nm);
+  const intro = personaName ? pick(INTRO_LINES).replace("{persona}", personaName) : null;
+  const season = Math.random() < 0.35 ? pick(SEASON_LINES[season_(now.getMonth())]) : null;
+  return [`${greet}${intro ? " " + intro : ""}`, season, pick(INVITE_LINES)].filter(Boolean).join("\n");
 }
 
 export default function LobbyNotes({
@@ -75,7 +78,7 @@ export default function LobbyNotes({
           const lines = await compose(p.id).catch(() => null);
           text = lines?.length ? lines.join("\n") : null;
         } else {
-          text = makeNote(userName);
+          text = makeNote(userName, p.name);
         }
         try {
           localStorage.setItem(SENT_KEY, JSON.stringify({ ...sent, [p.id]: Date.now() }));
