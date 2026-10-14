@@ -1,8 +1,8 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import PersonaPortrait from "@/components/PersonaPortrait";
-import { downloadBackup, readBackup, restoreBackup, type BackupFile } from "@/lib/backup";
+import { downloadBackup, readBackup, restoreBackup, type BackupFile, listNativeBackups, nativeBackupAvailable, pickNativeBackup, readNativeBackup, safeName, type NativeBackupItem } from "@/lib/backup";
 import type { Persona } from "@/lib/personas/types";
 
 function Shell({
@@ -202,6 +202,29 @@ export function BackupModal({ onClose, onRestored, personaId, personaName }: { o
   const [msg, setMsg] = useState<string | null>(null);
   const [pending, setPending] = useState<BackupFile | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  /** 앱: 다운로드 폴더에 있는 백업 파일 목록 (파일 선택창을 거치지 않고 바로 고른다) */
+  const native = nativeBackupAvailable();
+  const [files, setFiles] = useState<NativeBackupItem[] | null>(null);
+  const loadFiles = () => {
+    if (!native) return;
+    listNativeBackups()
+      .then((all) => setFiles(personaName ? all.filter((f) => f.name.startsWith(`WitH-chat-${safeName(personaName)}-`)) : all))
+      .catch(() => setFiles([]));
+  };
+  useEffect(loadFiles, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const openNative = async (item: NativeBackupItem | null) => {
+    if (!item) return;
+    try {
+      setPending(await readNativeBackup(item.uri));
+      setMsg(null);
+    } catch (err) {
+      setMsg(`⚠️ ${err instanceof Error ? err.message : "파일을 읽지 못했어요."}`);
+    }
+  };
+  const label = (f: NativeBackupItem) => {
+    const m2 = /^WitH-chat-(.+)-\d{8}-\d{4}\.json$/.exec(f.name);
+    return m2 ? `${m2[1].replace(/_/g, " ")} 대화` : f.name.startsWith("WitH-backup-all") ? "전체 백업" : f.name;
+  };
 
   return (
     <Shell onClose={onClose} label="백업">
@@ -228,6 +251,7 @@ export function BackupModal({ onClose, onRestored, personaId, personaName }: { o
             setMsg(null);
             try {
               const r = await downloadBackup({ includeMedia, personaId, personaName });
+              loadFiles();
               setMsg(`✅ 대화방 ${r.rooms}개${r.media ? `, 사진·영상 ${r.media}개` : ""}를 저장했어요 (${(r.bytes / 1024 / 1024).toFixed(1)}MB) · ${r.where}`);
             } catch (e) {
               setMsg(`⚠️ 백업 파일을 만들지 못했어요: ${e instanceof Error ? e.message : "알 수 없는 오류"}`);
@@ -290,13 +314,40 @@ export function BackupModal({ onClose, onRestored, personaId, personaName }: { o
               </div>
             </div>
           ) : (
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              className="mt-2 w-full rounded-2xl bg-ink/5 py-2.5 text-xs font-medium hover:bg-ink/10"
-            >
-              📂 백업 파일 불러오기
-            </button>
+            <>
+              {native && (
+                <div className="mt-2 space-y-1.5" data-backup-files>
+                  <p className="text-[11px] text-ink-mute">다운로드 폴더의 백업 파일</p>
+                  {files === null ? (
+                    <p className="text-[11px] text-ink-mute">찾는 중…</p>
+                  ) : files.length === 0 ? (
+                    <p className="text-[11px] text-ink-mute">이 앱이 저장한 백업 파일이 없어요. 아래에서 직접 찾아볼 수 있어요.</p>
+                  ) : (
+                    files.slice(0, 6).map((f) => (
+                      <button
+                        key={f.uri}
+                        type="button"
+                        data-backup-file
+                        onClick={() => void openNative(f)}
+                        className="flex w-full items-center justify-between gap-2 rounded-xl bg-ink/5 px-3 py-2 text-left text-xs hover:bg-ink/10"
+                      >
+                        <span className="min-w-0 truncate font-medium">{label(f)}</span>
+                        <span className="shrink-0 text-[10px] text-ink-mute">
+                          {new Date(f.modified).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "numeric", minute: "2-digit" })} · {(f.size / 1024 / 1024).toFixed(1)}MB
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => (native ? void pickNativeBackup().then(openNative).catch((e) => setMsg(`⚠️ ${e instanceof Error ? e.message : "파일을 열지 못했어요."}`)) : fileRef.current?.click())}
+                className="mt-2 w-full rounded-2xl bg-ink/5 py-2.5 text-xs font-medium hover:bg-ink/10"
+              >
+                {native ? "📂 다른 파일 찾아보기 (다운로드 폴더에서 열려요)" : "📂 백업 파일 불러오기"}
+              </button>
+            </>
           )}
         </div>
         {msg && <p className="text-xs text-ink-soft" data-backup-msg>{msg}</p>}

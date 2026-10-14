@@ -45,11 +45,24 @@ function bufToBase64(buf: ArrayBuffer): string {
   return btoa(bin);
 }
 
+/** 앱(안드로이드)의 다운로드 폴더에 있는 백업 파일 */
+export interface NativeBackupItem {
+  uri: string;
+  name: string;
+  size: number;
+  modified: number;
+}
+
 interface FileSaver {
   begin(o: { name: string; mime: string }): Promise<void>;
   append(o: { data: string }): Promise<void>;
   finish(): Promise<{ path: string }>;
   abort(): Promise<void>;
+  list(): Promise<{ items: NativeBackupItem[] }>;
+  pick(): Promise<{ cancelled?: boolean; uri?: string; name?: string; size?: number }>;
+  readBegin(o: { uri: string }): Promise<void>;
+  readNext(o: { length?: number }): Promise<{ data: string; done: boolean }>;
+  readEnd(): Promise<void>;
 }
 
 type CapacitorLike = { isNativePlatform?: () => boolean; isPluginAvailable?: (n: string) => boolean; registerPlugin?: <T>(n: string) => T };
@@ -118,7 +131,7 @@ async function saveFile(name: string, blob: Blob): Promise<string> {
 }
 
 /** 파일명에 쓸 수 없는 글자 제거 */
-const safeName = (s: string) => s.replace(/[\\/:*?"<>|\s]+/g, "_").slice(0, 30);
+export const safeName = (s: string) => s.replace(/[\\/:*?"<>|\s]+/g, "_").slice(0, 30);
 
 /**
  * 백업 파일을 만들어 다운로드 폴더에 저장한다.
@@ -164,6 +177,57 @@ export async function downloadBackup(opts: { includeMedia: boolean; personaId?: 
   const where = await saveFile(name, blob);
   const rooms = Object.keys(storage).filter((k) => k.startsWith("ai-rpg.chat.")).length;
   return { rooms, media: mediaCount, bytes: blob.size, where };
+}
+
+/** 앱(안드로이드)에서 다운로드 폴더 저장·불러오기를 쓸 수 있는지 */
+export function nativeBackupAvailable(): boolean {
+  const cap = capacitor();
+  return !!(cap?.isNativePlatform?.() && cap.registerPlugin && (!cap.isPluginAvailable || cap.isPluginAvailable("FileSaver")));
+}
+const nativeSaver = () => capacitor()!.registerPlugin!<FileSaver>("FileSaver");
+
+/** 다운로드 폴더의 WitH 백업 파일 목록 (이 앱이 만든 파일, 최신순) */
+export async function listNativeBackups(): Promise<NativeBackupItem[]> {
+  if (!nativeBackupAvailable()) return [];
+  const r = await nativeSaver().list();
+  return Array.isArray(r?.items) ? r.items : [];
+}
+
+/** 시스템 파일 선택창을 '다운로드' 폴더에서 열어 파일을 고른다 (취소하면 null) */
+export async function pickNativeBackup(): Promise<NativeBackupItem | null> {
+  const r = await nativeSaver().pick();
+  if (!r || r.cancelled || !r.uri) return null;
+  return { uri: r.uri, name: r.name ?? "backup.json", size: r.size ?? 0, modified: Date.now() };
+}
+
+/** 앱에서 파일을 조각으로 읽어 백업으로 해석 */
+export async function readNativeBackup(uri: string): Promise<BackupFile> {
+  const saver = nativeSaver();
+  await saver.readBegin({ uri });
+  const parts: BlobPart[] = [];
+  try {
+    for (;;) {
+      const r = await saver.readNext({ length: CHUNK });
+      if (r.data) {
+        const bin = atob(r.data);
+        const u = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+        parts.push(u);
+      }
+      if (r.done) break;
+    }
+  } finally {
+    await saver.readEnd().catch(() => undefined);
+  }
+  return parseBackup(await new Blob(parts).text());
+}
+
+function parseBackup(text: string): BackupFile {
+  const data = JSON.parse(text) as Partial<BackupFile>;
+  if (!data || data.app !== "charactalk" || data.v !== 1 || typeof data.storage !== "object") {
+    throw new Error("WitH 백업 파일이 아니에요.");
+  }
+  return { ...data, media: Array.isArray(data.media) ? data.media : [] } as BackupFile;
 }
 
 /** 백업 파일 읽기 (형식 검사) */
