@@ -930,6 +930,7 @@ export default function ChatApp({
     },
   };
 
+  const variantTurn = useRef(0);
   /** 🎬 주인님 관리창 › 리액션 테스트 탭: 확률·쿨다운·이용권을 무시하고 바로 재생 */
   const reactionTest: ReactionTestActions | undefined = persona
     ? (() => {
@@ -957,6 +958,12 @@ export default function ChatApp({
             let cue = cueOf(d);
             // 뽀뽀: 가까이 다가오는 키스(kiss_close)와 손 키스를 번갈아
             if (id === "kiss" && "kiss_close" in paid && (!has("kiss") || Math.random() < 0.5)) cue = { ...cue, clips: ["kiss_close", ...cue.clips] };
+            // 같은 감정의 다른 영상(variants): 테스트에서는 누를 때마다 번갈아 (실제 대화에선 확률로)
+            const vs = (d.variants ?? []).filter((v) => has(v));
+            if (vs.length) {
+              variantTurn.current += 1;
+              if (variantTurn.current % (vs.length + 1) !== 0) cue = { ...cue, clips: [vs[(variantTurn.current - 1) % vs.length], ...cue.clips] };
+            }
             applyDecision({ reaction: id, cue, particles: d.particles, video: true });
           },
           playClip: (name) => applyDecision({ reaction: "love", cue: { clips: [name], motion: "none" }, video: true }),

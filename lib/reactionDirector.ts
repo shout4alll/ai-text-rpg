@@ -264,6 +264,13 @@ export function createReactionDirector() {
     // 6) 평소: 강한 감정 + 쿨다운 + 확률 (인물 성향 배수 적용)
     const clip = firstClip(def.clips, ctx);
     const baseChance = ev.kind === "reaction" || ev.kind === "media" ? T.heartVideoChance : T.aiVideoChance;
+    // 같은 감정의 다른 영상(variants: 날리는 키스·손키스·머리넘김 등)은 인물 성향 배수와 상관없이 따로 재생 기회를 준다
+    const variants = (def.variants ?? []).filter((v) => ctx.hasClip(v) && t - (lastClip.get(v) ?? 0) > T.sameClipGapMs);
+    if (variants.length && STRONG.has(id) && t - lastAiVideo > T.aiVideoGapMs && Math.random() < Math.min(1, baseChance) * 0.5) {
+      const v = variants[Math.floor(Math.random() * variants.length)];
+      markVideo(v, "ai");
+      return { reaction: id, cue: { clips: [v, ...def.clips], motion: def.motion, tint: def.tint, hold: def.hold }, particles: def.particles, video: true };
+    }
     const canVideo =
       !!clip &&
       STRONG.has(id) &&
