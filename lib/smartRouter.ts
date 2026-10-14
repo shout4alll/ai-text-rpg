@@ -85,7 +85,7 @@ export async function analyzeTurn(
   text: string,
   turns: { role: string; content: string; kind?: string }[],
   personaName: string,
-  timeoutMs = 1500
+  timeoutMs = 4500
 ): Promise<Analyzed> {
   const t0 = Date.now();
   const texts = turns.filter((t) => (t.kind ?? "text") === "text" && t.content);
@@ -117,7 +117,8 @@ export async function analyzeTurn(
     return { grade: g, why, by: r.modelId, ms: Date.now() - t0, usage: { in: res.usage?.inputTokens ?? 0, out: res.usage?.outputTokens ?? 0, cache: res.usage?.inputTokenDetails?.cacheReadTokens ?? 0 } };
   } catch (err) {
     console.warn(`[smartRouter] 분석 실패 → 규칙 결과: ${err instanceof Error ? err.message.slice(0, 120) : String(err)}`);
-    return { grade: "M", why: "분석 실패", by: "default", ms: Date.now() - t0 };
+    const timedOut = err instanceof Error && /timeout|abort/i.test(err.name + err.message);
+    return { grade: "M", why: timedOut ? "분석 시간초과" : "분석 실패", by: "default", ms: Date.now() - t0 };
   }
 }
 
