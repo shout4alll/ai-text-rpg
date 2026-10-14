@@ -299,7 +299,7 @@
   },
   "routing": {
     "enabled": true,
-    "opusDailyLimit": 5,
+    "opusDailyLimit": 12,
     "lightMaxChars": 25,
     "firstTurnsMain": 4,
     "mainEveryLight": 6,

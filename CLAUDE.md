@@ -41,8 +41,8 @@ npm run android:open
 | T | 최고난도·대화 꼬임 | `deep`(Opus 5) → plus → chat |
 
 - 안전장치: 분석 모델 혼자 L로 내리지 못한다(맥락 규칙도 low일 때만). 분석 실패 시 M. 되묻기·거듭된 요청은 분석 없이 바로 deep.
-- **Opus는 하루 5회 한도**(`balance.json routing.opusDailyLimit`, `lib/opusQuota.ts`). 초과하면 plus로.
-- 성인 인증된 유저 + 매혹 지원 인물/설렘 문맥 → `AI_MODEL_MATURE`(Grok 4.3, `mantle:xai.grok-4.3`). Llama는 **비상 폴백 전용**(`DEFAULT_FALLBACK_MODELS` 맨 끝).
+- **Opus는 하루 12회 한도**(`balance.json routing.opusDailyLimit`, `lib/opusQuota.ts`). 초과하면 plus로.
+- **Grok(`AI_MODEL_MATURE`, `mantle:xai.grok-4.3`)은 매혹 모드가 켜져 있고 호감도 70 이상일 때만**(`config/routing.ts ALLURE_MATURE_MIN_AFFECTION`). 호감도 70 미만 매혹 모드·일반 대화는 L·M·P·T 등급 라우팅. 일반 대화의 분위기/키워드/단계별 Grok 전환은 꺼 둠(`MATURE_OUTSIDE_ALLURE=false`). 인물 설정 `modelRoute:"mature"`(윤서)와 치트룸은 예외. Llama는 **비상 폴백 전용**(`DEFAULT_FALLBACK_MODELS` 맨 끝).
 - 주인님 모드(🔑 치트 코드)는 **라우팅을 건너뛰고 항상 메인(chat)**. 🛠 패널에서 모델을 직접 고르면 `forced`(라우팅 전부 우회). 실제 서비스 라우팅을 보려면 🛠 → 모델 선택 **자동**, 프롬프트 **서비스**.
 - 관련 파일: `app/api/chat/route.ts`(분기 조립), `lib/smartRouter.ts`(`ANALYZE_SYSTEM`, `GRADE_TIERS`), `config/ai.ts`, `config/settings.ts`.
 - ⚠️ `config/routing.ts` 머리 주석에 예전 구조(Nova Micro 분류)가 남아 있다. 정리 대상.

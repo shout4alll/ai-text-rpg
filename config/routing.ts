@@ -62,3 +62,13 @@ export function classifierPrompt(): string {
   return `너는 메신저 대화 분류기다. 유저의 마지막 말이 아래 중 무엇인지 번호 하나만 출력해라. 다른 글자는 쓰지 마라.
 ${ROUTE_CATEGORIES.map((c) => `${c.n}. ${c.label}: ${c.desc}`).join("\n")}`;
 }
+
+/**
+ * 매혹 모드가 아닌 일반 대화를 성인 모델(Grok)로 넘길지 (2026-10-14: 끔).
+ *  false → 분위기 라우팅·직설 키워드·단계별 개방·회상 연속 라우팅이 모두 꺼지고, 일반 대화는 분석 등급(L·M·P·T)으로만 정해진다.
+ *  매혹 모드 안에서의 성인 모델 배분(balance.json allureRouting)과 인물 설정 modelRoute:"mature", 치트룸은 그대로.
+ */
+export const MATURE_OUTSIDE_ALLURE = false;
+
+/** 매혹 모드에서 성인 모델(Grok)로 답하기 시작하는 호감도 (이 미만은 일반 대화처럼 등급 라우팅 L·M·P·T) */
+export const ALLURE_MATURE_MIN_AFFECTION = 70;

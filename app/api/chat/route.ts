@@ -20,7 +20,7 @@ import type { PersonaFile } from "@/lib/personas/schema";
 import { resolveModel, resolveOverrideModel, resolveFallbacks, matureModelId, supportsBedrockCache, usesTextJson } from "@/config/ai";
 import { sanitizeHistory, stickyMature } from "@/lib/historySanitizer";
 import { SPICY } from "@/config/spicy";
-import { EMOTION_PATTERN, FREEDOM } from "@/config/routing";
+import { ALLURE_MATURE_MIN_AFFECTION, EMOTION_PATTERN, FREEDOM, MATURE_OUTSIDE_ALLURE } from "@/config/routing";
 const EMOTION_RE = new RegExp(EMOTION_PATTERN);
 import { analyzeTurn, categoryById, classifyIntent, explicitHit, GRADE_TIERS, type Classified, type Grade } from "@/lib/smartRouter";
 import { SAFETY_RULES, MINOR_GUARD, absoluteRules } from "@/config/rules";
@@ -725,12 +725,12 @@ export async function POST(request: Request) {
   // 🔀 연속 라우팅: 매혹 모드를 끈 직후에도 회상 말이면 성인 전용 모델로 (config/spicy.ts)
   const matureId = matureModelId();
   const sticky =
-    !allure && !owner && parsed.data.allureOk === true && !!persona.allure && !!matureId && !ownerOpts?.model &&
+    MATURE_OUTSIDE_ALLURE && !allure && !owner && parsed.data.allureOk === true && !!persona.allure && !!matureId && !ownerOpts?.model &&
     settingValue("stickyRouting") === "on" && last.kind === "text" && stickyMature(recent, last.content);
   const allureEff = allure || sticky;
   // 🔀 분위기 라우팅: 설렘·스킨십 분위기의 말이면 이번 턴은 성인 전용 모델로 (모델만 바뀌고 수위 규칙은 그대로)
   const moodHit =
-    !!matureId && !ownerOpts?.model && !allureEff && last.kind === "text" && settingValue("moodRouting") === "on" &&
+    (MATURE_OUTSIDE_ALLURE || !!persona.cheatRoom) && !!matureId && !ownerOpts?.model && !allureEff && last.kind === "text" && settingValue("moodRouting") === "on" &&
     (owner || (parsed.data.allureOk === true && !!persona.allure)) &&
     SPICY.moodWords.some((w) => last.content.includes(w));
   // 🔥 매혹·설렘 모드 대화 배분 (balance.json allureRouting):
@@ -752,7 +752,7 @@ export async function POST(request: Request) {
     aiSinceMature >= AR.surpriseCooldownTurns &&
     Math.random() < AR.surpriseChanceByStage[Math.min(affectionStageIndex(affection, persona.relationshipType), AR.surpriseChanceByStage.length - 1)];
   /** 이번 턴을 성인 모델로 보낼지 (매혹 모드 안에서) */
-  const allureHot = allureMode && (!AR.enabled || !matureId || sticky || (AR.heatToMature && heatHit) || surprise);
+  const allureHot = allureMode && (!matureId || affection >= ALLURE_MATURE_MIN_AFFECTION);
   /** 인물 설정: 모든 대화를 성인 모델로 (personas/<id>.json modelRoute: "mature") */
   const personaMature = persona.modelRoute === "mature" && !!matureId && !ownerOpts?.model;
   // 🧵 앞 대화가 있어야 이해되는 말이면 미리 만든 답장·가벼운 모델 대신 메인 모델로
@@ -820,13 +820,13 @@ export async function POST(request: Request) {
   const adultOk = owner || (parsed.data.allureOk === true && !!persona.allure);
   const stageIdx = affectionStageIndex(affection, persona.relationshipType);
   // 1단계: 직설적 표현 키워드 → 분석 없이 성인 모델
-  const explicit = smart && !!matureId && adultOk && last.kind === "text" && explicitHit(last.content);
+  const explicit = MATURE_OUTSIDE_ALLURE && smart && !!matureId && adultOk && last.kind === "text" && explicitHit(last.content);
   // 단계별 개방: 초반 체험 몇 번 + 관계가 깊어질수록 성인 모델 확률↑ (매혹 모드가 아닐 때 · 수위 규칙은 그대로)
   const matureReplies = recent.filter((t) => t.role === "assistant" && t.mature).length;
   const freedomRoll = Math.random();
   const freedomTrial = matureReplies < FREEDOM.trialTurns;
   const freedom =
-    smart && !!matureId && adultOk && !allureMode && !explicit && last.kind === "text" &&
+    MATURE_OUTSIDE_ALLURE && smart && !!matureId && adultOk && !allureMode && !explicit && last.kind === "text" &&
     freedomRoll < (freedomTrial ? FREEDOM.trialChance : FREEDOM.chanceByStage[Math.min(stageIdx, FREEDOM.chanceByStage.length - 1)]);
   // 🧠 대화가 꼬인 턴(유저가 되묻거나 바로잡는 중)에는 고성능 모델 → 실패하면 메인
   const deepOn = !ownerOpts?.model && !!settingValue("deepModel") && settingValue("deepModel").toLowerCase() !== "off";
@@ -839,7 +839,7 @@ export async function POST(request: Request) {
   let plan: { grade: Grade; tiers: string[]; by: string; why: string; ms: number } | null = null;
   /** 분석 호출 비용 (달러) */
   let analyzerUsd = 0;
-  if (analyzerOn && !toMature && !allureMode && !deepTurn && last.kind === "text") {
+  if (analyzerOn && !toMature && !deepTurn && last.kind === "text") {
     if (dep?.level === "low" && route.tier === "light") plan = { grade: "L", tiers: GRADE_TIERS.L, by: "rule", why: "뻔한 말", ms: 0 };
     else {
       const a = await analyzeTurn(last.content, recent, persona.name);
@@ -852,7 +852,7 @@ export async function POST(request: Request) {
     }
   }
   let intent: Classified | null = null;
-  if (!plan && smart && !toMature && !allureMode && last.kind === "text") {
+  if (!plan && smart && !toMature && last.kind === "text") {
     // 애매한 말(mid)은 규칙으로 "일상"이라 단정하지 않고, 분류 모델에게 직전 대화와 함께 한 번 묻는다
     if (!owner && route.tier === "light" && dep?.level !== "mid") intent = { category: categoryById("daily"), by: "rule", ms: 0 };
     else if (route.reason === "sulking" || EMOTION_RE.test(last.content)) intent = { category: categoryById("emotion"), by: "rule", ms: 0 };
