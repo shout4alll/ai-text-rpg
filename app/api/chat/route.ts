@@ -306,10 +306,19 @@ function mergeConsecutive(messages: ModelTurn[]) {
 }
 
 /** AI SDK 메시지로 (이미지가 있으면 텍스트 + 이미지 파트) */
-function toSdkMessages(turns: ModelTurn[]) {
-  return turns.map((t) => {
+/**
+ * @param cache true 면 마지막 유저 메시지 바로 앞에 캐시 지점을 건다 (Bedrock Claude·Nova).
+ *   마지막 유저 메시지에는 매 턴 바뀌는 [지금 상황] 이 붙으므로 그 앞까지(시스템 프롬프트 + 최근 대화)를 캐시한다.
+ *   보내는 창은 balance.json cost.historyStep 단위로만 앞이 잘리므로 그 사이 턴들은 앞부분이 같아 캐시가 적중한다.
+ */
+function toSdkMessages(turns: ModelTurn[], cache = false) {
+  const cacheAt = cache && turns.length >= 2 ? turns.length - 2 : -1;
+  const cp = { providerOptions: { bedrock: { cachePoint: { type: "default" as const } } } };
+  return turns.map((t, i) => {
+    const extra = i === cacheAt ? cp : {};
     if (t.role === "user" && t.images?.length) {
       return {
+        ...extra,
         role: "user" as const,
         content: [
           { type: "text" as const, text: t.content },
@@ -320,7 +329,7 @@ function toSdkMessages(turns: ModelTurn[]) {
         ],
       };
     }
-    return { role: t.role, content: t.content };
+    return { role: t.role, content: t.content, ...extra };
   });
 }
 
@@ -961,7 +970,7 @@ export async function POST(request: Request) {
         // (Claude·Nova 만 — Llama·Grok 등은 cachePoint 를 보내면 오류)
         ...(r.provider !== "bedrock" || supportsBedrockCache(r.modelId) ? { providerOptions: { bedrock: { cachePoint: { type: "default" as const } } } } : {}),
       },
-      messages: toSdkMessages(withContext),
+      messages: toSdkMessages(withContext, r.provider === "bedrock" && supportsBedrockCache(r.modelId)),
       ...(textJson
         ? {}
         : {

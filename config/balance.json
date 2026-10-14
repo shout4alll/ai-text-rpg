@@ -292,8 +292,8 @@
   },
   "cost": {
     "maxOutputTokens": 700,
-    "historyTurns": 40,
-    "historyStep": 20,
+    "historyTurns": 10,
+    "historyStep": 5,
     "heartLlmGapSec": 30,
     "voiceRecentTurns": 16
   },

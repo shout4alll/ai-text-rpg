@@ -256,8 +256,8 @@ AI 호감도 판정 기준도 짜게 바꿨습니다: 평범한 대화 0, 진심
 | 키 | 현재 | 설명 |
 | --- | --- | --- |
 | `maxOutputTokens` | 700 | 답장 최대 길이(토큰). 말풍선 3개면 충분 |
-| `historyTurns` | 40 | 보내는 최근 대화 수 (그 이전은 기억이 대신함) |
-| `historyStep` | 20 | 보내는 범위를 20턴 단위로 맞춰 앞부분이 매번 바뀌지 않게 → 캐시 적중 |
+| `historyTurns` | 10 | 보내는 최근 대화 수 (그 이전은 기억이 대신함) |
+| `historyStep` | 5 | 보내는 범위를 5턴 단위로 맞춰 앞부분이 매번 바뀌지 않게 → 캐시 적중 |
 | `heartLlmGapSec` | 30 | 마음 리액션을 이 시간 안에 또 보내면 AI 호출 없이 표정으로만 답함 (삐졌을 땐 항상 AI) |
 | `voiceRecentTurns` | 16 | 보이스톡을 걸 때 넘기는 최근 톡 수 |
 
@@ -405,7 +405,7 @@ AI 호감도 판정 기준도 짜게 바꿨습니다: 평범한 대화 0, 진심
 | AI 사진은 요청할 때만 `aiMedia.requireUserRequest` | true | |
 | 기억 정리 주기 `memory.everyUserTurns` | 12 | |
 | 기억 최대 개수 `memory.maxFacts` | 30 | |
-| 보내는 대화 수 `cost.historyTurns` | 40 | |
+| 보내는 대화 수 `cost.historyTurns` | 10 | |
 | 연속 하트 AI 생략 `cost.heartLlmGapSec` | 30초 | |
 | 하이브리드 라우팅 `routing.enabled` | true | |
 | 가벼운 모델 글자 수 `routing.lightMaxChars` | 25 | |
