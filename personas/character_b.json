@@ -109,6 +109,12 @@
       "desc": "웃음 터진 짧은 영상"
     },
     {
+      "id": "night_room",
+      "type": "photo",
+      "file": "album/night_room.jpg",
+      "desc": "밤에 방에서 스탠드 불빛 아래 찍은 셀카 (편한 니트 차림)"
+    },
+    {
       "id": "wink_video",
       "type": "video",
       "file": "clips/touch_joy.mp4",
