@@ -21,6 +21,12 @@ import character_i from "./character_i.json";
 import character_j from "./character_j.json";
 import character_k from "./character_k.json";
 import character_l from "./character_l.json";
+import character_m from "./character_m.json";
+import character_n from "./character_n.json";
+import character_o from "./character_o.json";
+import character_p from "./character_p.json";
+import character_q from "./character_q.json";
+import character_r from "./character_r.json";
 import cheat_b from "./cheat_b.json";
 import shared from "./_shared.json";
 
@@ -37,6 +43,12 @@ export const PERSONA_FILES: { file: string; data: unknown }[] = [
   { file: "character_j.json", data: character_j },
   { file: "character_k.json", data: character_k },
   { file: "character_l.json", data: character_l },
+  { file: "character_m.json", data: character_m },
+  { file: "character_n.json", data: character_n },
+  { file: "character_o.json", data: character_o },
+  { file: "character_p.json", data: character_p },
+  { file: "character_q.json", data: character_q },
+  { file: "character_r.json", data: character_r },
   // 🔑 치트룸 (cheatRoom: true) — 치트 코드로 입장한 운영자에게만 목록에 보이고 서버도 운영자 인증 없이는 응답하지 않는다
   { file: "cheat_b.json", data: cheat_b },
 ];
