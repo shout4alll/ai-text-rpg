@@ -51,17 +51,16 @@ export function markAllurePaid(personaId: string) {
   write(ALLURE_KEY, { ...read<Record<string, string>>(ALLURE_KEY, {}), [personaId]: today() });
 }
 
-/* ── 🎬 리액션 보기 무료 횟수 (balance.json reactionShop.freeNormalPerDay) ── */
-const REACT_KEY = "ai-rpg.econ.freeReact";
+/* ── 🎬 리액션 보기: 인물마다 대표 일반 리액션 N개는 무료 (balance.json reactionShop) ── */
 
-/** 오늘 남은 일반 리액션 무료 보기 */
-export function freeReactionsLeft(): number {
-  const v = read<{ d: string; n: number }>(REACT_KEY, { d: "", n: 0 });
-  return Math.max(0, BALANCE.reactionShop.freeNormalPerDay - (v.d === today() ? v.n : 0));
-}
-export function countFreeReaction() {
-  const v = read<{ d: string; n: number }>(REACT_KEY, { d: "", n: 0 });
-  write(REACT_KEY, { d: today(), n: (v.d === today() ? v.n : 0) + 1 });
+/** 이 인물이 가진 일반 영상 중 무료로 볼 수 있는 것 (freeOrder 순서대로 앞에서 freeNormalPerPersona 개) */
+export function freeReactionClips(available: string[]): string[] {
+  const RS = BALANCE.reactionShop;
+  const have = new Set(available);
+  const ordered = RS.freeOrder.filter((c) => have.has(c));
+  // freeOrder 에 없는 영상은 뒤로 (이름순) — 대표 영상이 부족해도 N개를 채운다
+  const rest = available.filter((c) => !RS.freeOrder.includes(c)).sort();
+  return [...ordered, ...rest].slice(0, RS.freeNormalPerPersona);
 }
 
 /* ── 👆 터치 보상 (balance.json touchReward) ───────────────────── */

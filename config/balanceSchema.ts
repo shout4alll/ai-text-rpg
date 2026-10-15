@@ -136,7 +136,10 @@ export const balanceSchema = z.object({
     costPremium: z.number().int().min(0),
     costAllure: z.number().int().min(0),
     costSpecial: z.number().int().min(0),
-    freeNormalPerDay: z.number().int().min(0),
+    /** 인물마다 일반 리액션 중 무료로 볼 수 있는 개수 (freeOrder 앞에서부터) */
+    freeNormalPerPersona: z.number().int().min(0),
+    /** 무료로 열어 주는 순서 — 이 인물에게 있는 영상 중 앞에서부터 */
+    freeOrder: z.array(z.string()),
   }),
   touchReward: z.object({
     _readme: z.string().optional(),

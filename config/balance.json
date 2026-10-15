@@ -254,7 +254,8 @@
     "costPremium": 15,
     "costAllure": 10,
     "costSpecial": 30,
-    "freeNormalPerDay": 2
+    "freeNormalPerPersona": 2,
+    "freeOrder": ["love", "shy", "laugh", "smile", "excited", "touched", "pout", "sad"]
   },
   "touchReward": {
     "_readme": "👆 리액션 화면을 터치하다 아주 가끔 받는 보상 — 보석·선물·특별 리액션 티켓. chance = 반응이 나온 터치 1회당 확률. weights 비율로 종류를 고른다.",

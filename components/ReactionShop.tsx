@@ -36,7 +36,7 @@ export default function ReactionShop({
   items,
   gems,
   tickets,
-  freeLeft,
+  freeCount,
   onPlay,
   onCharge,
   onClose,
@@ -46,8 +46,8 @@ export default function ReactionShop({
   gems: number;
   /** ⭐ 특별 리액션 티켓 보유 수 */
   tickets: number;
-  /** 오늘 남은 일반 리액션 무료 보기 */
-  freeLeft: number;
+  /** 이 인물의 대표 일반 리액션 무료 개수 */
+  freeCount: number;
   onPlay: (item: ShopItem) => void;
   onCharge: () => void;
   onClose: () => void;
@@ -69,7 +69,7 @@ export default function ReactionShop({
             💎 {gems}
           </button>
           {tickets > 0 && <span>· 🎟️ {tickets}장</span>}
-          {freeLeft > 0 && <span>· 오늘 무료 {freeLeft}번</span>}
+          {freeCount > 0 && <span>· 대표 리액션 {freeCount}개 무료</span>}
         </div>
 
         {items.length === 0 && <p className="mt-4 rounded-2xl bg-paper px-3.5 py-3 text-xs text-ink-mute">볼 수 있는 리액션 영상이 아직 없어요.</p>}

@@ -37,7 +37,7 @@ import OwnerPasswordModal from "@/components/OwnerPasswordModal";
 import OnboardingModal from "@/components/OnboardingModal";
 import GiftSheet, { type GiftOption } from "@/components/GiftSheet";
 import LobbyNotes from "@/components/LobbyNotes";
-import { allurePaidToday, countFreeReaction, countMessage, freeReactionsLeft, markAllurePaid, markTouchReward, nextMessageCost, touchRewardState } from "@/lib/economy";
+import { allurePaidToday, countMessage, freeReactionClips, markAllurePaid, markTouchReward, nextMessageCost, touchRewardState } from "@/lib/economy";
 import { loadUserProfile, saveUserProfile, type UserProfile } from "@/lib/userProfile";
 import AllureGateModal from "@/components/AllureGateModal";
 import { BackupModal, MemoryModal, ResetFlow } from "@/components/ChatManageModals";
@@ -1878,12 +1878,13 @@ export default function ChatApp({
   const shopItems = (): ShopItem[] => {
     if (!persona) return [];
     const RS = BALANCE.reactionShop;
-    const free = freeReactionsLeft() > 0;
+    const normals = Object.keys(persona.assets.clips).filter((n) => n !== "idle" && n !== "talk");
+    const freeSet = new Set(freeReactionClips(normals));
     const adultOk = readStorage(ALLURE_STORAGE.adult) === "1";
     const out: ShopItem[] = [];
     for (const n of Object.keys(persona.assets.clips)) {
       if (n === "idle" || n === "talk") continue;
-      out.push({ clip: n, tier: "normal", cost: free ? 0 : RS.costNormal });
+      out.push({ clip: n, tier: "normal", cost: freeSet.has(n) ? 0 : RS.costNormal });
     }
     for (const n of Object.keys(persona.assets.premiumClips ?? {})) {
       out.push({ clip: n, tier: "premium", cost: premiumUnlocked ? RS.costNormal : RS.costPremium });
@@ -1903,9 +1904,7 @@ export default function ChatApp({
     if (item.ticket && countItem(TICKET_SPECIAL) > 0) {
       spendItem(TICKET_SPECIAL);
       refreshInv();
-    } else if (item.cost === 0) {
-      countFreeReaction();
-    } else if (!payCash(item.cost)) {
+    } else if (item.cost > 0 && !payCash(item.cost)) {
       setCashState(getCash());
       addNotice(`💎 보석이 부족해요 (필요 ${item.cost})`);
       setShopOpen(false);
@@ -2131,7 +2130,8 @@ export default function ChatApp({
     setTimeout(() => setMessages((prev) => [...prev, ...lines.map((t, i) => ({ id: nextId.current++, role: "ai" as const, kind: "text" as const, text: i === 0 ? `💌 ${t}` : t, at: Date.now() }))]), 0);
   };
   /** 💌 이 인물과 대화한 적이 있는지 (쪽지 종류 결정) */
-  const noteHasHistory = (pid: string) => !!loadChat(pid as PersonaId)?.messages.some((m) => (m.kind ?? "text") === "text" && !m.local && m.role === "user");
+  // "대화 중" 표시(previews)와 같은 기준: 인사말(local) 말고 실제로 오간 말이 하나라도 있으면 이어지는 대화로 본다
+  const noteHasHistory = (pid: string) => !!loadChat(pid as PersonaId)?.messages.some((m) => (m.kind ?? "text") === "text" && !m.local && !m.text.startsWith("⚠️"));
   /** 💌 지난 대화·기억·흐른 시간을 바탕으로 쪽지를 AI 로 만든다 (메인 모델, 대화방에는 아직 저장하지 않음) */
   const composeLobbyNote = async (pid: string): Promise<string[] | null> => {
     const stored = loadChat(pid as PersonaId);
@@ -3022,7 +3022,7 @@ export default function ChatApp({
           previews={previews()}
         />
       )}
-      {selectorOpen && !onboardingOpen && <LobbyNotes personas={listed.filter((p) => p.id !== persona.id)} userGender={userProfile?.gender} userName={userProfile?.name} onOpen={openFromNote} />}
+      {selectorOpen && !onboardingOpen && <LobbyNotes personas={listed.filter((p) => p.id !== persona.id)} userGender={userProfile?.gender} userName={userProfile?.name} onOpen={openFromNote} hasHistory={noteHasHistory} compose={composeLobbyNote} />}
       {themeOpen && (
         <ThemePicker
           theme={theme}
@@ -3051,7 +3051,7 @@ export default function ChatApp({
           items={shopItems()}
           gems={cash}
           tickets={inv[TICKET_SPECIAL] ?? 0}
-          freeLeft={freeReactionsLeft()}
+          freeCount={BALANCE.reactionShop.freeNormalPerPersona}
           onPlay={playShopItem}
           onCharge={() => {
             setShopOpen(false);
