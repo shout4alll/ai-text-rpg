@@ -19,6 +19,8 @@ export const maxDuration = 30;
 const bodySchema = z.object({
   personaId: z.string().max(64),
   facts: z.array(z.string().max(300)).max(80).default([]),
+  /** ⭐ 유저가 고정한 기억 — 정리해도 지우거나 바꾸지 않는다 */
+  pinned: z.array(z.string().max(300)).max(20).default([]),
   turns: z
     .array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(1000), voice: z.boolean().optional(), at: z.number().optional() }))
     .min(1)
@@ -51,11 +53,12 @@ export async function POST(request: Request) {
 - 기억할 것: 유저의 이름·호칭, 직업·일상, 좋아하는 것/싫어하는 것, 기분과 고민, 중요한 사건·일정, 약속, 둘만의 농담·별명, 관계의 변화(고백, 말 놓기 등).
 - 각 항목은 짧은 한국어 한 문장. 시점이 중요하면 날짜를 붙인다(오늘: ${today}).
 - 기존 기억과 합쳐 중복을 없애고, 바뀐 내용은 새 것으로 고친다. 덜 중요하고 오래된 것부터 빼서 최대 ${max}개.
+- [고정 기억]은 유저가 직접 중요하다고 표시한 것이다. 출력 목록에 넣지 말고(앱이 따로 보관한다), 고정 기억과 같은 내용을 중복해서 적지도 마라.
 - 대화에 없는 것은 지어내지 마라. 주소·연락처·금융정보·비밀번호 같은 개인정보는 적지 마라.`,
       messages: [
         {
           role: "user",
-          content: `[기존 기억]\n${parsed.data.facts.map((f) => `- ${f}`).join("\n") || "(없음)"}\n\n[최근 대화]\n${log}`,
+          content: `[고정 기억 — 건드리지 말 것]\n${parsed.data.pinned.map((f) => `- ${f}`).join("\n") || "(없음)"}\n\n[기존 기억]\n${parsed.data.facts.map((f) => `- ${f}`).join("\n") || "(없음)"}\n\n[최근 대화]\n${log}`,
         },
       ],
       output: Output.object({

@@ -303,6 +303,15 @@
       "video"
     ]
   },
+  "userNotes": {
+    "_readme": "✍️ 유저가 적는 인물별 요청. 세계관 추가 요청은 3개까지 무료, 나의 요청사항은 1개까지 무료. 한도를 넘겨 추가할 때만 보석(extraCost)을 쓴다. maxItems 는 종류별 저장 한도, maxPinned 는 ⭐ 고정 기억 한도.",
+    "freeWorld": 3,
+    "freeWants": 1,
+    "extraCost": 10,
+    "maxItems": 10,
+    "maxChars": 120,
+    "maxPinned": 12
+  },
   "memory": {
     "everyUserTurns": 12,
     "afterVoiceCall": true,

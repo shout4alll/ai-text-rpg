@@ -218,6 +218,15 @@ export const balanceSchema = z.object({
     ttlMin: z.number().min(1),
     categories: z.record(z.string(), z.array(z.string().min(1))),
   }),
+  userNotes: z.object({
+    _readme: z.string().optional(),
+    freeWorld: z.number().int().min(0),
+    freeWants: z.number().int().min(0),
+    extraCost: z.number().int().min(0),
+    maxItems: z.number().int().min(1),
+    maxChars: z.number().int().min(10),
+    maxPinned: z.number().int().min(1),
+  }),
   memory: z.object({
     everyUserTurns: z.number().int().min(2),
     afterVoiceCall: z.boolean(),

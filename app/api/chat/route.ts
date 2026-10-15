@@ -122,6 +122,15 @@ const requestSchema = z.object({
     .optional(),
   /** 기억 노트 (/api/memory 가 만든 요약, 예전 대화·보이스톡) */
   memory: z.array(z.string().max(300)).max(60).optional(),
+  /** ⭐ 유저가 고정한 특별한 기억 — 맥락 블록에 맨 앞으로, "특별히" 표시 */
+  pinned: z.array(z.string().max(300)).max(20).optional(),
+  /** ✍️ 유저가 적은 세계관 추가 요청·나의 요청사항 (인물별) */
+  userNotes: z
+    .object({
+      world: z.array(z.string().max(160)).max(12).optional(),
+      wants: z.array(z.string().max(160)).max(12).optional(),
+    })
+    .optional(),
   /** 👤 유저 정보 (첫 입장 때 받은 호칭·성별) */
   user: z.object({ name: z.string().max(20).optional(), gender: z.enum(["male", "female"]).optional() }).optional(),
   /** 기기 무작위 id (🛠 실시간 대화 모니터에서 손님 구분용) */
@@ -342,6 +351,31 @@ function toSdkMessages(turns: ModelTurn[], cache = false) {
 }
 
 /**
+ * ✍️ 유저가 적은 세계관 추가 요청·나의 요청사항을 고정부에 넣는다 (바뀌지 않는 설정이라 캐시 대상).
+ *  · 세계관 요청: 인물의 기본 설정(이름·나이·직업·성격·관계)과 충돌하지 않는 범위에서 대화에 반영
+ *  · 나의 요청사항: 유저가 이 인물에게 바라는 대화 방식 — 기억해 두고 자연스럽게 반영
+ * 비어 있으면 빈 문자열 → 지금까지와 똑같이 동작한다.
+ */
+function userNotesSection(n?: { world?: string[]; wants?: string[] }): string {
+  const clean = (a?: string[]) => (a ?? []).map((s) => s.replace(/\s+/g, " ").trim()).filter(Boolean).slice(0, 12);
+  const world = clean(n?.world);
+  const wants = clean(n?.wants);
+  if (!world.length && !wants.length) return "";
+  const rows: string[] = [];
+  if (world.length) {
+    rows.push(
+      `[유저가 더한 세계관 설정]\n${world.map((w) => `- ${w}`).join("\n")}\n- 위 설정을 네 세계의 사실로 받아들이고 대화에 자연스럽게 반영해라. 단, 네 이름·나이·직업·성격·말투·관계 단계 같은 기본 설정과 충돌하거나 안전 규칙에 어긋나면 기본 설정이 우선이다. 매번 읊지 말고 어울릴 때 한 조각씩 꺼내라.`
+    );
+  }
+  if (wants.length) {
+    rows.push(
+      `[유저가 너에게 바라는 것]\n${wants.map((w) => `- ${w}`).join("\n")}\n- 유저가 직접 적어 둔 바람이다. 기억하고 있다가 대화 흐름에 맞을 때 자연스럽게 해 줘라(티 내며 생색내지 말고 그냥 그렇게 행동해라). 관계 단계·성격·안전 규칙에 어긋나면 그 범위 안에서 가장 가깝게.`
+    );
+  }
+  return `\n\n${rows.join("\n\n")}`;
+}
+
+/**
  * 대화 전에 "나와 상대의 성별"을 못 박는다 — 모든 모델 공통 (특히 Grok 은 남녀·호칭·대명사를 종종 뒤바꾼다)
  * 시스템 프롬프트 맨 앞에 붙고, 매 턴 상황에도 한 줄 다시 알려 준다.
  */
@@ -409,6 +443,8 @@ interface InstructionContext {
   sulk: z.infer<typeof requestSchema>["sulk"];
   /** 예전 대화(보이스톡 포함)에서 기억해 둔 것 */
   memory: string[];
+  /** ⭐ 유저가 고정한 기억 */
+  pinned?: string[];
   /** 직전 대화 이후 흐른 시간(ms) */
   gapMs?: number;
   user?: { name?: string; gender?: "male" | "female" };
@@ -525,7 +561,7 @@ function sulkSection(c: InstructionContext): string {
  *    Gemini: 같은 앞부분이 반복되면 자동(암묵적) 캐시 할인 / Bedrock Claude: cachePoint 로 명시 캐시.
  *  - 바뀌는 정보(시각·호감도·삐짐·이번 턴 지침·이미 보낸 앨범)는 마지막 유저 메시지 앞에 붙인다.
  */
-function buildStaticInstructions(persona: PersonaFile, allure: boolean, tune: { extra?: string; rules?: RulesOverride } = {}): string {
+function buildStaticInstructions(persona: PersonaFile, allure: boolean, tune: { extra?: string; rules?: RulesOverride; notes?: { world?: string[]; wants?: string[] } } = {}): string {
   const rules = tune.rules ?? {};
   const asLines = (v: unknown) => (Array.isArray(v) && v.length ? (v as string[]).map((r) => `- ${r}`).join("\n") : null);
   const sharedRules = asLines(rules.shared) ?? SHARED_RULES;
@@ -546,7 +582,7 @@ ${persona.story ? `- 살아온 이야기: ${persona.story.background}\n` : ""}- 
 - 일상(배경 정보일 뿐이다. 대화에서 매번 꺼내지 마라): ${prompt.lifestyle}
 - 관계와 감정 표현: ${prompt.relationship}
 - 대화는 네가 먼저 보낸 다음 메시지로 시작됐다: "${persona.greeting}"
-${traitsSection(persona)}${worldStatic(persona)}
+${traitsSection(persona)}${worldStatic(persona)}${userNotesSection(tune.notes)}
 
 [지금 상황 읽기]
 - 유저의 마지막 메시지 앞에는 [지금 상황] 블록이 붙어 있다. 시각·호감도·기분·이번 턴 지침·기억이 들어 있으니 꼭 반영해라. 이 블록은 시스템 정보라 답장에 따라 쓰지 마라.
@@ -713,6 +749,7 @@ function buildTurnContext(c: InstructionContext): string {
     // 🌍 세계관 확장: 이야기가 이어지는 중(continuity)에는 새 소재를 주지 않는다
     ...(c.continuity || !worldFresh(c) ? [] : worldTurnLines(persona, persona.timezone)),
     c.sentAlbumIds.length ? `- 이미 보낸 앨범: ${c.sentAlbumIds.slice(-20).join(", ")}` : null,
+    c.pinned?.length ? `- ⭐ 유저가 특별히 기억해 달라고 표시한 것(절대 잊지 말고, 어울릴 때 자연스럽게 떠올려라): ${c.pinned.map((m) => `「${m}」`).join(" ")}` : null,
     c.memory.length ? `- 기억(예전 대화·보이스톡에서): ${c.memory.map((m) => `「${m}」`).join(" ")}` : null,
     c.lastKind === "text" || c.lastKind === "user_media" ? pickLengthGuide(c.userText, c.lenHint, undefined, c.grokLead).line : null,
   ].filter(Boolean);
@@ -992,6 +1029,7 @@ export async function POST(request: Request) {
       allure: allureEff,
       sulk: parsed.data.sulk ?? null,
       memory: mem,
+      pinned: parsed.data.pinned,
     });
     // 🧼 성인 전용 모델이 따로 있으면, 다른 모델(메인 등)에게는 매혹 모드 구간을 요약으로 바꿔 보낸다 (원문은 화면·저장소에만)
     let historySafe: typeof history | null = null;
@@ -1045,7 +1083,7 @@ export async function POST(request: Request) {
       model: r.model,
       instructions: {
         role: "system",
-        content: genderFacts(persona, parsed.data.user).head + (owner ? ownerInstructions(persona, { rules: typeof rulesOv?.ownerRules === "string" ? rulesOv.ownerRules : persona.cheatRules, absolute: Array.isArray(rulesOv?.absolute) ? (rulesOv.absolute as string[]) : undefined, extra: personaExtra }) : buildStaticInstructions(persona, allureEff, { extra: personaExtra, rules: rulesOv })) + heatNote + (/grok/i.test(r.modelId) ? GROK_STYLE_NOTE : "") + (textJson ? TEXT_JSON_GUIDE : ""),
+        content: genderFacts(persona, parsed.data.user).head + (owner ? ownerInstructions(persona, { rules: typeof rulesOv?.ownerRules === "string" ? rulesOv.ownerRules : persona.cheatRules, absolute: Array.isArray(rulesOv?.absolute) ? (rulesOv.absolute as string[]) : undefined, extra: personaExtra }) : buildStaticInstructions(persona, allureEff, { extra: personaExtra, rules: rulesOv, notes: parsed.data.userNotes })) + heatNote + (/grok/i.test(r.modelId) ? GROK_STYLE_NOTE : "") + (textJson ? TEXT_JSON_GUIDE : ""),
         // Bedrock(Claude): 여기까지를 캐시 (Gemini 는 같은 앞부분을 자동으로 캐시)
         // (Claude·Nova 만 — Llama·Grok 등은 cachePoint 를 보내면 오류)
         ...(r.provider !== "bedrock" || supportsBedrockCache(r.modelId) ? { providerOptions: { bedrock: { cachePoint: { type: "default" as const } } } } : {}),

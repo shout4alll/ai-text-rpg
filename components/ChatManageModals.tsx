@@ -138,16 +138,25 @@ export function ResetFlow({
 export function MemoryModal({
   persona,
   facts,
+  pinned,
+  maxPinned,
   updating,
   onRefresh,
   onDelete,
+  onPin,
+  onUnpin,
   onClose,
 }: {
   persona: Persona;
   facts: string[];
+  /** ⭐ 고정한 기억 */
+  pinned: string[];
+  maxPinned: number;
   updating: boolean;
   onRefresh: () => void;
   onDelete: (index: number) => void;
+  onPin: (index: number) => void;
+  onUnpin: (index: number) => void;
   onClose: () => void;
 }) {
   return (
@@ -155,20 +164,45 @@ export function MemoryModal({
       <div className="flex items-center justify-between gap-3 px-5 pb-2 pt-4">
         <div>
           <p className="text-base font-bold">🧠 {persona.name} 님의 기억</p>
-          <p className="text-[11px] text-ink-mute">톡과 보이스톡에서 기억해 둔 것 · 다음 대화에 반영돼요</p>
+          <p className="text-[11px] text-ink-mute">톡과 보이스톡에서 기억해 둔 것 · ☆ 를 누르면 고정돼서 더 오래 기억해요</p>
         </div>
         <button type="button" onClick={onClose} aria-label="닫기" className="text-lg text-ink-mute">
           ✕
         </button>
       </div>
       <div className="px-5 pb-5">
+        {pinned.length > 0 && (
+          <div className="mb-3" data-memory-pinned>
+            <p className="mb-1 text-[11px] font-semibold text-amber-600">⭐ 고정한 기억 ({pinned.length}/{maxPinned})</p>
+            <ul className="space-y-1.5">
+              {pinned.map((f, i) => (
+                <li key={`p${i}-${f}`} className="flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2 text-[13px] ring-1 ring-amber-200/70">
+                  <span className="flex-1 text-ink-soft">{f}</span>
+                  <button type="button" onClick={() => onUnpin(i)} aria-label="고정 풀기" data-unpin className="shrink-0 text-base leading-none text-amber-500">
+                    ⭐
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {facts.length === 0 ? (
-          <p className="rounded-2xl bg-paper px-3.5 py-3 text-xs text-ink-mute">아직 기억한 게 없어요. 대화를 조금 더 나누면 생겨요.</p>
+          <p className="rounded-2xl bg-paper px-3.5 py-3 text-xs text-ink-mute">{pinned.length ? "정리된 기억이 더 쌓이면 여기에 보여요." : "아직 기억한 게 없어요. 대화를 조금 더 나누면 생겨요."}</p>
         ) : (
           <ul className="space-y-1.5" data-memory-list>
             {facts.map((f, i) => (
               <li key={`${i}-${f}`} className="flex items-start gap-2 rounded-xl bg-paper px-3 py-2 text-[13px]">
                 <span className="flex-1 text-ink-soft">{f}</span>
+                <button
+                  type="button"
+                  onClick={() => onPin(i)}
+                  disabled={pinned.length >= maxPinned}
+                  aria-label="이 기억 고정하기"
+                  data-pin
+                  className="shrink-0 text-base leading-none text-ink-mute/70 hover:text-amber-500 disabled:opacity-30"
+                >
+                  ☆
+                </button>
                 <button
                   type="button"
                   onClick={() => onDelete(i)}

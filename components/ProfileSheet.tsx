@@ -5,6 +5,8 @@ import PersonaPortrait from "@/components/PersonaPortrait";
 import { IconClose, IconPhone, IconChats, IconGift, IconClock, IconHeart } from "@/components/icons";
 import { affectionProgress, affectionStage } from "@/config/reactions";
 import type { Persona } from "@/lib/personas/types";
+import UserNotesEditor from "@/components/UserNotesEditor";
+import type { NoteKind, UserNotes } from "@/lib/userNotes";
 
 export interface ProfileStats {
   /** 주고받은 말풍선 수 */
@@ -30,6 +32,10 @@ export default function ProfileSheet({
   onClose,
   onCall,
   kakao = false,
+  notes,
+  gems = 0,
+  onAddNote,
+  onRemoveNote,
 }: {
   persona: Persona;
   affection: number;
@@ -37,6 +43,11 @@ export default function ProfileSheet({
   onClose: () => void;
   onCall?: () => void;
   kakao?: boolean;
+  /** ✍️ 세계관 추가 요청·나의 요청사항 (없으면 이 구역을 숨긴다) */
+  notes?: UserNotes;
+  gems?: number;
+  onAddNote?: (kind: NoteKind, text: string) => string | null;
+  onRemoveNote?: (kind: NoteKind, index: number) => void;
 }) {
   const [viewer, setViewer] = useState<ProfileStats["media"][number] | null>(null);
   const stage = affectionStage(affection, persona.relationshipType);
@@ -124,6 +135,8 @@ export default function ProfileSheet({
                 </p>
               )}
             </section>
+
+            {notes && onAddNote && onRemoveNote && <UserNotesEditor notes={notes} gems={gems} onAdd={onAddNote} onRemove={onRemoveNote} />}
 
             {/* 소개 */}
             <section>

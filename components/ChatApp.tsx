@@ -39,6 +39,7 @@ import GiftSheet, { type GiftOption } from "@/components/GiftSheet";
 import LobbyNotes from "@/components/LobbyNotes";
 import { allurePaidToday, countMessage, freeReactionClips, markAllurePaid, markTouchReward, nextMessageCost, touchRewardState } from "@/lib/economy";
 import { loadUserProfile, saveUserProfile, type UserProfile } from "@/lib/userProfile";
+import { cleanNotes, cleanPinned, EMPTY_NOTES, NOTE_LIMITS, freeCount, nextNoteCost, type NoteKind, type UserNotes } from "@/lib/userNotes";
 import AllureGateModal from "@/components/AllureGateModal";
 import { BackupModal, MemoryModal, ResetFlow } from "@/components/ChatManageModals";
 import { downloadBackup } from "@/lib/backup";
@@ -132,6 +133,10 @@ interface StoredChat {
   bestStage?: number;
   /** 🧠 기억 노트 (/api/memory) — upTo: 이 메시지 id 까지 정리함 */
   memory?: { facts: string[]; upTo: number; at: number };
+  /** ⭐ 유저가 고정한 기억 (정리해도 지워지지 않고 대화에 먼저 반영) */
+  pinned?: string[];
+  /** ✍️ 세계관 추가 요청·나의 요청사항 (lib/userNotes.ts) */
+  userNotes?: UserNotes;
 }
 
 /** 💬 카톡(메신저) 모드 저장 키 */
@@ -207,6 +212,8 @@ function loadChat(id: PersonaId): StoredChat | null {
         sulkReleasedAt: typeof d.sulkReleasedAt === "number" ? d.sulkReleasedAt : undefined,
         bestStage: typeof d.bestStage === "number" ? d.bestStage : undefined,
         memory: d.memory && Array.isArray(d.memory.facts) ? d.memory : undefined,
+        pinned: cleanPinned(d.pinned),
+        userNotes: cleanNotes(d.userNotes),
       };
     }
   } catch {
@@ -220,7 +227,7 @@ function saveChat(id: PersonaId, chat: Omit<StoredChat, "v">) {
   const messages = chat.messages
     .slice(-MAX_STORED)
     .map((m) => (m.media?.localKey ? { ...m, media: { ...m.media, src: "" } } : m));
-  const extra = { sulk: chat.sulk ?? null, sulkReleasedAt: chat.sulkReleasedAt, bestStage: chat.bestStage, memory: chat.memory };
+  const extra = { sulk: chat.sulk ?? null, sulkReleasedAt: chat.sulkReleasedAt, bestStage: chat.bestStage, memory: chat.memory, pinned: chat.pinned, userNotes: chat.userNotes };
   if (writeStorage(chatKey(id), JSON.stringify({ v: 2, messages, affection: chat.affection, ...extra }))) return;
   // 용량 초과: 실시간 생성 사진(data URL)은 빼고 저장 (대화 기록은 지킨다)
   const slim = messages.map((m) =>
@@ -578,6 +585,13 @@ export default function ChatApp({
   const [memory, setMemory] = useState<{ facts: string[]; upTo: number; at: number } | null>(null);
   const memoryRef = useRef(memory);
   memoryRef.current = memory;
+  // ⭐ 고정 기억 · ✍️ 세계관 추가 요청/나의 요청사항 (대화방별, StoredChat 에 저장)
+  const [pinned, setPinned] = useState<string[]>([]);
+  const pinnedRef = useRef(pinned);
+  pinnedRef.current = pinned;
+  const [notes, setNotes] = useState<UserNotes>(EMPTY_NOTES);
+  const notesRef = useRef(notes);
+  notesRef.current = notes;
   const [memoryBusy, setMemoryBusy] = useState(false);
   const memoryForce = useRef(false);
   /** 💰 마음 리액션: 마지막으로 AI 답장을 부른 시각 */
@@ -929,6 +943,8 @@ export default function ChatApp({
       }
       setSulk(restored);
       setMemory(saved?.memory ?? null);
+      setPinned(saved?.pinned ?? []);
+      setNotes(saved?.userNotes ?? EMPTY_NOTES);
       memoryForce.current = false;
       setMenuOpen(false);
       setResetOpen(false);
@@ -1078,8 +1094,10 @@ export default function ChatApp({
       sulkReleasedAt: sulkReleasedAt.current,
       bestStage: bestStage.current,
       memory: memory ?? undefined,
+      pinned,
+      userNotes: notes,
     });
-  }, [personaId, messages, affection, sulk, memory]);
+  }, [personaId, messages, affection, sulk, memory, pinned, notes]);
 
   /** 다른 대화방으로 옮긴 뒤 도착한 답장을 원래 대화방 저장소에 기록 (다음에 열면 보임) */
   const persistToRoom = useCallback(
@@ -1101,6 +1119,8 @@ export default function ChatApp({
         sulkReleasedAt: stored.sulkReleasedAt,
         bestStage: stored.bestStage,
         memory: stored.memory,
+        pinned: stored.pinned,
+        userNotes: stored.userNotes,
       });
     },
     []
@@ -1123,7 +1143,7 @@ export default function ChatApp({
         const res = await fetch(apiUrl("/api/memory"), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ personaId: pid, facts: cur?.facts ?? [], turns, timeZone: userTimeZone() }),
+          body: JSON.stringify({ personaId: pid, facts: cur?.facts ?? [], pinned: pinnedRef.current, turns, timeZone: userTimeZone() }),
         });
         const data = (await res.json().catch(() => ({}))) as { facts?: string[] };
         if (!res.ok || !Array.isArray(data.facts)) return;
@@ -1142,6 +1162,25 @@ export default function ChatApp({
     },
     [memoryBusy]
   );
+
+  /** ✍️ 세계관 추가 요청·나의 요청사항 추가 (무료 개수를 넘으면 보석) — 실패 사유를 돌려주고, 성공이면 null */
+  const addNote = (kind: NoteKind, raw: string): string | null => {
+    const text = raw.replace(/\s+/g, " ").trim().slice(0, NOTE_LIMITS.maxChars);
+    if (!text) return null;
+    const list = notes[kind];
+    if (list.includes(text)) return "이미 적어 둔 내용이에요.";
+    if (list.length >= NOTE_LIMITS.maxItems) return `최대 ${NOTE_LIMITS.maxItems}개까지 적을 수 있어요.`;
+    const cost = nextNoteCost(kind, list.length);
+    if (cost > 0 && !payCash(cost)) {
+      setCashState(getCash());
+      setGemOpen(true);
+      return `💎 ${cost}개가 필요해요. 충전 후 다시 눌러 주세요.`;
+    }
+    if (cost > 0) setCashState(getCash());
+    setNotes({ ...notes, [kind]: [...list, text] });
+    return null;
+  };
+  const removeNote = (kind: NoteKind, index: number) => setNotes({ ...notes, [kind]: notes[kind].filter((_, j) => j !== index) });
 
   const personaIdRef = useRef(personaId);
   personaIdRef.current = personaId;
@@ -1248,6 +1287,8 @@ export default function ChatApp({
           allureOk: !!persona?.allure && premiumUnlocked,
           sulk: sulkSummary(sulkRef.current),
           memory: memoryRef.current?.facts ?? [],
+          pinned: pinnedRef.current,
+          userNotes: notesRef.current,
           ...(userProfileRef.current ? { user: { name: userProfileRef.current.name, gender: userProfileRef.current.gender } } : {}),
           ...(kind === "text" || kind === "reaction" ? (() => { const t = takeTouches(); return t ? { touches: t } : {}; })() : {}),
           ...(kind === "gift" && giftRef.current ? { gift: giftRef.current } : {}),
@@ -2154,6 +2195,8 @@ export default function ChatApp({
           allureOk: false,
           sulk: stored.sulk ? sulkSummary(stored.sulk) : null,
           memory: stored.memory?.facts ?? [],
+          pinned: stored.pinned ?? [],
+          userNotes: stored.userNotes ?? EMPTY_NOTES,
           ...(userProfileRef.current ? { user: { name: userProfileRef.current.name, gender: userProfileRef.current.gender } } : {}),
           nudge: "message",
           lobbyNote: true,
@@ -2945,7 +2988,21 @@ export default function ChatApp({
         <MemoryModal
           persona={persona}
           facts={memory?.facts ?? []}
+          pinned={pinned}
+          maxPinned={BALANCE.userNotes.maxPinned}
           updating={memoryBusy}
+          onPin={(i) => {
+            const f = memory?.facts[i];
+            if (!f || pinned.length >= BALANCE.userNotes.maxPinned) return;
+            setPinned(cleanPinned([...pinned, f]));
+            setMemory((m) => (m ? { ...m, facts: m.facts.filter((_, j) => j !== i) } : m));
+          }}
+          onUnpin={(i) => {
+            const f = pinned[i];
+            if (!f) return;
+            setPinned(pinned.filter((_, j) => j !== i));
+            setMemory((m) => ({ facts: [f, ...(m?.facts ?? [])], upTo: m?.upTo ?? -1, at: m?.at ?? Date.now() }));
+          }}
           onRefresh={() => void updateMemory(messages, persona.id)}
           onDelete={(i) =>
             setMemory((m) => (m ? { ...m, facts: m.facts.filter((_, j) => j !== i) } : m))
@@ -3002,6 +3059,10 @@ export default function ChatApp({
           affection={affection}
           stats={profileStats}
           kakao={kakaoView}
+          notes={notes}
+          gems={cash}
+          onAddNote={addNote}
+          onRemoveNote={removeNote}
           onCall={voiceOpen ? undefined : startVoice}
           onClose={() => setProfileOpen(false)}
         />
