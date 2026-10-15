@@ -154,7 +154,7 @@ export const PERSONAS: Record<PersonaId, Persona> = {
     id: "character_f",
     name: "이수정",
     title: "작은 독립서점 주인",
-    profile: { age: 45, occupation: "서점 운영", gender: "female" },
+    profile: { age: 55, occupation: "서점 운영", gender: "female" },
     description: "동네 독립서점을 운영하는 애서가. 차분한 목소리로 이야기를 한 장씩 넘기고, 말과 글로 된 수수께끼를 좋아해요.",
     tags: ["자영업자", "차분한 존댓말", "난이도 보통"],
     greeting:
