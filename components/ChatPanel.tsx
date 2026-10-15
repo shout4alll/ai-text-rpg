@@ -10,6 +10,13 @@ import { IconHeart, IconImage, IconSend, IconSuggest } from "@/components/icons"
 
 export type ChatVariant = "default" | "kakao";
 
+/** 📏 폰(영상 배경) 화면에서 대화창 높이를 유저가 바꾼다 — 화면 높이 대비 비율, 이 기기에 기억 */
+const CHAT_H_KEY = "ai-rpg.chat-height";
+const CHAT_H_MIN = 0.14;
+const CHAT_H_MAX = 0.72;
+const CHAT_H_DEFAULT = 0.34;
+const clampH = (v: number) => Math.min(CHAT_H_MAX, Math.max(CHAT_H_MIN, v));
+
 /** 화면 모드별 스타일 (default = 영상 위 / 넓은 화면은 wide: 로 오른쪽 패널, kakao = 메신저 모드) */
 function stylesOf(v: ChatVariant) {
   // 색은 모두 테마 변수 (app/globals.css · config/themes.ts)
@@ -42,7 +49,7 @@ function stylesOf(v: ChatVariant) {
   }
   return {
     scroll:
-      "fade-top-mask max-h-[34dvh] overflow-y-auto px-3 pb-2 pt-10 wide:no-mask wide:max-h-none wide:flex-1 wide:px-6 wide:pt-6",
+      "fade-top-mask max-h-[var(--chat-h,34dvh)] overflow-y-auto px-3 pb-2 pt-10 wide:no-mask wide:max-h-none wide:flex-1 wide:px-6 wide:pt-6",
     ai: "bg-ai/95 text-ai-ink shadow-soft backdrop-blur-md wide:bg-ai wide:backdrop-blur-none",
     user: "bg-me text-me-ink shadow-[0_4px_14px_-8px_rgb(var(--b500)/.7)]",
     aiShape: "rounded-[20px] rounded-tl-md",
@@ -270,6 +277,24 @@ export default function ChatPanel({
   const kakao = variant === "kakao";
   /** 대화 목록 스크롤 영역 — 맨 아래 고정은 여기서만 한다 (화면 전체가 같이 움직이지 않게) */
   const scrollRef = useRef<HTMLDivElement>(null);
+  /** 📏 대화창 높이 (화면 높이 대비). 폰 영상 배경 화면에서만 쓴다 */
+  const [chatH, setChatH] = useState(CHAT_H_DEFAULT);
+  const dragRef = useRef<{ y: number; h: number } | null>(null);
+  useEffect(() => {
+    try {
+      const v = Number(localStorage.getItem(CHAT_H_KEY));
+      if (Number.isFinite(v) && v > 0) setChatH(clampH(v));
+    } catch {
+      /* 저장소를 쓸 수 없으면 기본값 */
+    }
+  }, []);
+  const saveChatH = (v: number) => {
+    try {
+      localStorage.setItem(CHAT_H_KEY, String(v));
+    } catch {
+      /* 무시 */
+    }
+  };
   /** 지금 맨 아래 근처를 보고 있는가 (위로 올려 읽는 중이면 새 말풍선이 와도 끌어내리지 않는다) */
   const stick = useRef(true);
   /** 이미 처음 위치를 맞춘 방 */
@@ -463,7 +488,45 @@ export default function ChatPanel({
           여기에 놓으면 사진·영상을 첨부해요
         </div>
       )}
-      <div className="flex min-h-0 flex-1 flex-col justify-end">
+      <div className="flex min-h-0 flex-1 flex-col justify-end" style={kakao ? undefined : ({ "--chat-h": `${Math.round(chatH * 100)}dvh` } as React.CSSProperties)}>
+        {!kakao && (
+          <div
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="대화창 높이 조절 (위아래로 끌기)"
+            data-chat-resize
+            className="pointer-events-auto flex h-6 shrink-0 cursor-row-resize touch-none items-center justify-center wide:hidden"
+            onPointerDown={(e) => {
+              e.stopPropagation();
+              e.currentTarget.setPointerCapture(e.pointerId);
+              dragRef.current = { y: e.clientY, h: chatH };
+            }}
+            onPointerMove={(e) => {
+              const d = dragRef.current;
+              if (!d) return;
+              // 위로 끌면 커지고(대화창이 화면 아래에 붙어 있어서), 아래로 끌면 작아진다
+              setChatH(clampH(d.h + (d.y - e.clientY) / window.innerHeight));
+            }}
+            onPointerUp={(e) => {
+              const d = dragRef.current;
+              dragRef.current = null;
+              e.currentTarget.releasePointerCapture(e.pointerId);
+              if (d) {
+                saveChatH(chatH);
+                if (stick.current) requestAnimationFrame(() => toBottom(false));
+              }
+            }}
+            onPointerCancel={() => {
+              dragRef.current = null;
+            }}
+            onDoubleClick={() => {
+              setChatH(CHAT_H_DEFAULT);
+              saveChatH(CHAT_H_DEFAULT);
+            }}
+          >
+            <span className="h-1.5 w-12 rounded-full bg-white/70 shadow-[0_1px_3px_rgba(0,0,0,.5)]" />
+          </div>
+        )}
         <div
           ref={scrollRef}
           className={`pointer-events-auto ${S.scroll}`}
