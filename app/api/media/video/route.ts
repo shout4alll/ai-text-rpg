@@ -3,7 +3,8 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
 import { z } from "zod";
-import { getPersonaFile, isPersonaId, albumOf } from "@/lib/personas/server";
+import { getPersonaFile, isPersonaId, albumOf, looksOf } from "@/lib/personas/server";
+import { pickLook } from "@/config/looks";
 import { checkMediaAccess } from "@/lib/entitlements";
 
 /**
@@ -29,6 +30,15 @@ const bodySchema = z.object({
   personaId: z.string().max(64),
   request: z.string().min(1).max(200),
 });
+
+/** 그 인물의 현지 시각(시) — 요청에 단서가 없을 때 어울리는 룩을 고르는 데 쓴다 */
+function hourIn(timeZone: string): number | undefined {
+  try {
+    return Number(new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", hourCycle: "h23" }).format(new Date()));
+  } catch {
+    return undefined;
+  }
+}
 
 async function loadImage(url: string, origin: string): Promise<{ data: string; mimeType: string } | null> {
   const mimeType = url.endsWith(".png") ? "image/png" : url.endsWith(".webp") ? "image/webp" : "image/jpeg";
@@ -75,7 +85,11 @@ export async function POST(request: Request) {
   const persona = getPersonaFile(personaId);
   const base = `/avatar/personas/${persona.id}`;
   const origin = new URL(request.url).origin;
-  const refUrls = [`${base}/stage.jpg`, ...albumOf(persona).filter((a) => a.type === "photo").map((a) => a.src), `${base}/${persona.image.portrait}`];
+  // 📸 요청에 가장 가까운 기본 사진(룩)이 있으면 맨 앞에 (옷차림·장소를 맞춘다)
+  const looks = looksOf(persona);
+  const look = pickLook(wish, looks.map((l) => l.id), hourIn(persona.timezone));
+  const lookSrc = look ? looks.find((l) => l.id === look.id)?.src : undefined;
+  const refUrls = [...(lookSrc ? [lookSrc] : []), `${base}/stage.jpg`, ...albumOf(persona).filter((a) => a.type === "photo").map((a) => a.src), `${base}/${persona.image.portrait}`];
   const refs: { data: string; mimeType: string }[] = [];
   for (const u of refUrls) {
     if (refs.length >= MAX_REFS) break;
@@ -89,9 +103,12 @@ export async function POST(request: Request) {
     "IDENTITY IS CRITICAL: exactly the same person — identical face, hair, skin tone and age. Do not beautify or change facial features.",
     `Who: ${persona.age}-year-old ${persona.occupation} (fictional character).`,
     `What the viewer asked to see (Korean): "${wish}". Interpret it naturally as a short casual video clip.`,
+    look ? `The FIRST reference image shows this person in a "${look.label}" situation (${look.outfit}; ${look.place}). Keep that outfit and setting unless the request clearly asks for something else.` : "",
     "Natural, realistic, subtle movement; the person looks at the camera at times and speaks or reacts naturally with soft ambient sound. Camera mostly still, handheld feel.",
     "Always fully clothed, tasteful and non-suggestive. No text, no captions, no watermark, no other identifiable real people.",
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   try {
     const ai = new GoogleGenAI({ apiKey, ...(process.env.GOOGLE_GENERATIVE_AI_BASE_URL?.trim() ? { httpOptions: { baseUrl: process.env.GOOGLE_GENERATIVE_AI_BASE_URL.trim() } } : {}) });

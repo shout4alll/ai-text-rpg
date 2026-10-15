@@ -5,6 +5,7 @@ import { z } from "zod";
 import { PERSONA_FILES, SHARED_FILE } from "@/personas";
 import { personaFileSchema, sharedFileSchema, type PersonaFile } from "@/lib/personas/schema";
 import type { Persona } from "@/lib/personas/types";
+import { LOOKS } from "@/config/looks";
 import type { AlbumItem } from "@/config/media";
 import { balanceSchema } from "@/config/balanceSchema";
 import balanceJson from "@/config/balance.json";
@@ -111,6 +112,25 @@ function scanClips(urlDir: string): Record<string, string> {
     /* 폴더 없음 */
   }
   return out;
+}
+
+/**
+ * 📸 이 인물이 가진 기본 사진(룩) — public/avatar/personas/<id>/base/<룩id>.(jpg|png|webp)
+ * 파일이 있는 룩만 돌려준다 (config/looks.json 순서).
+ */
+export function looksOf(p: PersonaFile): { id: string; label: string; src: string }[] {
+  const dir = `/avatar/personas/${p.id}/base`;
+  try {
+    const files = fs.readdirSync(path.join(process.cwd(), "public", dir));
+    const out: { id: string; label: string; src: string }[] = [];
+    for (const l of LOOKS) {
+      const f = files.find((n) => /\.(jpe?g|png|webp)$/i.test(n) && n.replace(/\.[^.]+$/, "") === l.id);
+      if (f) out.push({ id: l.id, label: l.label, src: `${dir}/${f}` });
+    }
+    return out;
+  } catch {
+    return []; // base 폴더가 없으면 지금까지처럼 stage.jpg·앨범만 쓴다
+  }
 }
 
 /** 앨범 항목을 공개 URL 로 */

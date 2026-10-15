@@ -1,0 +1,50 @@
+{
+  "_readme": "📸 인물 기본 사진(룩) — 유료 실시간 사진·영상을 만들 때 기준으로 쓰는 '옷차림 + 장소' 모음. 파일은 public/avatar/personas/<id>/base/<id>.jpg (scripts/make-looks.mjs 로 생성). keywords 에 걸리면 그 룩을 먼저 쓰고, 없으면 시간대(when)로 고른다.",
+  "looks": [
+    {
+      "id": "pajama_home",
+      "label": "잠옷·집",
+      "when": ["night"],
+      "outfit": "wearing comfortable loose pajamas or soft loungewear, hair relaxed and slightly undone",
+      "place": "at home at night, in a cozy bedroom or living room with warm soft lamp light",
+      "keywords": ["잠옷", "파자마", "자기 전", "잘 준비", "침대", "누워", "자려", "잠들기", "씻고", "밤에"]
+    },
+    {
+      "id": "casual_home",
+      "label": "평상복·집",
+      "when": ["morning", "evening"],
+      "outfit": "wearing a relaxed everyday outfit at home, a soft tee or loose knit with comfortable pants",
+      "place": "at home in the living room or kitchen, natural indoor light",
+      "keywords": ["집", "집에서", "쉬는", "쉬고", "소파", "거실", "평상복", "편한 옷", "방에서"]
+    },
+    {
+      "id": "casual_market",
+      "label": "평상복·마트",
+      "outfit": "wearing a simple everyday casual outfit with a light cardigan or jacket, small bag",
+      "place": "inside a neighborhood grocery store or market aisle, bright even lighting",
+      "keywords": ["마트", "장보", "장 보", "슈퍼", "편의점", "시장", "쇼핑"]
+    },
+    {
+      "id": "outdoor_home",
+      "label": "외출복·집(나가기 전)",
+      "outfit": "wearing a put-together going-out outfit with a coat or jacket, bag in hand, ready to leave",
+      "place": "at the entryway of their home, about to head out, daylight from the doorway",
+      "keywords": ["나가기 전", "나가려", "준비 중", "외출 준비", "현관", "나갈 준비", "거울"]
+    },
+    {
+      "id": "outdoor_outside",
+      "label": "외출복·야외",
+      "when": ["day"],
+      "outfit": "wearing a stylish season-appropriate going-out outfit",
+      "place": "outdoors on a city street, park path or near a cafe, natural daylight",
+      "keywords": ["밖", "야외", "거리", "길에서", "산책", "카페", "공원", "외출", "나와서", "바깥"]
+    },
+    {
+      "id": "formal_event",
+      "label": "정장·행사장",
+      "outfit": "wearing elegant formal attire, a well-fitted suit or an understated formal dress",
+      "place": "at an indoor event venue or hotel lobby, warm evening lighting",
+      "keywords": ["정장", "행사", "파티", "드레스", "결혼식", "회식", "발표", "면접", "차려입", "격식"]
+    }
+  ]
+}

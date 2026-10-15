@@ -3,7 +3,8 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
 import { z } from "zod";
-import { getPersonaFile, isPersonaId, albumOf } from "@/lib/personas/server";
+import { getPersonaFile, isPersonaId, albumOf, looksOf } from "@/lib/personas/server";
+import { pickLook } from "@/config/looks";
 import { checkMediaAccess } from "@/lib/entitlements";
 
 /**
@@ -29,6 +30,15 @@ const bodySchema = z.object({
 });
 
 /** 기준 이미지 읽기: 로컬 파일 → 안 되면 같은 서버에서 받아오기(Vercel 은 public 파일이 함수에 없음) */
+/** 그 인물의 현지 시각(시) — 요청에 단서가 없을 때 어울리는 룩을 고르는 데 쓴다 */
+function hourIn(timeZone: string): number | undefined {
+  try {
+    return Number(new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", hourCycle: "h23" }).format(new Date()));
+  } catch {
+    return undefined;
+  }
+}
+
 async function loadImage(url: string, origin: string): Promise<{ data: string; mimeType: string } | null> {
   const mimeType = url.endsWith(".png") ? "image/png" : url.endsWith(".webp") ? "image/webp" : "image/jpeg";
   try {
@@ -70,8 +80,14 @@ export async function POST(request: Request) {
   const base = `/avatar/personas/${persona.id}`;
   const origin = new URL(request.url).origin;
 
-  // 기준 이미지: 리액션 화면 이미지 → 앨범 사진 → 대표 사진 순
+  // 📸 요청에 가장 가까운 기본 사진(룩)이 있으면 맨 앞에 — 옷차림·장소가 요청에 맞게 나온다
+  const looks = looksOf(persona);
+  const look = pickLook(wish, looks.map((l) => l.id), hourIn(persona.timezone));
+  const lookSrc = look ? looks.find((l) => l.id === look.id)?.src : undefined;
+
+  // 기준 이미지: 고른 룩 → 리액션 화면 이미지 → 앨범 사진 → 대표 사진 순
   const refUrls = [
+    ...(lookSrc ? [lookSrc] : []),
     `${base}/stage.jpg`,
     ...albumOf(persona)
       .filter((a) => a.type === "photo")
@@ -93,6 +109,7 @@ export async function POST(request: Request) {
     `Who: ${persona.age}-year-old ${persona.occupation} (fictional character).`,
     `What the viewer asked to see (Korean): "${wish}". Interpret it naturally as a casual photo sent in a private messenger chat.`,
     when ? `Their local time right now is ${when}; match lighting and setting to it unless the request says otherwise.` : "",
+    look ? `The FIRST reference image shows this person in a "${look.label}" situation (${look.outfit}; ${look.place}). Keep that outfit and setting unless the request clearly asks for something else.` : "",
     "Style: candid, natural smartphone selfie or photo taken by a friend, realistic skin texture, natural light, vertical 9:16 framing, face clearly visible.",
     "Always fully clothed, tasteful and non-suggestive. No text, no captions, no watermark, no other identifiable real people.",
   ]
