@@ -171,6 +171,8 @@ export function toPublic(p: PersonaFile): Persona {
       ...(publicFileExists(`${base}/stage.jpg`) ? { stagePoster: `${base}/stage.jpg` } : {}),
       stagePosition: p.image.stagePosition,
       premiumClips: scanClips(`${base}/clips/premium`),
+      // ⭐ 특별 리액션 영상 — clips/special/ (이름 앞에 special_ 를 붙여 일반 영상과 섞이지 않게)
+      specialClips: Object.fromEntries(Object.entries(scanClips(`${base}/clips/special`)).map(([k, v]) => [`special_${k}`, v])),
       allureClips: p.allure
         ? Object.fromEntries(Object.entries(scanClips(`${base}/clips/allure`)).map(([k, v]) => [`allure_${k}`, v]))
         : {},

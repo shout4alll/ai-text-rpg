@@ -3,6 +3,7 @@
 import { apiUrl } from "@/lib/apiBase";
 import { useEffect, useMemo, useRef, useState } from "react";
 import PersonaPortrait from "@/components/PersonaPortrait";
+import { clipLabel } from "@/config/clipLabels";
 import { GEMINI_VOICES, readVoiceOverride, writeVoiceOverride, type GeminiVoiceName } from "@/config/voices";
 import type { Persona } from "@/lib/personas/types";
 
@@ -33,23 +34,6 @@ function pcmToWavUrl(b64: string, mime: string): string {
   return URL.createObjectURL(new Blob([h.buffer, bytes], { type: "audio/wav" }));
 }
 
-const CLIP_LABEL: Record<string, string> = {
-  shy: "부끄러움",
-  laugh: "웃음",
-  love: "설렘",
-  pout: "토라짐",
-  turn_away: "등 돌림",
-  touch_joy: "터치 웃음",
-  kiss: "손 키스",
-  blow_kiss: "손키스(가벼운)",
-  hair_tuck: "머리 넘김",
-  flying_kiss: "날리는 키스",
-  kiss_close: "다가오는 키스",
-  allure_feel: "💋 그윽한 느낌",
-  allure_tease: "💋 도발",
-  allure_seduce2: "💋 유혹 2",
-  allure_seduce3: "💋 유혹 3",
-};
 
 /**
  * 목소리 맞추기 — 리액션 영상(소리 포함)을 들으며 보이스톡 목소리 후보를 비교하고 고른다.
@@ -163,7 +147,7 @@ export default function VoiceLab({ personas }: { personas: Persona[] }) {
                 <figure key={name} className="overflow-hidden rounded-xl bg-slate-900 ring-1 ring-slate-800">
                   <video src={src} controls playsInline preload="metadata" className="aspect-[4/5] w-full object-cover" />
                   <figcaption className="px-2 py-1 text-[11px] text-slate-400">
-                    {CLIP_LABEL[name] ?? name.replace(/^allure_/, "💋 ")}
+                    {clipLabel(name)}
                   </figcaption>
                 </figure>
               ))}

@@ -35,6 +35,11 @@ export function spendCash(amount: number): boolean {
   return true;
 }
 
+/** 받기 (보상·충전) */
+export function addCash(amount: number) {
+  setCash(getCash() + Math.max(0, Math.round(amount)));
+}
+
 export function refundCash(amount: number) {
   setCash(getCash() + amount);
 }

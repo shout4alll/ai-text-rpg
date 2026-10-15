@@ -35,6 +35,8 @@ interface VideoAvatarProps {
   premium?: boolean;
   /** 💋 매혹 모드 영상(clips/allure) 사용 */
   allure?: boolean;
+  /** 🎬 리액션 보기로 "사서 보는" 영상들 — 자동 연출은 쓰지 않고 골랐을 때만 재생된다 */
+  extra?: Record<string, string>;
   /** 리액션 영상의 소리(목소리·웃음소리) 켜기. idle 루프는 항상 무음 */
   sound?: boolean;
 }
@@ -74,15 +76,16 @@ const LOOPS = new Set(["idle", "talk"]);
 /** 영상 전환 페이드 (ms) — 클립마다 첫 장면이 조금씩 달라도 자연스럽게 이어지도록 */
 const FADE_MS = 280;
 
-export default function VideoAvatar({ persona, cue, reactionKey, speaking = false, premium = false, allure = false, sound = true }: VideoAvatarProps) {
+export default function VideoAvatar({ persona, cue, reactionKey, speaking = false, premium = false, allure = false, sound = true, extra }: VideoAvatarProps) {
   // { 이름: URL } — 실제로 있는 영상만 (유료 영상은 이용권이 있을 때만 섞는다)
   const clips = useMemo(
     () => ({
       ...persona.assets.clips,
       ...(premium ? persona.assets.premiumClips : {}),
       ...(allure ? persona.assets.allureClips ?? {} : {}),
+      ...(extra ?? {}),
     }),
-    [persona, premium, allure]
+    [persona, premium, allure, extra]
   );
   const names = Object.keys(clips);
   const position = persona.assets.stagePoster ? persona.assets.stagePosition : persona.assets.objectPosition;
@@ -93,6 +96,9 @@ export default function VideoAvatar({ persona, cue, reactionKey, speaking = fals
   const [mounted, setMounted] = useState(false);
   const [ready, setReady] = useState<Record<string, boolean>>({});
   const [active, setActive] = useState<string | null>(null);
+  /** 재생하려는데 아직 내려받는 중인 영상 (🎬 리액션 보기로 방금 연 영상) → 준비되면 재생 */
+  const pendingRef = useRef<string | null>(null);
+  const [retry, setRetry] = useState(0);
   /** 끝나도 마지막 장면에 멈춰 있을 클립 (등 돌림 등) */
   const holdRef = useRef<string | null>(null);
 
@@ -147,6 +153,8 @@ export default function VideoAvatar({ persona, cue, reactionKey, speaking = fals
 
     // 영상: clips 순서대로 "준비된" 것 하나 → 즉시 재생 (모든 클립은 미리 받아 첫 장면에서 대기 중)
     const clip = (def.clips ?? []).find((c) => !LOOPS.has(c) && ready[c]);
+    // 아직 준비 안 된 영상이면 기억해 뒀다가 내려받는 대로 재생한다
+    pendingRef.current = clip ? null : (def.clips ?? []).find((c) => !LOOPS.has(c) && clips[c]) ?? null;
     const video = clip ? videoRefs.current[clip] : null;
     if (clip && video) {
       for (const n of names) {
@@ -181,7 +189,7 @@ export default function VideoAvatar({ persona, cue, reactionKey, speaking = fals
       for (const a of mediaRef.current.getAnimations()) a.cancel();
       mediaRef.current.animate(m.frames, { duration: m.duration, easing: "ease-in-out" });
     }
-  }, [reactionKey]);
+  }, [reactionKey, retry]);
 
   // 소리 끄기를 누르면 재생 중인 클립도 바로 음소거
   useEffect(() => {
@@ -226,7 +234,13 @@ export default function VideoAvatar({ persona, cue, reactionKey, speaking = fals
               // talk 루프는 말하는 중에만, idle 은 그 외에 (이벤트 클립이 재생 중이면 그게 위에 덮인다)
               const talkOn = speaking && !!ready.talk;
               const visible = isTalk ? talkOn && !active : isIdle ? !!ready.idle : active === name;
-              const markReady = () => setReady((r) => (r[name] ? r : { ...r, [name]: true }));
+              const markReady = () => {
+                setReady((r) => (r[name] ? r : { ...r, [name]: true }));
+                if (pendingRef.current === name) {
+                  pendingRef.current = null;
+                  setRetry((n) => n + 1);
+                }
+              };
               return (
                 <video
                   key={name}

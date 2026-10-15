@@ -154,3 +154,20 @@ export const IconSuggest = (p: P) => (
     <path d="M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2V16h5.2v-.2c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z" />
   </svg>
 );
+
+/** 🎒 보관함 (인벤토리) */
+export const IconBag = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M5 8h14l-1 12H6L5 8z" />
+    <path d="M9 8V6a3 3 0 0 1 6 0v2" />
+  </svg>
+);
+
+/** 🎬 리액션 보기 */
+export const IconClapper = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M3 9h18v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9z" />
+    <path d="M3 9l2-5 16 2-1.5 3" />
+    <path d="M8 4.2L6.5 9M13 5L11.5 9" />
+  </svg>
+);

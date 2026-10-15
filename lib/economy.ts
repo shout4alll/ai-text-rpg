@@ -50,3 +50,29 @@ export function allurePaidToday(personaId: string): boolean {
 export function markAllurePaid(personaId: string) {
   write(ALLURE_KEY, { ...read<Record<string, string>>(ALLURE_KEY, {}), [personaId]: today() });
 }
+
+/* ── 🎬 리액션 보기 무료 횟수 (balance.json reactionShop.freeNormalPerDay) ── */
+const REACT_KEY = "ai-rpg.econ.freeReact";
+
+/** 오늘 남은 일반 리액션 무료 보기 */
+export function freeReactionsLeft(): number {
+  const v = read<{ d: string; n: number }>(REACT_KEY, { d: "", n: 0 });
+  return Math.max(0, BALANCE.reactionShop.freeNormalPerDay - (v.d === today() ? v.n : 0));
+}
+export function countFreeReaction() {
+  const v = read<{ d: string; n: number }>(REACT_KEY, { d: "", n: 0 });
+  write(REACT_KEY, { d: today(), n: (v.d === today() ? v.n : 0) + 1 });
+}
+
+/* ── 👆 터치 보상 (balance.json touchReward) ───────────────────── */
+const TOUCH_KEY = "ai-rpg.econ.touchReward";
+
+/** 오늘 받은 터치 보상 횟수와 마지막으로 받은 시각 */
+export function touchRewardState(): { n: number; at: number } {
+  const v = read<{ d: string; n: number; at: number }>(TOUCH_KEY, { d: "", n: 0, at: 0 });
+  return { n: v.d === today() ? v.n : 0, at: v.at };
+}
+export function markTouchReward() {
+  const s = touchRewardState();
+  write(TOUCH_KEY, { d: today(), n: s.n + 1, at: Date.now() });
+}

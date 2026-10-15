@@ -248,6 +248,24 @@
     "giftGoodBonus": 4,
     "giftCooldownMin": 30
   },
+  "reactionShop": {
+    "_readme": "🎬 리액션 보기(유료): 리액션 화면 왼쪽 버튼으로 원할 때 영상을 골라 본다. 등급별 보석 값. 멤버십이 있으면 프리미엄도 일반 값. special(특별 영상)은 🎟️ 티켓으로도 볼 수 있다.",
+    "costNormal": 2,
+    "costPremium": 15,
+    "costAllure": 10,
+    "costSpecial": 30,
+    "freeNormalPerDay": 2
+  },
+  "touchReward": {
+    "_readme": "👆 리액션 화면을 터치하다 아주 가끔 받는 보상 — 보석·선물·특별 리액션 티켓. chance = 반응이 나온 터치 1회당 확률. weights 비율로 종류를 고른다.",
+    "chance": 0.02,
+    "cooldownMin": 8,
+    "maxPerDay": 5,
+    "minAffection": 20,
+    "weights": { "gems": 60, "gift": 30, "ticket": 10 },
+    "gemsMin": 3,
+    "gemsMax": 10
+  },
   "allureRouting": {
     "_readme": "매혹·설렘 모드 대화의 모델 배분. 분위기가 달아오르면(config/spicy.ts moodWords) 성인 모델(AI_MODEL_MATURE·Grok)로 수위 끝선까지, 평이한 말은 메인(Sonnet)·가벼운 모델(Haiku). surprise = 가끔 먼저 선을 넘는 신선한 턴(관계 단계별 확률, 최근 N턴 안에 성인 모델이 답했으면 쉼)",
     "enabled": true,

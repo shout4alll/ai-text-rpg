@@ -15,7 +15,7 @@ import { loadNotifySettings } from "@/lib/push/settings";
 import type { NudgeKind } from "@/config/notifications";
 import { DEFAULT_THEME, isThemeId, THEME_KEY, VIEW_KEY, type ThemeId } from "@/config/themes";
 import {
-  IconAllureCloud, IconGift, IconBack, IconBackup, IconBrain, IconBubble, IconCrown, IconMore, IconPhone, IconScreen, IconSound, IconSparkle, IconTrash, IconUser,
+  IconAllureCloud, IconBag, IconClapper, IconGift, IconBack, IconBackup, IconBrain, IconBubble, IconCrown, IconMore, IconPhone, IconScreen, IconSound, IconSparkle, IconTrash, IconUser,
  IconBell, } from "@/components/icons";
 import VoiceCall, { type VoiceBilling, type VoiceCallHandle, type VoiceCallResult } from "@/components/VoiceCall";
 import PlansModal, { type PlansReason } from "@/components/PlansModal";
@@ -37,17 +37,21 @@ import OwnerPasswordModal from "@/components/OwnerPasswordModal";
 import OnboardingModal from "@/components/OnboardingModal";
 import GiftSheet, { type GiftOption } from "@/components/GiftSheet";
 import LobbyNotes from "@/components/LobbyNotes";
-import { allurePaidToday, countMessage, markAllurePaid, nextMessageCost } from "@/lib/economy";
+import { allurePaidToday, countFreeReaction, countMessage, freeReactionsLeft, markAllurePaid, markTouchReward, nextMessageCost, touchRewardState } from "@/lib/economy";
 import { loadUserProfile, saveUserProfile, type UserProfile } from "@/lib/userProfile";
 import AllureGateModal from "@/components/AllureGateModal";
 import { BackupModal, MemoryModal, ResetFlow } from "@/components/ChatManageModals";
 import { downloadBackup } from "@/lib/backup";
-import { ALLURE_STORAGE } from "@/config/allure";
+import { ALLURE_STORAGE, ALLURE_TINT } from "@/config/allure";
 import { BALANCE, sulkLevelDef } from "@/config/balance";
 import { checkRelease, giftCost, sulkExpired, sulkStartLevel, sulkSummary, touchSulk, type SulkState } from "@/lib/sulk";
 import { deleteMediaFor, deleteMediaKeys, getMedia, importFile, mediaUrl, putMedia, UserMediaError } from "@/lib/userMedia";
 import { DEMO_TOPUP, MEDIA_COST } from "@/config/media";
 import { GemBadge, GemShop } from "@/components/GemShop";
+import InventoryModal from "@/components/InventoryModal";
+import ReactionShop, { type ShopItem } from "@/components/ReactionShop";
+import { addItem, countItem, readInventory, useItem, type Inventory } from "@/lib/inventory";
+import { giftItemId, TICKET_SPECIAL } from "@/config/items";
 import DevPanel, { type TurnLog } from "@/components/DevPanel";
 import type { ReactionTestActions } from "@/components/ReactionTestTab";
 import LiveChatMonitor from "@/components/LiveChatMonitor";
@@ -56,7 +60,7 @@ import { TYPING } from "@/config/typing";
 import { withTypo } from "@/lib/typos";
 import { returnChance } from "@/config/returnNudge";
 import { GEM_TEST_TOPUP } from "@/config/gems";
-import { getCash, refundCash, setCash, spendCash } from "@/lib/wallet";
+import { addCash, getCash, refundCash, setCash, spendCash } from "@/lib/wallet";
 import {
   AFFECTION_START,
   AVATAR_REACTIONS,
@@ -430,6 +434,16 @@ export default function ChatApp({
   const [themeOpen, setThemeOpen] = useState(false);
   const [notifyOpen, setNotifyOpen] = useState(false);
   const [gemOpen, setGemOpen] = useState(false);
+  /** 🎬 리액션 보기 · 🎒 보관함 */
+  const [shopOpen, setShopOpen] = useState(false);
+  const [invOpen, setInvOpen] = useState(false);
+  const [inv, setInv] = useState<Inventory>({});
+  const refreshInv = () => setInv(readInventory());
+  /** 리액션 보기로 재생할 영상 — 창을 열 때부터 미리 받아 둔다 (평소에는 받지 않는다) */
+  const [shopPreload, setShopPreload] = useState<Record<string, string>>({});
+  useEffect(() => {
+    setInv(readInventory());
+  }, []);
   // 🛠 주인님 모드 상태판 (토큰이 있을 때만)
   const [ownerTok, setOwnerTok] = useState<string | null>(null);
   const [lastDebug, setLastDebug] = useState<ChatResponse["debug"] | null>(null);
@@ -812,6 +826,44 @@ export default function ChatApp({
           t.gains += 1;
         }
         if (td !== 0) applyAffection(td);
+      }
+      // 🎁 터치하다 아주 가끔 주는 보상 — 보석·선물·특별 리액션 티켓 (balance.json touchReward)
+      {
+        const TR = BALANCE.touchReward;
+        const st = touchRewardState();
+        if (
+          TR.chance > 0 &&
+          !sulkRef.current &&
+          affectionRef.current >= TR.minAffection &&
+          st.n < TR.maxPerDay &&
+          now - st.at >= TR.cooldownMin * 60_000 &&
+          Math.random() < TR.chance
+        ) {
+          const W = TR.weights;
+          const roll = Math.random() * (W.gems + W.gift + W.ticket);
+          let got: string;
+          if (roll < W.gems) {
+            const amt = TR.gemsMin + Math.floor(Math.random() * Math.max(1, TR.gemsMax - TR.gemsMin + 1));
+            addCash(amt);
+            setCashState(getCash());
+            got = `💎 보석 ${amt}개`;
+          } else if (roll < W.gems + W.gift) {
+            const gl = BALANCE.economy.gifts;
+            const g = gl[Math.floor(Math.random() * gl.length)];
+            addItem(giftItemId(g.id));
+            got = `${g.emoji} ${g.name}`;
+          } else {
+            addItem(TICKET_SPECIAL);
+            got = "🎟️ 특별 리액션 티켓 1장";
+          }
+          markTouchReward();
+          setInv(readInventory());
+          spawnSparks(["🎁", "✨", "💫"], x, y, 9);
+          setMessages((prev) => [
+            ...prev,
+            { id: nextId.current++, role: "ai", kind: "notice", text: `🎁 ${got} 받았어요 · 🎒 보관함에서 확인`, at: Date.now(), local: true },
+          ]);
+        }
       }
       const d = director.decide({ type: "touch", touch: touchId, combo: t.combo }, directorCtx(affectionRef.current));
       applyDecision(d, { x, y });
@@ -1515,6 +1567,8 @@ export default function ChatApp({
       [themeOpen, () => setThemeOpen(false)],
       [notifyOpen, () => setNotifyOpen(false)],
       [gemOpen, () => setGemOpen(false)],
+      [shopOpen, () => setShopOpen(false)],
+      [invOpen, () => setInvOpen(false)],
       [profileOpen, () => setProfileOpen(false)],
       [!!plansModal, () => setPlansModal(null)],
       [allureGate, () => setAllureGate(false)],
@@ -1810,6 +1864,69 @@ export default function ChatApp({
     });
   };
 
+  /* ── 🎬 리액션 보기 (유료) — 왼쪽 버튼으로 원할 때 리액션 영상을 고른다 ── */
+  /** 리액션 보기에서 살 수 있는 영상 전부 (창을 열면 미리 받기 시작) */
+  const shopClips = useMemo(
+    () => ({ ...(persona?.assets.premiumClips ?? {}), ...(persona?.assets.specialClips ?? {}), ...(persona?.assets.allureClips ?? {}) }),
+    [persona]
+  );
+  const openShop = () => {
+    setShopPreload(shopClips);
+    refreshInv();
+    setShopOpen(true);
+  };
+  const shopItems = (): ShopItem[] => {
+    if (!persona) return [];
+    const RS = BALANCE.reactionShop;
+    const free = freeReactionsLeft() > 0;
+    const adultOk = readStorage(ALLURE_STORAGE.adult) === "1";
+    const out: ShopItem[] = [];
+    for (const n of Object.keys(persona.assets.clips)) {
+      if (n === "idle" || n === "talk") continue;
+      out.push({ clip: n, tier: "normal", cost: free ? 0 : RS.costNormal });
+    }
+    for (const n of Object.keys(persona.assets.premiumClips ?? {})) {
+      out.push({ clip: n, tier: "premium", cost: premiumUnlocked ? RS.costNormal : RS.costPremium });
+    }
+    for (const n of Object.keys(persona.assets.allureClips ?? {})) {
+      out.push({ clip: n, tier: "allure", cost: RS.costAllure, ...(adultOk ? {} : { locked: "성인 확인이 필요해요" }) });
+    }
+    for (const n of Object.keys(persona.assets.specialClips ?? {})) {
+      out.push({ clip: n, tier: "special", cost: RS.costSpecial, ticket: true });
+    }
+    return out;
+  };
+  /** 고른 리액션을 결제하고 리액션 화면에서 재생한다 */
+  const playShopItem = (item: ShopItem) => {
+    if (!persona || item.locked) return;
+    // 지불 순서: 🎟️ 티켓 → 오늘 무료 → 💎 보석
+    if (item.ticket && countItem(TICKET_SPECIAL) > 0) {
+      useItem(TICKET_SPECIAL);
+      refreshInv();
+    } else if (item.cost === 0) {
+      countFreeReaction();
+    } else if (!payCash(item.cost)) {
+      setCashState(getCash());
+      addNotice(`💎 보석이 부족해요 (필요 ${item.cost})`);
+      setShopOpen(false);
+      setGemOpen(true);
+      return;
+    }
+    setCashState(getCash());
+    setShopOpen(false);
+    setMessenger(false); // 리액션 화면으로
+    const base = item.clip.replace(/^(allure_|special_)/, "");
+    const known = base in AVATAR_REACTIONS ? (base as AvatarReactionId) : null;
+    const def = known ? AVATAR_REACTIONS[known] : null;
+    const spicy = item.tier === "allure" || item.tier === "special";
+    applyDecision({
+      reaction: known ?? "love",
+      cue: { clips: [item.clip], motion: def?.motion ?? "none", tint: spicy ? ALLURE_TINT : def?.tint },
+      particles: spicy ? ["💋", "✨", "💗"] : def?.particles,
+      video: true,
+    });
+  };
+
   /* ── 🎁 선물하기 (매혹 버튼 아래) ────────────────────────────────────── */
   const [giftOpen, setGiftOpen] = useState(false);
   const GIFT_AT_KEY = "ai-rpg.giftAt";
@@ -1832,7 +1949,11 @@ export default function ChatApp({
   };
   const giveGift = (g: GiftOption) => {
     if (!persona || busy) return;
-    if (g.cost > 0 && !payCash(g.cost)) {
+    // 보관함에 가진 선물이면 보석 없이 바로 준다 (터치 보상 등으로 받은 것)
+    const ownedId = giftItemId(g.id);
+    const fromBag = countItem(ownedId) > 0 && useItem(ownedId);
+    if (fromBag) refreshInv();
+    if (!fromBag && g.cost > 0 && !payCash(g.cost)) {
       setCashState(getCash());
       addNotice(`💎 보석이 부족해요 (필요 ${g.cost})`);
       setGiftOpen(false);
@@ -2200,7 +2321,7 @@ export default function ChatApp({
   if (!persona) {
     return (
       <main className="h-[100dvh] w-full bg-paper">
-        <PersonaSelector personas={listed} onCheatCode={handleCheatCode} currentId={null} onSelect={handleSelect} previews={previews()} onBackup={() => setBackupOpen(true)} onTheme={() => setThemeOpen(true)} onNotify={() => setNotifyOpen(true)} gems={cash} onGems={() => setGemOpen(true)} />
+        <PersonaSelector personas={listed} onCheatCode={handleCheatCode} currentId={null} onSelect={handleSelect} previews={previews()} onBackup={() => setBackupOpen(true)} onInventory={() => { refreshInv(); setInvOpen(true); }} onTheme={() => setThemeOpen(true)} onNotify={() => setNotifyOpen(true)} gems={cash} onGems={() => setGemOpen(true)} />
         {ownerTok && (
           // 🔑 주인님 모드: 메인 화면에서도 관리창·실시간 대화 모니터
           <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+1rem)] left-3 z-[60] flex flex-wrap items-center gap-1.5" data-owner-toolbar>
@@ -2247,6 +2368,7 @@ export default function ChatApp({
         )}
         {!onboardingOpen && <LobbyNotes personas={listed} userGender={userProfile?.gender} userName={userProfile?.name} onOpen={openFromNote} hasHistory={noteHasHistory} compose={composeLobbyNote} />}
         {backupOpen && <BackupModal onClose={() => setBackupOpen(false)} onRestored={() => window.location.reload()} />}
+        {invOpen && <InventoryModal gems={cash} items={inv} onCharge={() => { setInvOpen(false); setGemOpen(true); }} onClose={() => setInvOpen(false)} />}
       {themeOpen && (
         <ThemePicker
           theme={theme}
@@ -2595,6 +2717,32 @@ export default function ChatApp({
   return (
     <main className={`relative h-[100dvh] w-full overflow-hidden ${kakaoView ? "bg-chat" : "bg-paper wide:flex"}`} data-view={kakaoView ? "kakao" : "stage"}>
       {!voiceOpen && <GemBadge gems={cash} onClick={() => setGemOpen(true)} className="absolute left-2 top-[calc(max(0.5rem,env(safe-area-inset-top))+3.5rem)] z-20 bg-white/85 backdrop-blur" />}
+      {/* 🎬 리액션 보기 · 🎒 보관함 (보석 뱃지 아래) */}
+      {!voiceOpen && (
+        <>
+          <button
+            type="button"
+            onClick={openShop}
+            aria-label="리액션 보기"
+            data-reaction-open
+            className="absolute left-2 top-[calc(max(0.5rem,env(safe-area-inset-top))+6.25rem)] z-20 flex h-9 w-9 items-center justify-center rounded-full bg-white/85 text-ink shadow-soft ring-1 ring-black/10 backdrop-blur transition active:scale-95"
+          >
+            <IconClapper className="h-[18px] w-[18px]" />
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              refreshInv();
+              setInvOpen(true);
+            }}
+            aria-label="보관함"
+            data-inventory-open
+            className="absolute left-2 top-[calc(max(0.5rem,env(safe-area-inset-top))+9.25rem)] z-20 flex h-9 w-9 items-center justify-center rounded-full bg-white/85 text-ink shadow-soft ring-1 ring-black/10 backdrop-blur transition active:scale-95"
+          >
+            <IconBag className="h-[18px] w-[18px]" />
+          </button>
+        </>
+      )}
       {!voiceOpen && ownerTok && (
         <div className="absolute left-[5.4rem] top-[calc(max(0.5rem,env(safe-area-inset-top))+3.5rem)] z-20 flex items-start gap-1.5">
           <LiveChatMonitor token={ownerTok} mine={debugLog} />
@@ -2646,6 +2794,7 @@ export default function ChatApp({
               premium={premiumUnlocked || !!ownerTok}
               allure={allureActive || !!ownerTok}
               sound={soundOn && !voiceOpen}
+              extra={shopPreload}
             />
             {/* 💋 매혹 모드 분위기 (가장자리 붉은 빛) */}
             {allureActive && (
@@ -2885,7 +3034,7 @@ export default function ChatApp({
       )}
       {notifyOpen && <NotifySettings onClose={() => setNotifyOpen(false)} />}
       {ownerPwOpen && <OwnerPasswordModal onSubmit={handleOwnerPassword} onClose={() => setOwnerPwOpen(false)} />}
-      {giftOpen && persona && <GiftSheet name={persona.name} gifts={giftOptions()} gems={cash} cooldownLeftMin={giftCooldownLeft()} onGive={giveGift} onClose={() => setGiftOpen(false)} />}
+      {giftOpen && persona && <GiftSheet name={persona.name} gifts={giftOptions()} gems={cash} owned={Object.fromEntries(BALANCE.economy.gifts.map((g) => [g.id, inv[giftItemId(g.id)] ?? 0]))} cooldownLeftMin={giftCooldownLeft()} onGive={giveGift} onClose={() => setGiftOpen(false)} />}
       {onboardingOpen && (
         <OnboardingModal
           initial={onboardingOpen === "edit" ? userProfile : null}
@@ -2894,6 +3043,32 @@ export default function ChatApp({
             setOnboardingOpen(null);
           }}
           onClose={onboardingOpen === "edit" ? () => setOnboardingOpen(null) : undefined}
+        />
+      )}
+      {shopOpen && persona && (
+        <ReactionShop
+          personaName={persona.name}
+          items={shopItems()}
+          gems={cash}
+          tickets={inv[TICKET_SPECIAL] ?? 0}
+          freeLeft={freeReactionsLeft()}
+          onPlay={playShopItem}
+          onCharge={() => {
+            setShopOpen(false);
+            setGemOpen(true);
+          }}
+          onClose={() => setShopOpen(false)}
+        />
+      )}
+      {invOpen && (
+        <InventoryModal
+          gems={cash}
+          items={inv}
+          onCharge={() => {
+            setInvOpen(false);
+            setGemOpen(true);
+          }}
+          onClose={() => setInvOpen(false)}
         />
       )}
       {gemOpen && (

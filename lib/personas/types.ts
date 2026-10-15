@@ -27,6 +27,8 @@ export interface PersonaAssets {
   stagePosition: string;
   /** (자동) 유료 리액션 영상 — clips/premium/ 폴더. 이용권이 있을 때만 재생 */
   premiumClips: Record<string, string>;
+  /** (자동) ⭐ 특별 리액션 영상 — clips/special/ 폴더. 이름 앞에 "special_" 가 붙는다. 티켓이나 보석으로만 본다 */
+  specialClips: Record<string, string>;
   /** (자동) 💋 매혹 모드 영상 — clips/allure/ 폴더. 이름 앞에 "allure_" 가 붙는다 (예: allure_gaze) */
   allureClips: Record<string, string>;
   /** (선택) 같은 인물의 대체 이미지 */

@@ -4,7 +4,7 @@ import { useState } from "react";
 import PersonaPortrait from "@/components/PersonaPortrait";
 import { BRAND } from "@/config/brand";
 import { GemBadge } from "@/components/GemShop";
-import { IconBackup, IconBell, IconChats, IconClose, IconSparkle } from "@/components/icons";
+import { IconBackup, IconBag, IconBell, IconChats, IconClose, IconSparkle } from "@/components/icons";
 import type { Persona, PersonaId } from "@/lib/personas/types";
 
 type Filter = "all" | "female" | "male";
@@ -22,6 +22,8 @@ interface PersonaSelectorProps {
   onClose?: () => void;
   /** 💾 대화 기록 백업 열기 */
   onBackup?: () => void;
+  /** 🎒 보관함 (보유 재화·티켓·선물) */
+  onInventory?: () => void;
   /** 🎨 대화창 꾸미기 */
   onTheme?: () => void;
   /** 🔔 알림 설정 */
@@ -40,6 +42,7 @@ export default function PersonaSelector({
   onSelect,
   onClose,
   onBackup,
+  onInventory,
   onTheme,
   onNotify,
   gems,
@@ -106,6 +109,17 @@ export default function PersonaSelector({
                 className="flex items-center gap-1 rounded-full bg-surface px-2.5 py-1.5 text-sm text-ink-soft shadow-soft sm:px-3 ring-1 ring-ink-line transition hover:text-ink"
               >
                 <IconBell className="h-4 w-4" /> <span className="hidden sm:inline">알림</span>
+              </button>
+            )}
+            {onInventory && (
+              <button
+                type="button"
+                onClick={onInventory}
+                aria-label="보관함"
+                data-selector-inventory
+                className="flex items-center gap-1 rounded-full bg-surface px-2.5 py-1.5 text-sm text-ink-soft shadow-soft sm:px-3 ring-1 ring-ink-line transition hover:text-ink"
+              >
+                <IconBag className="h-4 w-4" /> <span className="hidden sm:inline">보관함</span>
               </button>
             )}
             {onBackup && (
