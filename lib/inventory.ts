@@ -47,8 +47,8 @@ export function addItem(id: string, n = 1): number {
   return next;
 }
 
-/** 쓰기 — 모자라면 아무것도 하지 않고 false */
-export function useItem(id: string, n = 1): boolean {
+/** 쓰기 — 모자라면 아무것도 하지 않고 false (이름에 use 를 쓰면 React 훅으로 오인돼 빌드가 막힌다) */
+export function spendItem(id: string, n = 1): boolean {
   const inv = readInventory();
   const need = Math.max(1, Math.floor(n));
   if ((inv[id] ?? 0) < need) return false;

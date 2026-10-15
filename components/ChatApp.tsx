@@ -50,7 +50,7 @@ import { DEMO_TOPUP, MEDIA_COST } from "@/config/media";
 import { GemBadge, GemShop } from "@/components/GemShop";
 import InventoryModal from "@/components/InventoryModal";
 import ReactionShop, { type ShopItem } from "@/components/ReactionShop";
-import { addItem, countItem, readInventory, useItem, type Inventory } from "@/lib/inventory";
+import { addItem, countItem, readInventory, spendItem, type Inventory } from "@/lib/inventory";
 import { giftItemId, TICKET_SPECIAL } from "@/config/items";
 import DevPanel, { type TurnLog } from "@/components/DevPanel";
 import type { ReactionTestActions } from "@/components/ReactionTestTab";
@@ -1901,7 +1901,7 @@ export default function ChatApp({
     if (!persona || item.locked) return;
     // 지불 순서: 🎟️ 티켓 → 오늘 무료 → 💎 보석
     if (item.ticket && countItem(TICKET_SPECIAL) > 0) {
-      useItem(TICKET_SPECIAL);
+      spendItem(TICKET_SPECIAL);
       refreshInv();
     } else if (item.cost === 0) {
       countFreeReaction();
@@ -1951,7 +1951,7 @@ export default function ChatApp({
     if (!persona || busy) return;
     // 보관함에 가진 선물이면 보석 없이 바로 준다 (터치 보상 등으로 받은 것)
     const ownedId = giftItemId(g.id);
-    const fromBag = countItem(ownedId) > 0 && useItem(ownedId);
+    const fromBag = countItem(ownedId) > 0 && spendItem(ownedId);
     if (fromBag) refreshInv();
     if (!fromBag && g.cost > 0 && !payCash(g.cost)) {
       setCashState(getCash());
