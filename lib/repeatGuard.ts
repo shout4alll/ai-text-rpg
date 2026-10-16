@@ -152,13 +152,29 @@ export function recentScenes(turns: TextTurn[]): { id: string; label: string; co
   return res.sort((a, b) => b.count - a.count);
 }
 
-/** 여러 답장에 걸쳐 되풀이된 단어 (같은 화제·같은 말버릇) */
+/**
+ * 여러 답장에 걸쳐 되풀이된 단어 (같은 화제·같은 말버릇)
+ *  · 최근 8개 답장 중 3번 이상, 또는 가장 최근 2개 답장에 연속으로 나온 3글자 이상 말(말버릇·단골 농담)
+ */
 function repeatedWords(turns: TextTurn[]): string[] {
   const mine = turns.filter((t) => t.role === "assistant" && (t.kind === undefined || t.kind === "text")).slice(-8);
+  // 조사·어미가 붙어 다르게 보이는 말을 묶는다: 다른 답장에 실제로 나온 3글자 이상 말이 어근(앞부분)이면 같은 말로 센다
+  //  예) "영업비밀이에요" · "영업비밀이라니까요" → 「영업비밀」
+  const sets = mine.map((t) => new Set(words(t.content)));
+  const vocab = new Set<string>();
+  for (const set of sets) for (const w of set) if (w.length >= 3) vocab.add(w);
+  const expand = (set: Set<string>) => {
+    const out = new Set(set);
+    for (const w of set) for (const u of vocab) if (u !== w && u.length >= 3 && w.startsWith(u)) out.add(u);
+    return out;
+  };
+  const expanded = sets.map(expand);
   const df = new Map<string, number>();
-  for (const t of mine) for (const w of new Set(words(t.content))) df.set(w, (df.get(w) ?? 0) + 1);
+  for (const set of expanded) for (const w of set) df.set(w, (df.get(w) ?? 0) + 1);
+  const lastTwo = expanded.slice(-2);
+  const inBothLast = (w: string) => lastTwo.length === 2 && lastTwo.every((set) => set.has(w));
   return [...df.entries()]
-    .filter(([, c]) => c >= 3)
+    .filter(([w, c]) => c >= 3 || (c >= 2 && w.length >= 3 && inBothLast(w)))
     .sort((a, b) => b[1] - a[1])
     .slice(0, 8)
     .map(([w]) => w);
@@ -168,12 +184,11 @@ function repeatedWords(turns: TextTurn[]): string[] {
  * 이번 턴 프롬프트에 붙일 "반복 금지" 줄들.
  * @param userText 유저가 방금 한 말 — 유저가 직접 꺼낸 화제는 반복 대상에서 뺀다
  */
-export function repeatGuardLines(turns: TextTurn[], tz: string, userText: string, opts: { seeds?: boolean } = {}): string[] {
+export function repeatGuardLines(turns: TextTurn[], tz: string, userText: string, opts: { seeds?: boolean; signature?: string[] } = {}): string[] {
   const lines: string[] = [];
   // 유저가 최근에 직접 꺼낸 화제(예: 책 얘기 중)는 "반복"이 아니라 지금 나누는 주제다 → 막지 않는다
   const userRecent = [userText, ...turns.filter((t) => t.role === "user" && (t.kind === undefined || t.kind === "text")).slice(-6).map((t) => t.content)].join("\n");
   // 지금 주제에 대한 대화가 이어지는 중이면 AI 자신이 꺼낸 말이어도 그 주제 단어는 허용
-  const topicText = [userRecent, ...turns.filter((t) => t.role === "assistant").slice(-2).map((t) => t.content)].join("\n");
   const asked = (label: string) => {
     const sc = SCENES.find((s) => s.label === label);
     return !!sc && sc.re.test(userRecent);
@@ -185,11 +200,16 @@ export function repeatGuardLines(turns: TextTurn[], tz: string, userText: string
       `- 반복 금지(상황·행동): 최근 네 답장에서 이미 ${hot.map((s) => `${s.label}(${s.count}번)`).join(", ")} 이야기를 했다. 같은 행동·장소·음식을 또 "하고 있다/했다"고 말하지 마라. 네가 지금 뭘 하고 있는지는 지금까지와 다른 걸로 하거나, 아예 말하지 마라. (유저가 하는 이야기·질문에는 이 제한 없이 충실히 답해라)`
     );
   }
-  const userWords = new Set(words(topicText));
+  // 유저가 직접 쓴 말(지금 나누는 주제)만 예외 — 내가 방금 한 말은 예외로 두지 않는다(그러면 말버릇이 연속으로 나와도 안 걸린다)
+  const userWords = new Set(words(userRecent));
   const rep = repeatedWords(turns).filter((w) => !userWords.has(w));
   if (rep.length > 0) {
-    lines.push(`- 최근 답장마다 자꾸 나온 단어: ${rep.map((w) => `"${w}"`).join(", ")}. 같은 표현을 되풀이하지 말고 다른 말로 바꿔 써라(지금 나누는 주제에서 벗어나라는 뜻은 아니다).`);
+    lines.push(
+      `- 말버릇 금지: 최근 답장마다 같은 표현이 되풀이됐다 — ${rep.map((w) => `「${w}」`).join(", ")}. 이번 답장에서는 이 말·이 말을 쓴 농담·같은 뜻의 회피 멘트를 쓰지 마라(비슷하게 바꿔 쓰는 것도 금지). 같은 상황이면 지금까지와 다른 방식으로 대응해라(지금 나누는 주제에서 벗어나라는 뜻은 아니다).`
+    );
   }
+  // 대표 소재(직업·대표 취미) 쏠림
+  lines.push(...signatureLines(turns, opts.signature, userRecent));
   const avoid = new Set<string>();
   for (const s of scenes) for (const k of s.label.split(/[·]/)) avoid.add(k);
   // 이야기가 이어지는 중(opts.seeds=false)에는 새 근황 씨앗을 주지 않는다 — 딴소리의 원인이 된다
@@ -200,7 +220,47 @@ export function repeatGuardLines(turns: TextTurn[], tz: string, userText: string
     );
   }
   lines.push(...questionGuardLines(turns));
+  lines.push(responseModeLine());
   return lines;
+}
+
+/** 대표 소재 키워드에 쓸 정규식 특수문자 이스케이프 */
+const esc = (w: string) => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * 🎯 대표 소재 쏠림 방지 — 최근 답장이 직업·대표 취미(persona.signature)로만 흐르면 이번엔 그 소재를 쓰지 못하게 한다.
+ * 유저가 최근에 그 소재를 직접 꺼냈으면(예: 책 얘기 중) 막지 않는다.
+ */
+export function signatureLines(turns: TextTurn[], signature: string[] | undefined, userRecent: string): string[] {
+  if (!signature || signature.length === 0) return [];
+  const re = new RegExp(signature.map(esc).join("|"), "i");
+  if (re.test(userRecent)) return [];
+  const mine = turns.filter((t) => t.role === "assistant" && (t.kind === undefined || t.kind === "text") && t.content.trim()).slice(-5);
+  const hits = mine.map((t) => re.test(t.content));
+  const last3 = hits.slice(-3).filter(Boolean).length;
+  const all = hits.filter(Boolean).length;
+  if (last3 < 2 && all < 3) return [];
+  return [
+    `- 소재 쏠림 금지: 최근 답장 ${mine.length}개 중 ${all}개가 네 직업·대표 취미 소재(${signature.slice(0, 5).join("·")} 등)로 흘렀다. 유저가 묻지 않았으니 이번 답장에서는 그 소재를 꺼내지도, 그걸 비유로 끌어오지도 마라. 유저가 한 말·네 일상·감정·소소한 다른 화제로 답해라.`,
+  ];
+}
+
+/** 이번 턴에 권하는 "대응 방식" — 같은 상황에 같은 문구·농담으로 매번 대응하는 패턴을 깬다 */
+const RESPONSE_MODES = [
+  "솔직하고 짧게 답하기",
+  "유머로 가볍게 받아 넘기기",
+  "진지하게 이유나 생각을 말하기",
+  "네 경험 한 조각을 곁들이기",
+  "상대의 감정을 먼저 읽어 주기",
+  "가볍게 다른 화제를 꺼내기",
+  "장난스럽게 되받아치기",
+  "말을 아끼고 여운 있는 한마디로 받기",
+  "구체적인 예를 하나 들어 설명하기",
+];
+
+function responseModeLine(): string {
+  const pick = [...RESPONSE_MODES].sort(() => Math.random() - 0.5).slice(0, 2);
+  return `- 이번 턴 대응 방식(권장, 유저의 말과 분위기에 맞을 때만): ${pick.map((m) => `「${m}」`).join(" 또는 ")}. 같은 상황(연애·사적인 질문·칭찬·안부 등)에 지난번과 같은 문구·농담·회피 멘트로 대응하지 마라.`;
 }
 
 /** 이번 턴에 권하는 "말을 이어 가는 방식" — 매번 질문으로 공을 넘기는 패턴을 깬다 */

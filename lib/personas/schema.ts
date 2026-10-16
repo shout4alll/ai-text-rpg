@@ -29,6 +29,11 @@ export const personaFileSchema = z.object({
     }, "timezone 은 IANA 시간대 이름이어야 함 (예: Asia/Seoul)"),
   description: z.string().min(1),
   tags: z.array(z.string()).max(6),
+  /**
+   * (선택) 대표 소재 키워드 — 이 인물이 자꾸 꺼내기 쉬운 직업·대표 취미 말들(예: 책·소설·추천).
+   * 최근 답장이 이 소재로만 흐르면(유저가 꺼내지 않았는데도) 이번 답장에서는 그 소재를 쓰지 못하게 한다. (lib/repeatGuard.ts signatureLines)
+   */
+  signature: z.array(z.string().min(1)).max(16).optional(),
   /** romance: 연인까지 발전 가능 / friendship: 친구로만 (호감도 단계 이름도 친구용) */
   relationshipType: z.enum(["romance", "friendship"]).default("romance"),
   accent: z.string().regex(/^#[0-9a-fA-F]{6}$/, "accent 는 #RRGGBB 형식"),

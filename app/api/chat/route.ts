@@ -746,7 +746,7 @@ function buildTurnContext(c: InstructionContext): string {
     c.continuity
       ? `- 맥락 우선(${c.continuity === "confusion" ? "유저가 되묻거나 바로잡는 중" : "앞 대화에 이어지는 말"}): 유저의 이번 말은 바로 앞 대화에 기대어 해석해야 한다. 답하기 전에 직전 대여섯 턴을 읽고 (1) 지금 무슨 주제인지 (2) "그거·거기·그때" 같은 말이 무엇을 가리키는지 (3) 네가 방금 한 말을 유저가 어떻게 받았는지 먼저 파악해라. 유저가 못 알아듣겠다고 하거나 바로잡으면 네가 잘못 이해했거나 엉뚱한 말을 한 것이다 — 변명하거나 새 화제로 넘어가지 말고 "아 내가 잘못 짚었네"처럼 인정하고 유저가 말한 그 주제로 돌아와라. 유저가 말한 단어는 그 뜻 그대로 받아라(예: 책 제목이면 책으로). 네 근황·일상 얘기를 꺼내지 마라.`
       : null,
-    ...(c.recentTurns ? repeatGuardLines(c.recentTurns, persona.timezone, c.userText, { seeds: !c.continuity && worldFresh(c) }) : []),
+    ...(c.recentTurns ? repeatGuardLines(c.recentTurns, persona.timezone, c.userText, { seeds: !c.continuity && worldFresh(c), signature: persona.signature }) : []),
     // 🌍 세계관 확장: 이야기가 이어지는 중(continuity)에는 새 소재를 주지 않는다
     ...(c.continuity || !worldFresh(c) ? [] : worldTurnLines(persona, persona.timezone)),
     c.sentAlbumIds.length ? `- 이미 보낸 앨범: ${c.sentAlbumIds.slice(-20).join(", ")}` : null,
