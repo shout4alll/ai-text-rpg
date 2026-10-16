@@ -1937,7 +1937,7 @@ export default function ChatApp({
   /* ── 🎬 리액션 보기 (유료) — 왼쪽 버튼으로 원할 때 리액션 영상을 고른다 ── */
   /** 리액션 보기에서 살 수 있는 영상 전부 (창을 열면 미리 받기 시작) */
   const shopClips = useMemo(
-    () => ({ ...(persona?.assets.premiumClips ?? {}), ...(persona?.assets.specialClips ?? {}), ...(persona?.assets.allureClips ?? {}) }),
+    () => ({ ...(persona?.assets.premiumClips ?? {}), ...(persona?.assets.specialClips ?? {}), ...(persona?.assets.allureClips ?? {}), ...(persona?.assets.adultClips ?? {}) }),
     [persona]
   );
   const openShop = () => {
@@ -1965,6 +1965,12 @@ export default function ChatApp({
     for (const n of Object.keys(persona.assets.specialClips ?? {})) {
       out.push({ clip: n, tier: "special", cost: RS.costSpecial, ticket: true });
     }
+    // 🔞 성인 전용 영상 — 성인 확인을 마친 유저에게만, 고가 (매혹 모드 인물만). 확인 전에는 아예 보이지 않는다
+    if (adultOk) {
+      for (const n of Object.keys(persona.assets.adultClips ?? {})) {
+        out.push({ clip: n, tier: "adult", cost: RS.costAdult, label: persona.assets.adultLabels?.[n] });
+      }
+    }
     return out;
   };
   /** 고른 리액션을 결제하고 리액션 화면에서 재생한다 */
@@ -1987,10 +1993,10 @@ export default function ChatApp({
     setShopOpen(false);
     watchedClipRef.current = { clip: item.clip, at: Date.now() };
     setMessenger(false); // 리액션 화면으로
-    const base = item.clip.replace(/^(allure_|special_)/, "");
+    const base = item.clip.replace(/^(allure_|special_|adult_)/, "");
     const known = base in AVATAR_REACTIONS ? (base as AvatarReactionId) : null;
     const def = known ? AVATAR_REACTIONS[known] : null;
-    const spicy = item.tier === "allure" || item.tier === "special";
+    const spicy = item.tier === "allure" || item.tier === "special" || item.tier === "adult";
     applyDecision({
       reaction: known ?? "love",
       cue: { clips: [item.clip], motion: def?.motion ?? "none", tint: spicy ? ALLURE_TINT : def?.tint },

@@ -8,9 +8,10 @@ import { clipLabel } from "@/config/clipLabels";
  *  · 프리미엄: 높은 보석 (멤버십이면 일반 값)
  *  · 💋 매혹: 성인 확인을 마친 유저만
  *  · ⭐ 특별: 🎟️ 티켓이 있으면 티켓으로, 없으면 보석으로
+ *  · 🔞 성인 전용: 성인 확인을 마친 유저에게만, 고가 (일반·매혹 영상과 따로 관리)
  * 가격은 config/balance.json 의 reactionShop.
  */
-export type ShopTier = "normal" | "premium" | "allure" | "special";
+export type ShopTier = "normal" | "premium" | "allure" | "special" | "adult";
 
 export interface ShopItem {
   /** 재생할 영상 이름 (persona.assets 의 키) */
@@ -22,6 +23,8 @@ export interface ShopItem {
   ticket?: boolean;
   /** 볼 수 없으면 그 이유 (버튼이 잠긴다) */
   locked?: string;
+  /** 화면에 보일 이름 (없으면 영상 이름으로 만든다 — 성인 전용 영상용) */
+  label?: string;
 }
 
 const TIERS: { id: ShopTier; title: string; desc: string }[] = [
@@ -29,6 +32,7 @@ const TIERS: { id: ShopTier; title: string; desc: string }[] = [
   { id: "premium", title: "💝 프리미엄", desc: "특별한 순간에만 나오는 리액션" },
   { id: "allure", title: "💋 매혹", desc: "성인 확인을 마친 분만 볼 수 있어요" },
   { id: "special", title: "⭐ 특별 영상", desc: "조금 더 길고 공들인 영상" },
+  { id: "adult", title: "🔞 성인 전용", desc: "성인 확인 후에만 · 고가 · 더 대담한 영상" },
 ];
 
 export default function ReactionShop({
@@ -96,7 +100,7 @@ export default function ReactionShop({
                       className="flex items-center justify-between gap-2 rounded-2xl bg-paper px-3 py-2.5 text-left ring-1 ring-ink-line transition active:scale-[0.98] disabled:opacity-45"
                     >
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium">{clipLabel(i.clip)}</span>
+                        <span className="block truncate text-sm font-medium">{i.label ?? clipLabel(i.clip)}</span>
                         {i.locked && <span className="block text-[10px] text-ink-mute">{i.locked}</span>}
                       </span>
                       <span className={`shrink-0 text-[11px] font-bold ${byTicket ? "text-amber-500" : free ? "text-emerald-600" : poor ? "text-rose-500" : "text-brand-600"}`}>

@@ -94,6 +94,25 @@ export const personaFileSchema = z.object({
       })
     )
     .default([]),
+  /**
+   * (선택) 🔞 성인 전용 영상 — 성인 확인을 마친 유저에게만, 일반 영상과 따로 관리한다. (allure 가 있는 인물만 쓰인다)
+   *  · 리액션 보기에서 고가 유료 항목으로 노출 (balance.json reactionShop.costAdult)
+   *  · 대화 중 매혹 모드 + 높은 호감도 + 유저가 원할 때 아주 가끔 선물처럼 보낸다 (balance.json adultGift)
+   * 파일은 public/avatar/personas/<id>/clips/adult/ 아래에 둔다. 서버(Vercel)가 폴더를 읽지 않아도 되게 목록을 직접 적는다.
+   */
+  adult: z
+    .array(
+      z.object({
+        id: z.string().regex(/^[a-z0-9_-]+$/, "adult id 는 영문 소문자·숫자·_·-"),
+        /** 예: "clips/adult/shoulder.mp4" */
+        file: z.string().min(1),
+        /** 리액션 보기에 보일 이름 */
+        label: z.string().min(1).max(20),
+        /** 어떤 영상인지 한 줄 (프롬프트·관리용) */
+        desc: z.string().min(1),
+      })
+    )
+    .default([]),
   /** (선택) 보이스톡 목소리. 없으면 성별 기본값 (docs/VOICE_TALK.md) */
   voice: z
     .object({

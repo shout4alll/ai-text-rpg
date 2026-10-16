@@ -31,6 +31,10 @@ export interface PersonaAssets {
   specialClips: Record<string, string>;
   /** (자동) 💋 매혹 모드 영상 — clips/allure/ 폴더. 이름 앞에 "allure_" 가 붙는다 (예: allure_gaze) */
   allureClips: Record<string, string>;
+  /** (자동) 🔞 성인 전용 영상 — 인물 JSON 의 adult 목록. 이름 앞에 "adult_" 가 붙는다 (리액션 보기에서 고가·성인 확인 후) */
+  adultClips: Record<string, string>;
+  /** (자동) 성인 전용 영상 이름 → 리액션 보기에 보일 이름 */
+  adultLabels: Record<string, string>;
   /** (선택) 같은 인물의 대체 이미지 */
   fallbackPoster?: string;
 }

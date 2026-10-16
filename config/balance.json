@@ -254,8 +254,16 @@
     "costPremium": 15,
     "costAllure": 10,
     "costSpecial": 30,
+    "costAdult": 150,
     "freeNormalPerPersona": 2,
     "freeOrder": ["love", "shy", "laugh", "smile", "excited", "touched", "pout", "sad"]
+  },
+  "adultGift": {
+    "_readme": "🎁 성인 전용 영상 선물: 매혹 모드가 켜져 있고(성인 확인 완료) 호감도가 minAffection 이상일 때, 유저가 영상을 원하는 말(requestPatterns)을 하면 chance 확률로 캐릭터가 '특별히' 선물처럼 보내 준다. 같은 영상은 다시 보내지 않는다(앨범 전송 기록). 아주 가끔이 되도록 chance 를 낮게 유지.",
+    "enabled": true,
+    "minAffection": 70,
+    "chance": 0.2,
+    "requestPatterns": ["영상", "보여 ?줘", "보내 ?줘", "보고 ?싶", "더 보여", "특별한", "섹시", "야한", "선물"]
   },
   "touchReward": {
     "_readme": "👆 리액션 화면을 터치하다 아주 가끔 받는 보상 — 보석·선물·특별 리액션 티켓. chance = 반응이 나온 터치 1회당 확률. weights 비율로 종류를 고른다.",

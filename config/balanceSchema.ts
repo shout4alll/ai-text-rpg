@@ -136,10 +136,20 @@ export const balanceSchema = z.object({
     costPremium: z.number().int().min(0),
     costAllure: z.number().int().min(0),
     costSpecial: z.number().int().min(0),
+    /** 🔞 성인 전용 영상(성인 확인 후) 보석 값 — 고가 */
+    costAdult: z.number().int().min(0),
     /** 인물마다 일반 리액션 중 무료로 볼 수 있는 개수 (freeOrder 앞에서부터) */
     freeNormalPerPersona: z.number().int().min(0),
     /** 무료로 열어 주는 순서 — 이 인물에게 있는 영상 중 앞에서부터 */
     freeOrder: z.array(z.string()),
+  }),
+  /** 🎁 성인 전용 영상 선물 (매혹 모드 + 높은 호감도 + 유저가 원할 때 아주 가끔) */
+  adultGift: z.object({
+    _readme: z.string().optional(),
+    enabled: z.boolean(),
+    minAffection: z.number().min(0).max(100),
+    chance: z.number().min(0).max(1),
+    requestPatterns: z.array(z.string()).refine((a) => a.every((p) => { try { new RegExp(p, "i"); return true; } catch { return false; } }), "정규식 형식 오류"),
   }),
   touchReward: z.object({
     _readme: z.string().optional(),

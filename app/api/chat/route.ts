@@ -14,6 +14,7 @@ import {
   getPersonaFile,
   isPersonaId,
   albumOf,
+  adultOf,
 } from "@/lib/personas/server";
 import type { AlbumItem, MediaDirective } from "@/config/media";
 import { allureInstructions } from "@/config/allure";
@@ -465,6 +466,8 @@ interface InstructionContext {
   watched?: { clip: string; at: number };
   /** 직전 답장이 최근이라 모델이 바뀌어도 말투·상황을 이어야 하는 턴 */
   keepStyle?: boolean;
+  /** 🎁 이번 턴 선물로 보내는 특별 영상의 이름 (lib/personas adult — 보낸다고 정해진 경우만) */
+  giftClip?: string | null;
   /** 진행 중인 장면 요약 (스킨십·연기 장면 — lib/sceneKeep.ts) */
   scene?: string | null;
   /** 최근 대화 (말투 일관성 판단용) */
@@ -764,6 +767,9 @@ function buildTurnContext(c: InstructionContext): string {
         ? `- 끼어들기: 유저가 네 답장(말풍선)이 나오는 중에 이 말을 보냈다. 네 마지막 말풍선들은 화면에 나간 만큼만 있고, 하려던 말이 일부 끊겼을 수 있다. 유저의 말은 네 말에 대한 반응일 수도, 따로 한 말일 수도 있으니 방금 흐름과 이어서 자연스럽게 받아라. 순서를 따지며 사과하거나 "말하는 중에 끼어들었네"를 매번 말하지 마라(가끔 가볍게 한 번은 괜찮다). 끊긴 말이 꼭 필요하면 짧게 이어도 된다.`
         : null;
     })(),
+    c.giftClip
+      ? `- 특별한 선물(아주 가끔): 유저가 네 영상을 보고 싶어 했고, 호감도가 높아 이번에는 들어주기로 했다('${c.giftClip}' 영상이 곧 따로 전송된다). 쑥스러움과 은근한 장난을 섞어 "이건 특별히야, 아무한테나 안 보내" 같은 느낌으로 1~2개 말풍선으로 건네라. 영상의 내용을 설명하지 마라. 노골적인 표현은 쓰지 마라.`
+      : null,
     c.keepStyle ? "- 직전 답장들과 같은 말투·분량·온도·호칭을 그대로 이어라(이어받은 티를 내지 마라). 앞 대화에서 정한 상황·약속·화제를 잊지 말고 자연스럽게 잇는다." : null,
     c.touches?.length ? `- 방금 유저가 화면 속 너를 터치했다: ${c.touches.join(", ")}. 그 스킨십을 기억하고 관계 단계에 맞게 이어서 반응해라(가까우면 설레거나 장난스럽게, 아직 어색하면 쑥스럽거나 살짝 경계). 매번 언급하지는 마라.` : null,
     `- 호감도 ${Math.round(c.affection)}/100 → "${stage.label}": ${stage.guide}${prog.next ? ` (다음 "${prog.next.label}"까지 ${prog.toNext})` : ""}`,
@@ -1047,6 +1053,20 @@ export async function POST(request: Request) {
       const pool = album.filter((a) => a.type === nudge && !sentIds.has(a.id));
       nudgeItem = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
     }
+    // 🎁 성인 전용 선물 영상: 매혹 모드(성인 확인 완료) + 높은 호감도 + 유저가 영상을 원하는 말 + 낮은 확률. 같은 영상은 다시 보내지 않는다 (balance.json adultGift)
+    let giftItem: (AlbumItem & { label: string }) | null = null;
+    const AG = BALANCE.adultGift;
+    if (AG.enabled && allureMode && parsed.data.allureOk === true && !owner && last.kind === "text" && affection >= AG.minAffection) {
+      const wantRe = new RegExp(AG.requestPatterns.join("|"), "i");
+      if (wantRe.test(last.content)) {
+        const sentIds = new Set(parsed.data.sentAlbumIds ?? []);
+        const pool = adultOf(basePersona).filter((a) => !sentIds.has(`adult_${a.id}`));
+        if (pool.length > 0 && Math.random() < AG.chance) {
+          const pick = pool[Math.floor(Math.random() * pool.length)];
+          giftItem = { id: `adult_${pick.id}`, type: "video", src: pick.src, desc: "특별한 선물 영상", label: pick.label };
+        }
+      }
+    }
     const mkContext = (mem: string[], openings: string[]) => buildTurnContext({
       nudge,
       nudgeTopic: nudge ? parsed.data.nudgeTopic : undefined,
@@ -1064,6 +1084,7 @@ export async function POST(request: Request) {
       gift: parsed.data.gift,
       touches: parsed.data.touches,
       watched: parsed.data.watched,
+      giftClip: giftItem?.label ?? null,
       keepStyle: !!prevAiTurn?.at && Date.now() - prevAiTurn.at < 30 * 60_000,
       scene: scene.active ? scene.summary : null,
       recentTurns: recent,
@@ -1287,6 +1308,8 @@ export async function POST(request: Request) {
 
     if (owner) media = null;
     if (nudgeItem && !media && !owner) media = { action: "album", item: nudgeItem };
+    // 🎁 선물 영상: 대화 중 앨범 영상처럼 전송된다 — 선물이 뽑힌 턴은 모델이 고른 일반 앨범 영상보다 우선 (앨범 전송 기록에 남아 같은 영상은 다시 안 간다)
+    if (giftItem && !owner) media = { action: "album", item: { id: giftItem.id, type: giftItem.type, src: giftItem.src, desc: giftItem.desc } };
 
     const response: ChatResponse = {
       grade: plan?.grade === "L" ? (tiers[0] === "light" ? "L" : "M") : plan?.grade ?? (deepTurn ? "T" : tiers[0] === "light" ? "L" : "M"),

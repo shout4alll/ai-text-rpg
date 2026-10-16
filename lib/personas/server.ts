@@ -139,6 +139,13 @@ export function albumOf(p: PersonaFile): AlbumItem[] {
   return p.album.map((a) => ({ id: a.id, type: a.type, src: `${base}/${a.file.replace(/^\/+/, "")}`, desc: a.desc }));
 }
 
+/** 🔞 성인 전용 영상 목록 (allure 가 있는 인물만) — id 는 "adult_<id>" 로 쓴다 */
+export function adultOf(p: PersonaFile): { id: string; label: string; src: string; desc: string }[] {
+  if (!p.allure) return [];
+  const base = `/avatar/personas/${p.id}`;
+  return p.adult.map((a) => ({ id: a.id, label: a.label, desc: a.desc, src: `${base}/${a.file.replace(/^\/+/, "")}` }));
+}
+
 /** 화면용 공개 데이터 (프롬프트 제외) */
 export function toPublic(p: PersonaFile): Persona {
   const base = `/avatar/personas/${p.id}`;
@@ -196,6 +203,9 @@ export function toPublic(p: PersonaFile): Persona {
       allureClips: p.allure
         ? Object.fromEntries(Object.entries(scanClips(`${base}/clips/allure`)).map(([k, v]) => [`allure_${k}`, v]))
         : {},
+      // 🔞 성인 전용 영상 — 인물 JSON 의 adult 목록 (이름 앞에 adult_ 를 붙여 일반·매혹 영상과 섞이지 않게)
+      adultClips: Object.fromEntries(adultOf(p).map((a) => [`adult_${a.id}`, a.src])),
+      adultLabels: Object.fromEntries(adultOf(p).map((a) => [`adult_${a.id}`, a.label])),
       ...(p.image.fallbackPoster ? { fallbackPoster: p.image.fallbackPoster } : {}),
     },
   };
