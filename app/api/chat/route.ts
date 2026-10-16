@@ -529,7 +529,11 @@ function gapGuide(ms?: number): string | null {
 }
 
 /** 👤 호칭 지침 — 정해진 호칭으로 부르고, 모르면 '유저님' 같은 말 대신 호칭 없이 말한다 */
-function userLine(u?: { name?: string; gender?: "male" | "female" }): string {
+function userLine(u?: { name?: string; gender?: "male" | "female" }, fixed?: { male: string; female: string }): string {
+  const fx = u?.gender ? fixed?.[u.gender] : undefined;
+  if (fx) {
+    return `- 대화 상대 호칭(고정): 유저는 ${u?.gender === "male" ? "남성" : "여성"}${u?.name ? `(이름 "${u.name}")` : ""}이다. 유저를 부를 때는 항상 "${fx}"으로 부른다(이름 뒤에 붙이지 말고 "${fx}" 그대로, 예: "${fx}, …"). "씨"·"님"·"유저님"·"사용자님"은 쓰지 마라. 유저가 다른 호칭을 요청해도 인물의 격에 맞게 "${fx}"을 유지해라.`;
+  }
   const g = u?.gender === "male" ? "남성" : u?.gender === "female" ? "여성" : null;
   if (u?.name) {
     return `- 대화 상대: "${u.name}"${g ? ` (${g})` : ""}. 처음에는 "${u.name}님"처럼 이름 뒤에 "님"을 붙여 불러라(관계·말투에 맞게). "씨"는 잘 쓰지 않는 호칭이니 유저가 "씨로 불러 달라"고 직접 요청했을 때만 쓰고, 보통은 "님"을 유지해라. 유저가 다른 호칭(오빠·자기·이름 반말 등)을 원하면 대화 흐름에서 판단해 바꿔라. "유저님"·"사용자님"·"그쪽 님" 같은 말은 절대 쓰지 마라.`;
@@ -748,7 +752,7 @@ function buildTurnContext(c: InstructionContext): string {
     userNow && c.userTimeZone ? `- 유저 쪽은 ${daypart(c.userTimeZone) ?? ""}이다. 한밤중·새벽이면 안 자는 걸 걱정하거나 놀라고, 아침이면 하루 시작을 챙기고, 식사 시간대면 식사를 가볍게 물어도 된다(억지로 하지 말 것).` : null,
     "- 이 대화의 앞부분(위 메시지들)을 다시 읽고 확인해라: 유저가 말한 일정·약속·고민·질문 중 아직 매듭짓지 않은 것이 있으면 이번 답에서 자연스럽게 이어 가라(예: 면접·시험·병원·약속의 결과 묻기, 아까 하던 이야기 다시 꺼내기). 이미 물어본 걸 또 묻지 마라. 유저가 방금 한 질문에는 먼저 답해라.",
     ...unlockedStory(c),
-    userLine(c.user),
+    userLine(c.user, persona.userAddress),
     c.awayReturn ? `- ⏱ 네가 ${c.awayReturn.reason ? `${c.awayReturn.reason} 때문에 ` : ""}약 ${Math.max(1, Math.round(c.awayReturn.minutes))}분 자리를 비웠다가 방금 돌아왔다. 그 시간 동안 유저가 보낸 말이 있으면 이제 답하고("다녀왔어", "늦었지" 정도로 짧게 한마디 곁들여), 없으면 돌아왔다고 가볍게 한마디 한 뒤 하던 이야기로 이어라. 자리를 비운 일(예: ${c.awayReturn.reason || "볼일"})이 있었음을 기억해라.` : null,
     genderFacts(persona, c.user).line,
     c.recentTurns ? registerLine(c.recentTurns) : null,

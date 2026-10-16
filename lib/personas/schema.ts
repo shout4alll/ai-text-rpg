@@ -34,6 +34,8 @@ export const personaFileSchema = z.object({
    * 최근 답장이 이 소재로만 흐르면(유저가 꺼내지 않았는데도) 이번 답장에서는 그 소재를 쓰지 못하게 한다. (lib/repeatGuard.ts signatureLines)
    */
   signature: z.array(z.string().min(1)).max(16).optional(),
+  /** (선택) 유저 호칭 고정 — 성별별 호칭(예: 신부님은 남 "형제님"·여 "자매님"). 성별을 모르면 이름+님 */
+  userAddress: z.object({ male: z.string().min(1), female: z.string().min(1) }).optional(),
   /** romance: 연인까지 발전 가능 / friendship: 친구로만 (호감도 단계 이름도 친구용) */
   relationshipType: z.enum(["romance", "friendship"]).default("romance"),
   accent: z.string().regex(/^#[0-9a-fA-F]{6}$/, "accent 는 #RRGGBB 형식"),

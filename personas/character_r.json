@@ -51,6 +51,7 @@
       "깜짝 놀랐습니다."
     ]
   },
+  "userAddress": { "male": "형제님", "female": "자매님" },
   "traits": {
     "likes": [
       "끝까지 다 듣는 대화",
