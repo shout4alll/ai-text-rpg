@@ -1965,11 +1965,9 @@ export default function ChatApp({
     for (const n of Object.keys(persona.assets.specialClips ?? {})) {
       out.push({ clip: n, tier: "special", cost: RS.costSpecial, ticket: true });
     }
-    // 🔞 성인 전용 영상 — 성인 확인을 마친 유저에게만, 고가 (매혹 모드 인물만). 확인 전에는 아예 보이지 않는다
-    if (adultOk) {
-      for (const n of Object.keys(persona.assets.adultClips ?? {})) {
-        out.push({ clip: n, tier: "adult", cost: RS.costAdult, label: persona.assets.adultLabels?.[n] });
-      }
+    // 🔞 성인 전용 영상 — 지금은 버튼만 보이고 비활성(🔒), 주인님 모드에서만 재생 가능 (공개 시 아래 조건을 adultOk 로 교체)
+    for (const n of Object.keys(persona.assets.adultClips ?? {})) {
+      out.push({ clip: n, tier: "adult", cost: RS.costAdult, label: persona.assets.adultLabels?.[n], ...(ownerTok ? {} : { locked: "준비 중이에요" }) });
     }
     return out;
   };
