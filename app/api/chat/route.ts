@@ -29,6 +29,7 @@ import { PERSONA_FIELDS, RULE_FIELDS, applyPersonaOverride, mergeOverride, type 
 import { persistedPersona, persistedRules } from "@/lib/overridesStore";
 import { contextDependency, insistedAsks, logCtx } from "@/lib/continuity";
 import { windowByGap } from "@/lib/historyWindow";
+import { clipAwareLines } from "@/lib/clipAware";
 import { pushLive } from "@/lib/liveFeed";
 import { takeOpus } from "@/lib/opusQuota";
 import { BASELINE, costUsd, priceOf } from "@/config/prices";
@@ -88,6 +89,8 @@ const turnSchema = z.object({
   /** kind=gift: 좋아하는 선물이었는지 / 삐진 걸 달래려던 선물인지 (없으면 예전 기록) */
   giftGood: z.boolean().optional(),
   giftSulk: z.boolean().optional(),
+  /** kind=text(AI): 이 말풍선과 함께 화면에서 실제로 재생된 리액션 영상 이름 (lib/clipAware.ts) */
+  clip: z.string().max(40).regex(/^[A-Za-z0-9_-]+$/).optional(),
 });
 
 /** 편집값 {항목: 글/숫자/줄 목록} — 정의된 항목만, 길이 제한 */
@@ -140,6 +143,8 @@ const requestSchema = z.object({
   gift: z.object({ name: z.string().max(40), good: z.boolean() }).optional(),
   /** 👆 최근 화면 터치 (대화 흐름에 이어서 반응하도록) 예) "볼 2번 (3분 전)" */
   touches: z.array(z.string().max(60)).max(6).optional(),
+  /** 유저가 "리액션 보기"로 직접 골라 본 영상 (15분 안의 것만 반영) */
+  watched: z.object({ clip: z.string().max(40).regex(/^[A-Za-z0-9_-]+$/), at: z.number() }).optional(),
   /** 📲 선톡: 유저가 알림을 받고 들어왔을 때(kind=return) 어떤 선톡이었는지 */
   nudge: z.enum(["message", "photo", "video"]).optional(),
   /** 선톡 일과표 슬롯 id (morning·lunch·goodnight …). 문구는 서버(CMS) 일과표에서 찾는다 */
@@ -451,6 +456,7 @@ interface InstructionContext {
   user?: { name?: string; gender?: "male" | "female" };
   gift?: { name: string; good: boolean };
   touches?: string[];
+  watched?: { clip: string; at: number };
   /** 최근 대화 (말투 일관성 판단용) */
   recentTurns?: Turn[];
   /** 앞 대화가 있어야 이해되는 말이면 그 이유 (lib/continuity.ts) */
@@ -735,6 +741,7 @@ function buildTurnContext(c: InstructionContext): string {
     c.recentTurns ? registerLine(c.recentTurns) : null,
     c.sinceLast ? `- 직전 대화 이후 ${c.sinceLast}이 지났다. 그동안 각자의 시간이 흘렀다는 걸 자연스럽게 반영해라.` : null,
     gapGuide(c.gapMs),
+    ...clipAwareLines({ turns: c.recentTurns ?? [], watched: c.watched, userText: c.userText }),
     c.touches?.length ? `- 방금 유저가 화면 속 너를 터치했다: ${c.touches.join(", ")}. 그 스킨십을 기억하고 관계 단계에 맞게 이어서 반응해라(가까우면 설레거나 장난스럽게, 아직 어색하면 쑥스럽거나 살짝 경계). 매번 언급하지는 마라.` : null,
     `- 호감도 ${Math.round(c.affection)}/100 → "${stage.label}": ${stage.guide}${prog.next ? ` (다음 "${prog.next.label}"까지 ${prog.toNext})` : ""}`,
     c.recentOpenings.length > 0
@@ -1022,6 +1029,7 @@ export async function POST(request: Request) {
       user: parsed.data.user,
       gift: parsed.data.gift,
       touches: parsed.data.touches,
+      watched: parsed.data.watched,
       recentTurns: recent,
       continuity,
       lenHint: plan?.len,

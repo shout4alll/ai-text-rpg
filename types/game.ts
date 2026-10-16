@@ -66,6 +66,8 @@ export interface ChatMessage {
     /** 유저가 올린 영상 길이(초) */
     duration?: number;
   };
+  /** kind=text(AI): 이 말풍선과 함께 화면에서 실제로 재생된 리액션 영상 이름 (대화에서 영상을 언급하면 받아치도록 서버에 알린다) */
+  clip?: string;
   /** "voice" 면 보이스톡 중에 한 말 (받아쓰기) */
   via?: "voice";
   /** kind=text: 내용 / kind=reaction: HeartReactionId */

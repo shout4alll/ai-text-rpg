@@ -281,6 +281,8 @@ interface Turn {
   /** kind=gift: 좋아하는 선물이었는지 / 삐짐 달래기였는지 */
   giftGood?: boolean;
   giftSulk?: boolean;
+  /** AI 말풍선과 함께 화면에서 실제로 재생된 리액션 영상 이름 */
+  clip?: string;
 }
 
 function toTurns(msgs: ChatMessage[]): Turn[] {
@@ -290,7 +292,7 @@ function toTurns(msgs: ChatMessage[]): Turn[] {
     if (m.local) continue;
     if ((m.kind ?? "text") === "text") {
       if (m.text.startsWith("⚠️")) continue; // 오류 안내는 대화가 아님
-      turns.push({ role: m.role === "user" ? "user" : "assistant", kind: "text", content: m.text, at: m.at, ...(m.mature ? { mature: true } : {}) });
+      turns.push({ role: m.role === "user" ? "user" : "assistant", kind: "text", content: m.text, at: m.at, ...(m.mature ? { mature: true } : {}), ...(m.role === "ai" && m.clip ? { clip: m.clip } : {}) });
     } else if (m.kind === "reaction" && m.role === "user") {
       turns.push({ role: "user", kind: "reaction", content: m.text, target: byId.get(m.targetId ?? -1)?.text, at: m.at });
     } else if (m.kind === "call") {
@@ -696,9 +698,15 @@ export default function ChatApp({
         sulkRelease: opts?.sulkRelease,
         stageUp: opts?.stageUp,
       };
-      applyDecision(director.decide(ev, directorCtx(clampAffection(affectionRef.current + delta))));
+      const dctx = directorCtx(clampAffection(affectionRef.current + delta));
+      const decision = director.decide(ev, dctx);
+      applyDecision(decision);
+      // 🎬 실제로 영상이 재생됐으면 그 영상 이름(없으면 undefined) — 말풍선에 기록해 두면 유저가 그 장면을 언급할 때 캐릭터가 알아듣는다
+      if (!decision.video || !decision.cue) return undefined;
+      const allureNames = persona?.assets.allureClips ?? {};
+      return decision.cue.clips.find((c) => c !== "idle" && (dctx.hasClip(c) || c in allureNames));
     },
-    [applyDecision, director, directorCtx]
+    [applyDecision, director, directorCtx, persona]
   );
 
   /**
@@ -1289,6 +1297,7 @@ export default function ChatApp({
           memory: memoryRef.current?.facts ?? [],
           pinned: pinnedRef.current,
           userNotes: notesRef.current,
+          ...(watchedClipRef.current && Date.now() - watchedClipRef.current.at < 15 * 60_000 ? { watched: watchedClipRef.current } : {}),
           ...(userProfileRef.current ? { user: { name: userProfileRef.current.name, gender: userProfileRef.current.gender } } : {}),
           ...(kind === "text" || kind === "reaction" ? (() => { const t = takeTouches(); return t ? { touches: t } : {}; })() : {}),
           ...(kind === "gift" && giftRef.current ? { gift: giftRef.current } : {}),
@@ -1456,8 +1465,12 @@ export default function ChatApp({
               return;
             }
           }
-          setMessages((prev) => [...prev, { id: nextId.current++, role: "ai", kind: "text", text, at: Date.now(), ...(data.mature ? { mature: true } : {}) }]);
-          if (i === 0) playReaction(data.reaction, reactOpts);
+          const bubbleId = nextId.current++;
+          setMessages((prev) => [...prev, { id: bubbleId, role: "ai", kind: "text", text, at: Date.now(), ...(data.mature ? { mature: true } : {}) }]);
+          if (i === 0) {
+            const shownClip = playReaction(data.reaction, reactOpts);
+            if (shownClip) setMessages((prev) => prev.map((m) => (m.id === bubbleId ? { ...m, clip: shownClip } : m)));
+          }
         }
 
         // 단계 상승: 인물이 그 단계에 맞는 한마디를 덧붙인다 (personas/<id>.json traits.stageUpLines)
@@ -1939,6 +1952,8 @@ export default function ChatApp({
     return out;
   };
   /** 고른 리액션을 결제하고 리액션 화면에서 재생한다 */
+  /** 🎬 유저가 "리액션 보기"로 직접 골라 본 영상 (다음 말에 실어 보낸다 — 15분 안의 것만 서버가 반영) */
+  const watchedClipRef = useRef<{ clip: string; at: number } | null>(null);
   const playShopItem = (item: ShopItem) => {
     if (!persona || item.locked) return;
     // 지불 순서: 🎟️ 티켓 → 오늘 무료 → 💎 보석
@@ -1954,6 +1969,7 @@ export default function ChatApp({
     }
     setCashState(getCash());
     setShopOpen(false);
+    watchedClipRef.current = { clip: item.clip, at: Date.now() };
     setMessenger(false); // 리액션 화면으로
     const base = item.clip.replace(/^(allure_|special_)/, "");
     const known = base in AVATAR_REACTIONS ? (base as AvatarReactionId) : null;
