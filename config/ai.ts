@@ -448,11 +448,13 @@ export function resolveModel(purpose: ModelTier = "chat"): ResolvedModel {
     }
     return resolveModel("mature");
   }
-  // 📚 knowledge: 과학·취미·정보 질문 (AI_MODEL_KNOWLEDGE · 없으면 Perplexity → Gemini → 메인 순)
+  // 📚 knowledge: 과학·취미·정보 질문 (AI_MODEL_KNOWLEDGE · 없으면 Perplexity 키가 있을 때만 Perplexity · 아니면 메인 모델)
+  //   ※ 예전에는 Google 키가 있으면 Gemini 로 갔지만, 개인 API 키를 쓰지 않도록 기본 경로에서 뺐다 (Bedrock 메인 모델이 답한다).
+  //     Gemini 를 쓰고 싶으면 AI_MODEL_KNOWLEDGE=google:gemini-3.8-flash 로 직접 지정.
   if (purpose === "knowledge") {
     const k = settingValue("knowledgeModel");
     const keys = providerKeys();
-    const spec = k || (keys.perplexity ? "perplexity:sonar" : keys.google ? "google:gemini-3.8-flash" : "");
+    const spec = k || (keys.perplexity ? "perplexity:sonar" : "");
     if (spec) {
       const sp = splitProviderPrefix(spec);
       return build(sp.provider ?? requested, sp.modelId);
@@ -506,15 +508,14 @@ export function matureModelId(): string | null {
 /*     아래 순서로 다른 모델이 대신 답한다 (성공률이 높았던 모델이 앞으로 올라온다).        */
 /*   · 환경변수 AI_FALLBACK_MODELS (쉼표로 구분, "off" 면 끔)가 있으면 그 목록을 쓴다.     */
 /*   · 앞에 "프로바이더:" 를 붙이면 그 프로바이더, 없으면 Bedrock.                       */
-/*     예) AI_FALLBACK_MODELS=global.anthropic.claude-sonnet-5-5,openai:gpt-5,google:gemini-3.8-flash */
+/*     예) AI_FALLBACK_MODELS=global.anthropic.claude-sonnet-5-5,openai.gpt-oss-120b-1:0 */
 /*   · 키가 없는 프로바이더는 조용히 건너뛴다.                                        */
+/*   · 기본 목록은 Bedrock 안의 모델만 쓴다 (개인 API 키로 나가는 Google·OpenAI 직접 호출은 뺐다). */
 /* ────────────────────────────────────────────────────────────────────────── */
 export const DEFAULT_FALLBACK_MODELS: readonly string[] = [
   "global.anthropic.claude-sonnet-5-5", // Sonnet 계열 (가장 성공률 높음)
   "global.anthropic.claude-haiku-4-5-20251001-v1:0",
   "openai.gpt-oss-120b-1:0", // GPT (Bedrock gpt-oss)
-  "openai:gpt-5", // GPT (OpenAI 직접 — OPENAI_API_KEY 가 있을 때만)
-  "google:gemini-3.8-flash", // GOOGLE_GENERATIVE_AI_API_KEY 가 있을 때만
   "global.amazon.nova-2-lite-v1:0",
   "us.meta.llama4-maverick-17b-instruct-v1:0", // 🦙 Llama 4 Maverick — 비상용(모두 실패했을 때만, 미국 리전)
 ];

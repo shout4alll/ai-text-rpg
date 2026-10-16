@@ -70,7 +70,7 @@ export const SERVER_SETTINGS = [
   {
     key: "knowledgeModel", label: "전문지식·정보 질문 모델 (3번 분류)", group: "모델", type: "string",
     default: "", env: "AI_MODEL_KNOWLEDGE", usedIn: "config/ai.ts resolveModel('knowledge')",
-    desc: "비우면 PERPLEXITY_API_KEY 가 있으면 perplexity:sonar, 없으면 google:gemini-3.8-flash, 둘 다 없으면 메인 모델",
+    desc: "비우면 PERPLEXITY_API_KEY 가 있을 때만 perplexity:sonar, 없으면 메인 모델(Bedrock). Google Gemini 는 직접 지정할 때만 쓴다(개인 API 키 사용)",
   },
   {
     key: "analyzerModel", label: "🧭 대화 분석·라우팅 모델 (매 턴 등급 결정)", group: "모델", type: "string",
