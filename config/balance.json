@@ -339,6 +339,7 @@
     "enabled": true,
     "opusDailyLimit": 12,
     "lightMaxChars": 25,
+    "lightStickyMin": 30,
     "firstTurnsMain": 4,
     "mainEveryLight": 6,
     "lightKinds": [

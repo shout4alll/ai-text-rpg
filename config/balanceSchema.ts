@@ -177,6 +177,8 @@ export const balanceSchema = z.object({
     /** 🧠 Opus(최상위 모델) 손님 1명당 하루 사용 횟수 — 넘으면 Sonnet 5.5 로 (lib/opusQuota.ts) */
     opusDailyLimit: z.number().int().min(0).max(1000),
     lightMaxChars: z.number().int().min(0).max(200),
+    /** 🧲 직전 AI 답장이 L(Haiku)이 아니었고 이 분(分) 안이면 가벼운 말도 L 로 내리지 않는다 (0 이면 끔 — lib/gradeSticky.ts) */
+    lightStickyMin: z.number().min(0).max(1440),
     firstTurnsMain: z.number().int().min(0),
     mainEveryLight: z.number().int().min(0),
     lightKinds: z.array(z.string()),

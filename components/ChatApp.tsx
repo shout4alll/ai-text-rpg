@@ -283,6 +283,8 @@ interface Turn {
   giftSulk?: boolean;
   /** AI 말풍선과 함께 화면에서 실제로 재생된 리액션 영상 이름 */
   clip?: string;
+  /** AI 답장을 쓴 모델 등급 (서버가 모델을 갑자기 낮추지 않게) */
+  grade?: "L" | "M" | "P" | "T";
 }
 
 function toTurns(msgs: ChatMessage[]): Turn[] {
@@ -292,7 +294,7 @@ function toTurns(msgs: ChatMessage[]): Turn[] {
     if (m.local) continue;
     if ((m.kind ?? "text") === "text") {
       if (m.text.startsWith("⚠️")) continue; // 오류 안내는 대화가 아님
-      turns.push({ role: m.role === "user" ? "user" : "assistant", kind: "text", content: m.text, at: m.at, ...(m.mature ? { mature: true } : {}), ...(m.role === "ai" && m.clip ? { clip: m.clip } : {}) });
+      turns.push({ role: m.role === "user" ? "user" : "assistant", kind: "text", content: m.text, at: m.at, ...(m.mature ? { mature: true } : {}), ...(m.role === "ai" && m.clip ? { clip: m.clip } : {}), ...(m.role === "ai" && m.grade ? { grade: m.grade } : {}) });
     } else if (m.kind === "reaction" && m.role === "user") {
       turns.push({ role: "user", kind: "reaction", content: m.text, target: byId.get(m.targetId ?? -1)?.text, at: m.at });
     } else if (m.kind === "call") {
@@ -1466,7 +1468,7 @@ export default function ChatApp({
             }
           }
           const bubbleId = nextId.current++;
-          setMessages((prev) => [...prev, { id: bubbleId, role: "ai", kind: "text", text, at: Date.now(), ...(data.mature ? { mature: true } : {}) }]);
+          setMessages((prev) => [...prev, { id: bubbleId, role: "ai", kind: "text", text, at: Date.now(), ...(data.mature ? { mature: true } : {}), ...(data.grade ? { grade: data.grade } : {}) }]);
           if (i === 0) {
             const shownClip = playReaction(data.reaction, reactOpts);
             if (shownClip) setMessages((prev) => prev.map((m) => (m.id === bubbleId ? { ...m, clip: shownClip } : m)));

@@ -12,6 +12,8 @@ export interface ChatResponse {
   reaction: AvatarReactionId;
   /** AI가 유저의 마지막 메시지에 다는 마음 리액션 (없으면 null) */
   tapback: HeartReactionId | null;
+  /** 이번 답장을 쓴 모델 등급 L·M·P·T (다음 턴에 모델을 갑자기 낮추지 않기 위한 기록) */
+  grade?: "L" | "M" | "P" | "T";
   /** 이번 턴의 호감도 변화 */
   affectionDelta: number;
   /** 3D 모드 호환 */
@@ -66,6 +68,8 @@ export interface ChatMessage {
     /** 유저가 올린 영상 길이(초) */
     duration?: number;
   };
+  /** kind=text(AI): 이 말풍선을 쓴 모델 등급 (lib/gradeSticky.ts) */
+  grade?: "L" | "M" | "P" | "T";
   /** kind=text(AI): 이 말풍선과 함께 화면에서 실제로 재생된 리액션 영상 이름 (대화에서 영상을 언급하면 받아치도록 서버에 알린다) */
   clip?: string;
   /** "voice" 면 보이스톡 중에 한 말 (받아쓰기) */

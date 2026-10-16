@@ -30,6 +30,8 @@ import { persistedPersona, persistedRules } from "@/lib/overridesStore";
 import { contextDependency, insistedAsks, logCtx } from "@/lib/continuity";
 import { windowByGap } from "@/lib/historyWindow";
 import { clipAwareLines } from "@/lib/clipAware";
+import { stickyGrade } from "@/lib/gradeSticky";
+import { detectScene, sceneLines } from "@/lib/sceneKeep";
 import { pushLive } from "@/lib/liveFeed";
 import { takeOpus } from "@/lib/opusQuota";
 import { BASELINE, costUsd, priceOf } from "@/config/prices";
@@ -91,6 +93,8 @@ const turnSchema = z.object({
   giftSulk: z.boolean().optional(),
   /** kind=text(AI): 이 말풍선과 함께 화면에서 실제로 재생된 리액션 영상 이름 (lib/clipAware.ts) */
   clip: z.string().max(40).regex(/^[A-Za-z0-9_-]+$/).optional(),
+  /** 이 AI 답장을 쓴 모델 등급 (앱이 응답의 grade 를 되돌려 보낸다 — lib/gradeSticky.ts) */
+  grade: z.enum(["L", "M", "P", "T"]).optional(),
 });
 
 /** 편집값 {항목: 글/숫자/줄 목록} — 정의된 항목만, 길이 제한 */
@@ -457,6 +461,10 @@ interface InstructionContext {
   gift?: { name: string; good: boolean };
   touches?: string[];
   watched?: { clip: string; at: number };
+  /** 직전 답장이 최근이라 모델이 바뀌어도 말투·상황을 이어야 하는 턴 */
+  keepStyle?: boolean;
+  /** 진행 중인 장면 요약 (스킨십·연기 장면 — lib/sceneKeep.ts) */
+  scene?: string | null;
   /** 최근 대화 (말투 일관성 판단용) */
   recentTurns?: Turn[];
   /** 앞 대화가 있어야 이해되는 말이면 그 이유 (lib/continuity.ts) */
@@ -742,6 +750,8 @@ function buildTurnContext(c: InstructionContext): string {
     c.sinceLast ? `- 직전 대화 이후 ${c.sinceLast}이 지났다. 그동안 각자의 시간이 흘렀다는 걸 자연스럽게 반영해라.` : null,
     gapGuide(c.gapMs),
     ...clipAwareLines({ turns: c.recentTurns ?? [], watched: c.watched, userText: c.userText }),
+    ...(c.scene ? sceneLines({ active: true, summary: c.scene }) : []),
+    c.keepStyle ? "- 직전 답장들과 같은 말투·분량·온도·호칭을 그대로 이어라(이어받은 티를 내지 마라). 앞 대화에서 정한 상황·약속·화제를 잊지 말고 자연스럽게 잇는다." : null,
     c.touches?.length ? `- 방금 유저가 화면 속 너를 터치했다: ${c.touches.join(", ")}. 그 스킨십을 기억하고 관계 단계에 맞게 이어서 반응해라(가까우면 설레거나 장난스럽게, 아직 어색하면 쑥스럽거나 살짝 경계). 매번 언급하지는 마라.` : null,
     `- 호감도 ${Math.round(c.affection)}/100 → "${stage.label}": ${stage.guide}${prog.next ? ` (다음 "${prog.next.label}"까지 ${prog.toNext})` : ""}`,
     c.recentOpenings.length > 0
@@ -751,7 +761,7 @@ function buildTurnContext(c: InstructionContext): string {
       ? `- ⚠️ 유저가 같은 걸 거듭 묻고 있다: ${c.asks.map((a) => `「${a}」`).join(" → ")}. 네 직전 답이 얼버무리거나 거절해서 유저가 답을 못 받았다. 이번에는 이유를 늘어놓거나 버티지 말고 첫 말풍선에서 바로 구체적으로 답해라(추천이면 실제 제목·작가처럼 이름까지). 필요하면 "아 미안, 그냥 말해줄게"처럼 짧게 풀고 답해라.`
       : null,
     c.continuity
-      ? `- 맥락 우선(${c.continuity === "confusion" ? "유저가 되묻거나 바로잡는 중" : "앞 대화에 이어지는 말"}): 유저의 이번 말은 바로 앞 대화에 기대어 해석해야 한다. 답하기 전에 직전 대여섯 턴을 읽고 (1) 지금 무슨 주제인지 (2) "그거·거기·그때" 같은 말이 무엇을 가리키는지 (3) 네가 방금 한 말을 유저가 어떻게 받았는지 먼저 파악해라. 유저가 못 알아듣겠다고 하거나 바로잡으면 네가 잘못 이해했거나 엉뚱한 말을 한 것이다 — 변명하거나 새 화제로 넘어가지 말고 "아 내가 잘못 짚었네"처럼 인정하고 유저가 말한 그 주제로 돌아와라. 유저가 말한 단어는 그 뜻 그대로 받아라(예: 책 제목이면 책으로). 네 근황·일상 얘기를 꺼내지 마라.`
+      ? `- 맥락 우선(${c.continuity === "confusion" ? "유저가 되묻거나 바로잡는 중" : "앞 대화에 이어지는 말"}): 유저의 이번 말은 바로 앞 대화에 기대어 해석해야 한다. 답하기 전에 직전 대여섯 턴을 읽고 (1) 지금 무슨 주제인지 (2) "그거·거기·그때" 같은 말이 무엇을 가리키는지 (3) 네가 방금 한 말을 유저가 어떻게 받았는지 먼저 파악해라. 유저가 못 알아듣겠다고 하거나 바로잡으면 네가 잘못 이해했거나 엉뚱한 말을 한 것이다 — 변명하거나 새 화제로 넘어가지 말고 "아 내가 잘못 짚었네"처럼 인정하고 유저가 말한 그 주제로 돌아와라. 유저가 말한 단어는 그 뜻 그대로 받아라(예: 책 제목이면 책으로). 네 근황·일상 얘기를 꺼내지 마라. "그거·그건·그때·아까·걔" 같은 지시어가 가리키는 것이 최근 대여섯 턴 안에 있으면 "무슨 얘기야?", "바로 떠오르진 않네", "뭘 말하는지 알려줘"라고 되묻지 마라 — 가장 그럴듯한 대상(대개 방금 네가 한 말·행동이나 유저가 방금 말한 것)을 골라 "아, ~ 말이지?"처럼 짚어 확인하고 바로 이어서 답해라. 후보가 정말 둘 이상일 때만 그 둘을 짚어 물어라.`
       : null,
     ...(c.recentTurns ? repeatGuardLines(c.recentTurns, persona.timezone, c.userText, { seeds: !c.continuity && worldFresh(c), signature: persona.signature }) : []),
     // 🌍 세계관 확장: 이야기가 이어지는 중(continuity)에는 새 소재를 주지 않는다
@@ -900,7 +910,9 @@ export async function POST(request: Request) {
   // (주인님 프롬프트 모드에서도 점수는 계산해 🛠 실시간 창에 보여 주되, 라우팅에는 쓰지 않는다)
   const depAll = last.kind === "text" ? contextDependency(last.content, recent) : null;
   const dep = owner ? null : depAll;
-  const continuity = dep?.level === "high" ? dep.reason ?? "context" : null;
+  // 🎞 키스·포옹 같은 장면이 진행 중이면 짧은 말도 그 장면 속 반응이다 → 맥락이 깊은 턴(메인 모델·풀 사용 안 함·근황 씨앗 안 줌)
+  const scene = last.kind === "text" ? detectScene(recent, last.content, last.at) : { active: false, summary: "" };
+  const continuity = dep?.level === "high" ? dep.reason ?? "context" : scene.active ? "scene" : null;
   const ctxRow = dep
     ? logCtx({
         at: Date.now(),
@@ -913,7 +925,7 @@ export async function POST(request: Request) {
         features: dep.features,
       })
     : null;
-  const category = (dep && dep.level !== "low") || parsed.data.sulk || !!parsed.data.awayReturn || ownerAuth || sticky || moodHit || allureHot || personaMature ? null : poolCategory(last.kind, last.content);
+  const category = (dep && dep.level !== "low") || scene.active || parsed.data.sulk || !!parsed.data.awayReturn || ownerAuth || sticky || moodHit || allureHot || personaMature ? null : poolCategory(last.kind, last.content);
   const pKey = category ? poolKey(persona.id, affectionStageIndex(affection, persona.relationshipType), category, allureEff) : "";
   if (category) {
     const recentAi = messages.filter((m) => m.role === "assistant" && m.kind === "text").slice(-10).flatMap((m) => m.content.split(/\n+/));
@@ -930,6 +942,7 @@ export async function POST(request: Request) {
         media: null,
         soothed: false,
         seen: "",
+        grade: "L",
       };
       if (ctxRow) ctxRow.route = "pool";
       await pushLive({ at: Date.now(), personaId: persona.id, personaName: persona.name, device: (parsed.data.device ?? "").slice(0, 4), userName: parsed.data.user?.name ?? "", owner: ownerAuth, kind: last.kind, userText: last.content, replies: hit.messages, model: "reply-pool", route: `pool/${category}`, ms: 0, ctx: depAll ? { score: depAll.score, level: depAll.level, reason: depAll.reason } : null });
@@ -980,17 +993,25 @@ export async function POST(request: Request) {
   /** 분석 호출 비용 (달러) */
   let analyzerUsd = 0;
   if (analyzerOn && !toMature && !deepTurn && last.kind === "text") {
-    if (dep?.level === "low" && route.tier === "light") plan = { grade: "L", tiers: GRADE_TIERS.L, by: "rule", why: "뻔한 말", ms: 0, len: "S" };
-    else {
+    const lastAiTurn = [...recent].reverse().find((t) => t.role === "assistant" && (t.kind ?? "text") === "text");
+    const holdL = (g: Grade) => stickyGrade({ grade: g, text: last.content, lastAi: lastAiTurn ? { at: lastAiTurn.at, grade: lastAiTurn.grade } : undefined });
+    if (dep?.level === "low" && route.tier === "light") {
+      const s = holdL("L");
+      plan = { grade: s.grade, tiers: GRADE_TIERS[s.grade], by: "rule", why: s.held ? "뻔한 말(모델 유지)" : "뻔한 말", ms: 0, len: "S" };
+    } else {
       const a = await analyzeTurn(last.content, recent, persona.name);
       if (a.usage && a.by !== "cache" && a.by !== "default") analyzerUsd = costUsd(priceOf(a.by), a.usage);
       // 분석이 실패하면 규칙 결과(맥락 의존도)로: high → 메인, 그 외 → 메인 (가벼운 모델로 잘못 보내지 않게)
       const g: Grade = a.by === "default" ? "M" : a.grade;
       // 🛡 안전장치: L(하이쿠)로 내리는 건 맥락 규칙도 "낮음"일 때만 — 분석 모델 혼자 내리지 못한다 (올리는 판단은 그대로)
-      const safe: Grade = g === "L" && dep?.level !== "low" ? "M" : g;
-      plan = { grade: safe, tiers: GRADE_TIERS[safe], by: a.by === "cache" ? "캐시" : a.by === "default" ? "분석실패" : `분석 ${a.ms}ms`, why: a.why, ms: a.ms, len: a.len };
+      const safe0: Grade = g === "L" && dep?.level !== "low" ? "M" : g;
+      // 🧲 직전 답장을 L 이 아닌 모델이 했고 대화가 이어지는 중이면 L 로 내리지 않는다 (말투·맥락 어긋남 방지)
+      const held = holdL(safe0);
+      const safe: Grade = held.grade;
+      plan = { grade: safe, tiers: GRADE_TIERS[safe], by: a.by === "cache" ? "캐시" : a.by === "default" ? "분석실패" : `분석 ${a.ms}ms`, why: held.held ? `${a.why}(모델 유지)` : a.why, ms: a.ms, len: a.len };
     }
   }
+  const prevAiTurn = [...recent].reverse().find((t) => t.role === "assistant" && (t.kind ?? "text") === "text");
   let intent: Classified | null = null;
   if (!plan && smart && !toMature && last.kind === "text") {
     // 애매한 말(mid)은 규칙으로 "일상"이라 단정하지 않고, 분류 모델에게 직전 대화와 함께 한 번 묻는다
@@ -1030,6 +1051,8 @@ export async function POST(request: Request) {
       gift: parsed.data.gift,
       touches: parsed.data.touches,
       watched: parsed.data.watched,
+      keepStyle: !!prevAiTurn?.at && Date.now() - prevAiTurn.at < 30 * 60_000,
+      scene: scene.active ? scene.summary : null,
       recentTurns: recent,
       continuity,
       lenHint: plan?.len,
@@ -1160,6 +1183,11 @@ export async function POST(request: Request) {
         if (!tiers.includes("plus")) tiers = ["plus", ...tiers];
       }
     }
+    // 🧲 어느 경로(분석·분류·규칙)로 가벼운 모델이 정해졌든, 직전 답장이 가벼운 모델이 아니었고 대화가 이어지는 중이면 내리지 않는다 (말투·장면·맥락 어긋남 방지)
+    if (!owner && !forced && !toMature && !deepTurn && tiers[0] === "light") {
+      const h = stickyGrade({ grade: "L", text: last.content, lastAi: prevAiTurn ? { at: prevAiTurn.at, grade: prevAiTurn.grade } : undefined });
+      if (h.held) tiers = ["chat"];
+    }
     const ran = forced
       ? { result: await generate(forced), resolved: forced, fellBack: false }
       : await runWithFallback(
@@ -1248,6 +1276,7 @@ export async function POST(request: Request) {
     if (nudgeItem && !media && !owner) media = { action: "album", item: nudgeItem };
 
     const response: ChatResponse = {
+      grade: plan?.grade === "L" ? (tiers[0] === "light" ? "L" : "M") : plan?.grade ?? (deepTurn ? "T" : tiers[0] === "light" ? "L" : "M"),
       ...(owner && phraseNow ? { ownerToken: ownerToken() } : {}),
       ...(ownerAuth
         ? {
