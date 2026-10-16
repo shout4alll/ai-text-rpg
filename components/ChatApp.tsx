@@ -453,7 +453,8 @@ export default function ChatApp({
   const [inv, setInv] = useState<Inventory>({});
   const refreshInv = () => setInv(readInventory());
   /** 리액션 보기로 재생할 영상 — 창을 열 때부터 미리 받아 둔다 (평소에는 받지 않는다) */
-  const [shopPreload, setShopPreload] = useState<Record<string, string>>({});
+  // 인물별로 따로 보관 — 다른 인물의 같은 이름 영상(adult_pajama 등)이 섞여 재생되지 않게
+  const [shopPreloadState, setShopPreload] = useState<{ pid: string; clips: Record<string, string> }>({ pid: "", clips: {} });
   useEffect(() => {
     setInv(readInventory());
   }, []);
@@ -1940,8 +1941,9 @@ export default function ChatApp({
     () => ({ ...(persona?.assets.premiumClips ?? {}), ...(persona?.assets.specialClips ?? {}), ...(persona?.assets.allureClips ?? {}), ...(persona?.assets.adultClips ?? {}) }),
     [persona]
   );
+  const shopPreload = useMemo(() => (shopPreloadState.pid === persona?.id ? shopPreloadState.clips : {}), [shopPreloadState, persona?.id]);
   const openShop = () => {
-    setShopPreload(shopClips);
+    setShopPreload({ pid: persona?.id ?? "", clips: shopClips });
     refreshInv();
     setShopOpen(true);
   };
