@@ -26,6 +26,7 @@ npm run android:open
 - `app/api/chat/route.ts` — 대화 API 전체 흐름(풀 응답 → 라우팅 → 모델 호출 → 후처리). 가장 크고 중요한 파일.
 - `config/` — 설정. `balance.json`(호감도·삐짐·라우팅 밸런스), `settings.ts`(환경변수·CMS 설정 정의, 우선순위: CMS 덮어쓰기 > Vercel env > 코드 기본값), `ai.ts`(프로바이더·모델 역할), `prices.ts`(가격, 모니터 비용 계산용 추정치).
 - `lib/` — `smartRouter.ts`(분석 라우터), `modelRouter.ts`(규칙 라우팅·폴백), `continuity.ts`(맥락 의존도), `opusQuota.ts`, `liveFeed.ts`, `kv.ts`(Upstash REST), `salvageReply.ts`(깨진 JSON 복구), `repeatGuard.ts`, `backup.ts`, `push/nudge.ts`.
+- `lib/historyWindow.ts` — 대화 간격(30분↑ 끊김)에 따라 앞 대화 참조 범위 조절: 끊김 12시간 미만은 최근 1~5턴, 이상은 무시, 유저가 어제·며칠 전을 떠올리면 최근 10턴 재참조. 수치·말 목록은 `balance.json cost.gap`, 적용은 `app/api/chat/route.ts`(recentFull→recent).
 - `personas/*.json` + `_shared.json` — 캐릭터 정의. `config/personaPrompts.ts` — 프롬프트 조립.
 - `components/ChatApp.tsx`(메인 앱), `ChatPanel.tsx`, `DevPanel.tsx`(🛠 주인님 패널·📡실시간), `LiveChatMonitor.tsx`(💬 LIVE), `LobbyNotes.tsx`(메인 쪽지).
 - `android/` — Capacitor 안드로이드. `FileSaverPlugin.java`(백업을 다운로드 폴더에 저장), `MainActivity.java`에서 super.onCreate 전에 등록.

@@ -322,6 +322,16 @@
     "maxOutputTokens": 700,
     "historyTurns": 10,
     "historyStep": 5,
+    "gap": {
+      "_readme": "⏳ 대화 간격에 따른 앞 대화 참조 (lib/historyWindow.ts): breakMin 분 이상 끊겼으면 그 앞 대화는 오래된 것으로 본다. goneHours 시간 미만이면 맥락 의존도에 따라 최근 recentMin~recentMax 턴만, 이상이면 참조 안 함. 유저가 어제·며칠 전 일을 떠올리면(recallPatterns) 최근 recallKeep 턴을 다시 참조.",
+      "enabled": true,
+      "breakMin": 30,
+      "goneHours": 12,
+      "recentMin": 1,
+      "recentMax": 5,
+      "recallKeep": 10,
+      "recallPatterns": ["어제", "그제", "그저께", "엊그제", "며칠 ?전", "지난번", "저번에", "저번 ?번", "지난주", "지난 ?대화", "전에 (말|얘기|이야기)", "말했던", "얘기했던", "이야기했던", "했었잖아", "기억 ?나", "기억해","그때 (그|우리|내가|네가|너가)", "그날"]
+    },
     "heartLlmGapSec": 30,
     "voiceRecentTurns": 16
   },

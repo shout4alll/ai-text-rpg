@@ -28,6 +28,7 @@ import { SAFETY_RULES, MINOR_GUARD, absoluteRules } from "@/config/rules";
 import { PERSONA_FIELDS, RULE_FIELDS, applyPersonaOverride, mergeOverride, type OwnerOpts, type RulesOverride } from "@/lib/ownerOverrides";
 import { persistedPersona, persistedRules } from "@/lib/overridesStore";
 import { contextDependency, insistedAsks, logCtx } from "@/lib/continuity";
+import { windowByGap } from "@/lib/historyWindow";
 import { pushLive } from "@/lib/liveFeed";
 import { takeOpus } from "@/lib/opusQuota";
 import { BASELINE, costUsd, priceOf } from "@/config/prices";
@@ -836,18 +837,21 @@ export async function POST(request: Request) {
   const album = albumOf(persona);
   // 이미지는 가장 최근 사진·영상 턴에만 남긴다 (요청 크기·비용 절약)
   const lastMediaIdx = messages.map((m) => m.kind).lastIndexOf("user_media");
-  const recent = messages
+  const recentFull = messages
     .map((m, i) => (m.kind === "user_media" && i !== lastMediaIdx ? { ...m, images: undefined } : m))
     .slice(-MAX_HISTORY);
+  // 직전 대화와 이번 턴 사이의 시간 경과 (앞 대화를 자르기 전 전체 기준)
+  const prevAt = [...recentFull].reverse().slice(1).find((t) => t.at)?.at;
+  const sinceLast = last.at && prevAt ? formatGap(last.at - prevAt) : null;
+  // ⏳ 대화 간격이 벌어졌으면 오래된 앞 대화는 참조하지 않거나 최근 1~5턴만 (유저가 지난 일을 떠올리면 다시 참조) — lib/historyWindow.ts
+  const histWin = windowByGap(recentFull, last.kind === "text" ? contextDependency(last.content, recentFull).score : 0.5);
+  const recent = histWin.turns;
   let history = mergeConsecutive(toModelTurns(recent)).map((t) => ({ ...t, content: maskPhrase(t.content) }));
   while (history.length > 0 && history[0].role !== "user") history = history.slice(1);
   if (history.length === 0) {
     return NextResponse.json({ error: "No usable messages" }, { status: 400 });
   }
 
-  // 직전 대화와 이번 턴 사이의 시간 경과
-  const prevAt = [...recent].reverse().slice(1).find((t) => t.at)?.at;
-  const sinceLast = last.at && prevAt ? formatGap(last.at - prevAt) : null;
 
   // 💰 뻔한 대화(안녕·잘 자·고마워)는 예전에 만든 답장을 재사용 (AI 호출 없음)
   const allure = parsed.data.allure === true;
