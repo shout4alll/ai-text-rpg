@@ -44,17 +44,22 @@ ${recent || "(아직 대화가 없다 — 첫 인사·호기심 질문을 제안
 
 유저가 지금 보낼 말 후보 4개를 JSON 으로.`;
   try {
-    const ran = await runWithFallback("/api/suggest", ["light", "cheap", "chat"], (r) =>
-      generateText({
-        model: r.model,
-        system: SYSTEM,
-        prompt,
-        maxOutputTokens: 600,
-        maxRetries: 0,
-        abortSignal: AbortSignal.timeout(12_000),
-        ...(r.providerOptions ? { providerOptions: r.providerOptions as never } : {}),
-      })
-    );
+    // ⚠️ Haiku 5.5 는 내부 추론(adaptive)이 출력 토큰을 함께 쓴다 → 상한이 작으면 긴 대화에서 답을 쓰기 전에 끊겨(finish=length) 목록이 비거나 잘린다.
+    //    넉넉히 주고(2000), 그래도 끊기면 한 번 더 요청한다.
+    const ask = (maxOutputTokens: number) =>
+      runWithFallback("/api/suggest", ["light", "cheap", "chat"], (r) =>
+        generateText({
+          model: r.model,
+          system: SYSTEM,
+          prompt,
+          maxOutputTokens,
+          maxRetries: 0,
+          abortSignal: AbortSignal.timeout(15_000),
+          ...(r.providerOptions ? { providerOptions: r.providerOptions as never } : {}),
+        })
+      );
+    let ran = await ask(2000);
+    if (ran.result.finishReason === "length") ran = await ask(4000);
     const text = ran.result.text ?? "";
     let list: string[] = [];
     const m = /\{[\s\S]*\}/.exec(text);

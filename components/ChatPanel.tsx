@@ -327,6 +327,11 @@ export default function ChatPanel({
     }
   };
   /** 📎 첨부 방법 고르기 (앨범 / 캡처 붙여넣기) */
+  // 💡 목록을 열어 둔 채 대화가 이어지면(내가 보내거나 답장이 오면) 옛 추천이 남지 않게 새로 받는다 (답장을 기다리는 중엔 기다림)
+  useEffect(() => {
+    if (sugOpen && !busy && !sugBusy && sugFor.current !== lastMsgId) void loadSugs(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastMsgId, busy, sugOpen]);
   const [attachMenu, setAttachMenu] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [clipMsg, setClipMsg] = useState("");
