@@ -68,6 +68,8 @@ export interface ChatMessage {
     /** 유저가 올린 영상 길이(초) */
     duration?: number;
   };
+  /** kind=text(유저): 상대가 답장하는(입력하는) 중에 끼어들어 보낸 말 — 모델에게 알려 겹침을 자연스럽게 받게 한다 */
+  during?: boolean;
   /** kind=text(AI): 이 말풍선을 쓴 모델 등급 (lib/gradeSticky.ts) */
   grade?: "L" | "M" | "P" | "T";
   /** kind=text(AI): 이 말풍선과 함께 화면에서 실제로 재생된 리액션 영상 이름 (대화에서 영상을 언급하면 받아치도록 서버에 알린다) */

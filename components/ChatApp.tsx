@@ -285,6 +285,8 @@ interface Turn {
   clip?: string;
   /** AI 답장을 쓴 모델 등급 (서버가 모델을 갑자기 낮추지 않게) */
   grade?: "L" | "M" | "P" | "T";
+  /** 유저가 상대 답장 중에 끼어들어 보낸 말 */
+  during?: boolean;
 }
 
 function toTurns(msgs: ChatMessage[]): Turn[] {
@@ -294,7 +296,7 @@ function toTurns(msgs: ChatMessage[]): Turn[] {
     if (m.local) continue;
     if ((m.kind ?? "text") === "text") {
       if (m.text.startsWith("⚠️")) continue; // 오류 안내는 대화가 아님
-      turns.push({ role: m.role === "user" ? "user" : "assistant", kind: "text", content: m.text, at: m.at, ...(m.mature ? { mature: true } : {}), ...(m.role === "ai" && m.clip ? { clip: m.clip } : {}), ...(m.role === "ai" && m.grade ? { grade: m.grade } : {}) });
+      turns.push({ role: m.role === "user" ? "user" : "assistant", kind: "text", content: m.text, at: m.at, ...(m.mature ? { mature: true } : {}), ...(m.role === "ai" && m.clip ? { clip: m.clip } : {}), ...(m.role === "ai" && m.grade ? { grade: m.grade } : {}), ...(m.role === "user" && m.during ? { during: true } : {}) });
     } else if (m.kind === "reaction" && m.role === "user") {
       turns.push({ role: "user", kind: "reaction", content: m.text, target: byId.get(m.targetId ?? -1)?.text, at: m.at });
     } else if (m.kind === "call") {
@@ -1440,7 +1442,14 @@ export default function ChatApp({
 
         // ⌨️ 가끔 오타 (+정정) — 주인님 모드에서는 쓰지 않는다
         const outs = data.ownerToken || readOwnerToken() ? data.messages : withTypo(data.messages, persona?.profile.age ?? 30);
+        // ✋ 말풍선이 나오는 도중에 유저가 새 말을 보내면(끼어들기) 아직 안 나온 말풍선은 버린다 — 화면에 나간 말만 기록에 남아 모델이 보는 내용과 화면이 같다
+        const cut = () => queuedRef.current?.pid === pid;
+        let interrupted = false;
         for (let i = 0; i < outs.length; i++) {
+          if (i > 0 && cut()) {
+            interrupted = true;
+            break;
+          }
           const text = outs[i];
           // 첫 말풍선(말로 보낸 턴)은 서버를 기다린 시간만큼 이미 "입력 중"이었으니 그만큼 덜 기다린다
           const waited = i === 0 && kind === "text" ? Date.now() - typingSince : 0;
@@ -1466,6 +1475,11 @@ export default function ChatApp({
               persistToRoom(pid, outs.slice(i), null, null, 0, data.mature);
               return;
             }
+            if (i > 0 && cut()) {
+              setTyping(false);
+              interrupted = true;
+              break;
+            }
           }
           const bubbleId = nextId.current++;
           setMessages((prev) => [...prev, { id: bubbleId, role: "ai", kind: "text", text, at: Date.now(), ...(data.mature ? { mature: true } : {}), ...(data.grade ? { grade: data.grade } : {}) }]);
@@ -1477,7 +1491,7 @@ export default function ChatApp({
 
         // 단계 상승: 인물이 그 단계에 맞는 한마디를 덧붙인다 (personas/<id>.json traits.stageUpLines)
         const upLine = stageUp !== null ? persona?.traits.stageUpLines[stageUp - 1] : undefined;
-        if (upLine) {
+        if (upLine && !interrupted) {
           setTyping(true);
           await sleep(900 + typingDelay(upLine));
           if (!same()) return;
@@ -1695,7 +1709,7 @@ export default function ChatApp({
     }
     countMessage();
     if (msgCost > 0) setCashState(getCash());
-    const userMsg: ChatMessage = { id: nextId.current++, role: "user", kind: "text", text, at: Date.now(), read: false, ...(allureActive ? { mature: true } : {}) };
+    const userMsg: ChatMessage = { id: nextId.current++, role: "user", kind: "text", text, at: Date.now(), read: false, ...(allureActive ? { mature: true } : {}), ...(busy ? { during: true } : {}) };
     const msgs = [...messages, userMsg];
     setMessages(msgs);
     setInput("");

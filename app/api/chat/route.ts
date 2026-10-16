@@ -93,6 +93,8 @@ const turnSchema = z.object({
   giftSulk: z.boolean().optional(),
   /** kind=text(AI): 이 말풍선과 함께 화면에서 실제로 재생된 리액션 영상 이름 (lib/clipAware.ts) */
   clip: z.string().max(40).regex(/^[A-Za-z0-9_-]+$/).optional(),
+  /** 유저가 상대 답장 중에 끼어들어 보낸 말 (앱이 표시) */
+  during: z.boolean().optional(),
   /** 이 AI 답장을 쓴 모델 등급 (앱이 응답의 grade 를 되돌려 보낸다 — lib/gradeSticky.ts) */
   grade: z.enum(["L", "M", "P", "T"]).optional(),
 });
@@ -751,6 +753,17 @@ function buildTurnContext(c: InstructionContext): string {
     gapGuide(c.gapMs),
     ...clipAwareLines({ turns: c.recentTurns ?? [], watched: c.watched, userText: c.userText }),
     ...(c.scene ? sceneLines({ active: true, summary: c.scene }) : []),
+    // ✋ 유저가 네 답장(말풍선)이 나오는 중에 끼어들어 보낸 말
+    (() => {
+      const tail: NonNullable<InstructionContext["recentTurns"]> = [];
+      for (const t of [...(c.recentTurns ?? [])].reverse()) {
+        if (t.role !== "user") break;
+        tail.unshift(t);
+      }
+      return tail.some((t) => t.during)
+        ? `- 끼어들기: 유저가 네 답장(말풍선)이 나오는 중에 이 말을 보냈다. 네 마지막 말풍선들은 화면에 나간 만큼만 있고, 하려던 말이 일부 끊겼을 수 있다. 유저의 말은 네 말에 대한 반응일 수도, 따로 한 말일 수도 있으니 방금 흐름과 이어서 자연스럽게 받아라. 순서를 따지며 사과하거나 "말하는 중에 끼어들었네"를 매번 말하지 마라(가끔 가볍게 한 번은 괜찮다). 끊긴 말이 꼭 필요하면 짧게 이어도 된다.`
+        : null;
+    })(),
     c.keepStyle ? "- 직전 답장들과 같은 말투·분량·온도·호칭을 그대로 이어라(이어받은 티를 내지 마라). 앞 대화에서 정한 상황·약속·화제를 잊지 말고 자연스럽게 잇는다." : null,
     c.touches?.length ? `- 방금 유저가 화면 속 너를 터치했다: ${c.touches.join(", ")}. 그 스킨십을 기억하고 관계 단계에 맞게 이어서 반응해라(가까우면 설레거나 장난스럽게, 아직 어색하면 쑥스럽거나 살짝 경계). 매번 언급하지는 마라.` : null,
     `- 호감도 ${Math.round(c.affection)}/100 → "${stage.label}": ${stage.guide}${prog.next ? ` (다음 "${prog.next.label}"까지 ${prog.toNext})` : ""}`,
